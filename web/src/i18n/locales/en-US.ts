@@ -340,6 +340,7 @@ export default {
         plugins: "Node plugins",
         docs: "Documentation",
         switchLanguage: "Switch to {{language}}",
+        mainSite: "{{site}} main site",
         shortcuts: "Keyboard shortcuts",
         lightTheme: "Switch to light theme",
         darkTheme: "Switch to dark theme",
@@ -489,6 +490,15 @@ export default {
             defaultName: "Default provider",
             newName: "New provider",
             indexedName: "Provider {{index}}",
+        },
+        mainSite: {
+            bannerTitle: "{{site}} is the official API endpoint for this canvas",
+            bannerDescription: "Sign up on {{site}}, buy a plan and create an API key, then paste it into the provider below to start generating.",
+            registerCta: "Sign up / buy on {{site}}",
+            getKeyCta: "Get an API key",
+            foreignEndpointTitle: "This endpoint is not the official {{site}} gateway",
+            foreignEndpoint: "Third-party endpoints must be reachable and allow browser cross-origin requests on your own. We recommend the official {{site}} gateway: sign up, buy a plan and get an API key that works out of the box.",
+            missingKey: "No API key yet? Create one on the {{site}} keys page and paste it above.",
         },
         preferences: {
             interface: "Interface",

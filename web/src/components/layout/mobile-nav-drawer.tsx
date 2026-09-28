@@ -1,8 +1,10 @@
 import { Drawer } from "antd";
+import { Home } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
 import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
+import { MAIN_SITE_NAME, mainSiteLink } from "@/constant/runtime-config";
 import { cn } from "@/lib/utils";
 
 type MobileNavDrawerProps = {
@@ -35,6 +37,16 @@ export function MobileNavDrawer({ open, activeToolSlug, onClose }: MobileNavDraw
                         </Link>
                     );
                 })}
+                <a
+                    href={mainSiteLink("/", "mobile-nav")}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={onClose}
+                    className="mt-2 flex items-center gap-3 rounded-lg border-t border-stone-200 px-3 pt-4 pb-3 text-base text-stone-600 transition hover:bg-stone-100 hover:text-stone-950 dark:border-stone-800 dark:text-stone-300 dark:hover:bg-stone-800 dark:hover:text-stone-100"
+                >
+                    <Home className="size-5" />
+                    <span>{t("topNav.mainSite", { site: MAIN_SITE_NAME })}</span>
+                </a>
             </div>
         </Drawer>
     );

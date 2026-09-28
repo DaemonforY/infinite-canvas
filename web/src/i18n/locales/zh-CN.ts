@@ -340,6 +340,7 @@ export default {
         plugins: "节点插件",
         docs: "文档",
         switchLanguage: "切换到 {{language}}",
+        mainSite: "{{site}} 主站",
         shortcuts: "快捷键",
         lightTheme: "切换到浅色主题",
         darkTheme: "切换到深色主题",
@@ -489,6 +490,15 @@ export default {
             defaultName: "默认渠道",
             newName: "新渠道",
             indexedName: "渠道 {{index}}",
+        },
+        mainSite: {
+            bannerTitle: "{{site}} 是本画布的官方接口入口",
+            bannerDescription: "在 {{site}} 注册并购买套餐后创建 API Key，填入下方渠道即可直接生图、生视频。",
+            registerCta: "去 {{site}} 注册 / 购买",
+            getKeyCta: "获取 API Key",
+            foreignEndpointTitle: "当前接口不是 {{site}} 官方接口",
+            foreignEndpoint: "第三方接口需自行保证可用且允许浏览器跨域访问。推荐使用 {{site}} 官方接口：注册并购买套餐后获取 API Key，开箱即用。",
+            missingKey: "还没有 API Key？在 {{site}} 的密钥页面创建一个，粘贴到上方即可。",
         },
         preferences: {
             interface: "界面偏好",

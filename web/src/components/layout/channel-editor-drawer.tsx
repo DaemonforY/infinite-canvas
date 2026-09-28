@@ -1,8 +1,9 @@
-import { Button, Drawer, Input, Segmented, Select, Space } from "antd";
+import { Alert, Button, Drawer, Input, Segmented, Select, Space } from "antd";
 import { ListPlus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { MAIN_SITE_API_BASE_URL, MAIN_SITE_NAME, isMainSiteBaseUrl, mainSiteLink } from "@/constant/runtime-config";
 import { defaultBaseUrlForApiFormat, guessCapability, normalizeChannelModels, type ApiCallFormat, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import { ModelScriptEditor } from "./model-script-editor";
 import { ModelSelectModal } from "./model-select-modal";
@@ -27,6 +28,9 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
     if (!draft) return null;
 
     const patch = (value: Partial<ModelChannel>) => setDraft((current) => (current ? { ...current, ...value } : current));
+    const onMainSite = isMainSiteBaseUrl(draft.baseUrl);
+    const foreignEndpoint = Boolean(draft.baseUrl.trim()) && !onMainSite;
+    const missingMainSiteKey = onMainSite && !draft.apiKey.trim();
     const setModels = (models: ChannelModel[]) => patch({ models });
 
     const changeApiFormat = (apiFormat: ApiCallFormat) => {
@@ -75,12 +79,39 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
                 </label>
                 <label className="block md:col-span-2">
                     <span className="mb-1 block text-sm font-medium">{t("config.channelEditor.baseUrl")}</span>
-                    <Input value={draft.baseUrl} onChange={(event) => patch({ baseUrl: event.target.value })} placeholder="https://api.example.com" />
+                    <Input value={draft.baseUrl} onChange={(event) => patch({ baseUrl: event.target.value })} placeholder={MAIN_SITE_API_BASE_URL} />
                 </label>
+                {foreignEndpoint ? (
+                    <Alert
+                        className="md:col-span-2"
+                        type="warning"
+                        showIcon
+                        message={t("config.mainSite.foreignEndpointTitle", { site: MAIN_SITE_NAME })}
+                        description={t("config.mainSite.foreignEndpoint", { site: MAIN_SITE_NAME })}
+                        action={
+                            <Button size="small" type="primary" href={mainSiteLink("/register", "channel-editor")} target="_blank" rel="noopener noreferrer">
+                                {t("config.mainSite.registerCta", { site: MAIN_SITE_NAME })}
+                            </Button>
+                        }
+                    />
+                ) : null}
                 <label className="block md:col-span-2">
                     <span className="mb-1 block text-sm font-medium">API Key</span>
                     <Input.Password value={draft.apiKey} onChange={(event) => patch({ apiKey: event.target.value })} placeholder="sk-..." />
                 </label>
+                {missingMainSiteKey ? (
+                    <Alert
+                        className="md:col-span-2"
+                        type="info"
+                        showIcon
+                        message={t("config.mainSite.missingKey", { site: MAIN_SITE_NAME })}
+                        action={
+                            <Button size="small" href={mainSiteLink("/keys", "channel-editor")} target="_blank" rel="noopener noreferrer">
+                                {t("config.mainSite.getKeyCta")}
+                            </Button>
+                        }
+                    />
+                ) : null}
             </div>
 
             <div className="mt-6 mb-3 flex flex-wrap items-center justify-between gap-2">

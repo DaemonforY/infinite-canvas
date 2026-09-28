@@ -4,6 +4,8 @@
 
 <h1 align="center">无限画布 (infinite-canvas)</h1>
 
+> 本仓库是 [basketikun/infinite-canvas](https://github.com/basketikun/infinite-canvas) 的定制分支，用于 [HiveGPT](https://hivegpt.cn) 的配套画布站点（canvas.hivegpt.cn）：默认接口指向 HiveGPT 网关，顶栏链接回主站，并通过 `MAIN_SITE_URL` / `MAIN_SITE_NAME` / `MAIN_SITE_API_BASE_URL` 环境变量支持部署到其他站点。原项目版权与许可证保持不变。
+
 <p align="center">
   <a href="https://linux.do/"><img src="https://img.shields.io/badge/Linux.do-Community-2b6de8?style=flat-square" alt="Linux.do"></a>
   <a href="https://render.com/deploy?repo=https://github.com/basketikun/infinite-canvas"><img src="https://img.shields.io/badge/Render-Deploy-46e3b7?style=flat-square&logo=render&logoColor=111111" alt="Deploy to Render"></a>

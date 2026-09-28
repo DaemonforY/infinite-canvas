@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 
 import { ModelPicker } from "@/components/model-picker";
 import { ChannelEditorDrawer } from "@/components/layout/channel-editor-drawer";
+import { MAIN_SITE_NAME, isMainSiteBaseUrl, mainSiteLink } from "@/constant/runtime-config";
 import { ConfigLocalProxy } from "@/components/layout/config-local-proxy";
 import { ConfigPromptSources } from "@/components/layout/config-prompt-sources";
 import { ConfigLocalStorage } from "@/components/layout/config-local-storage";
@@ -110,6 +111,9 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
 
     const saveChannel = (channel: ModelChannel) => {
         updateChannels(config.channels.map((item) => (item.id === channel.id ? channel : item)));
+        if (channel.baseUrl.trim() && !isMainSiteBaseUrl(channel.baseUrl)) {
+            message.warning(t("config.mainSite.foreignEndpoint", { site: MAIN_SITE_NAME }));
+        }
     };
 
     const testWebdav = async () => {
@@ -185,6 +189,20 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                         label: t("config.tabs.channels"),
                         children: (
                             <div>
+                                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-stone-200 bg-stone-50 px-4 py-3 dark:border-stone-800 dark:bg-stone-900">
+                                    <div className="min-w-0">
+                                        <div className="text-sm font-semibold">{t("config.mainSite.bannerTitle", { site: MAIN_SITE_NAME })}</div>
+                                        <div className="mt-0.5 text-xs text-stone-500">{t("config.mainSite.bannerDescription", { site: MAIN_SITE_NAME })}</div>
+                                    </div>
+                                    <div className="flex shrink-0 gap-2">
+                                        <Button size="small" type="primary" href={mainSiteLink("/register", "config-banner")} target="_blank" rel="noopener noreferrer">
+                                            {t("config.mainSite.registerCta", { site: MAIN_SITE_NAME })}
+                                        </Button>
+                                        <Button size="small" href={mainSiteLink("/keys", "config-banner")} target="_blank" rel="noopener noreferrer">
+                                            {t("config.mainSite.getKeyCta")}
+                                        </Button>
+                                    </div>
+                                </div>
                                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                                     <div className="text-xs text-stone-500">{t("config.channels.description")}</div>
                                     <Button type="primary" icon={<Plus className="size-4" />} onClick={addChannel}>

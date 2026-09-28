@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { MAIN_SITE_API_BASE_URL } from "@/constant/runtime-config";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
@@ -72,7 +73,8 @@ export type ChannelCredentialsImportResult = {
 
 export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 const CHANNEL_MODEL_SEPARATOR = "::";
-const OPENAI_BASE_URL = "https://api.openai.com";
+// Default OpenAI-compatible endpoint is the main site gateway (HiveGPT); users bring their own key from there.
+const OPENAI_BASE_URL = MAIN_SITE_API_BASE_URL;
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
 export const LOCAL_PROXY_PACKAGE = "@basketikun/canvas-proxy";
 export const DEFAULT_LOCAL_PROXY_URL = "http://127.0.0.1:23210";
