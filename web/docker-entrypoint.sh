@@ -25,6 +25,8 @@ MAIN_SITE_URL_VALUE=$(sanitize_url "${MAIN_SITE_URL:-}")
 MAIN_SITE_NAME_VALUE=$(sanitize_name "${MAIN_SITE_NAME:-}")
 MAIN_SITE_API_BASE_URL_VALUE=$(sanitize_url "${MAIN_SITE_API_BASE_URL:-}")
 DEFAULT_SKIN_VALUE=$(sanitize_id "${DEFAULT_SKIN:-}")
+# "Name|https://url,Name2|https://url2": letters, digits, URL characters, | and , only.
+PARTNER_SITES_VALUE=$(printf '%s' "${PARTNER_SITES:-}" | tr -cd 'A-Za-z0-9:/._%|, -')
 
 cat > /usr/share/nginx/html/config.js <<EOF
 window.__RUNTIME_CONFIG__ = {
@@ -33,6 +35,7 @@ window.__RUNTIME_CONFIG__ = {
   MAIN_SITE_URL: "${MAIN_SITE_URL_VALUE}",
   MAIN_SITE_NAME: "${MAIN_SITE_NAME_VALUE}",
   MAIN_SITE_API_BASE_URL: "${MAIN_SITE_API_BASE_URL_VALUE}",
-  DEFAULT_SKIN: "${DEFAULT_SKIN_VALUE}"
+  DEFAULT_SKIN: "${DEFAULT_SKIN_VALUE}",
+  PARTNER_SITES: "${PARTNER_SITES_VALUE}"
 };
 EOF

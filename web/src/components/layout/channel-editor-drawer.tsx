@@ -3,7 +3,7 @@ import { ListPlus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { MAIN_SITE_API_BASE_URL, MAIN_SITE_NAME, isMainSiteBaseUrl, mainSiteLink } from "@/constant/runtime-config";
+import { MAIN_SITE_API_BASE_URL, MAIN_SITE_NAME, PARTNER_SITES, isMainSiteBaseUrl, isOfficialBaseUrl, mainSiteLink, partnerSiteLink } from "@/constant/runtime-config";
 import { defaultBaseUrlForApiFormat, guessCapability, normalizeChannelModels, type ApiCallFormat, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import { ModelScriptEditor } from "./model-script-editor";
 import { ModelSelectModal } from "./model-select-modal";
@@ -29,7 +29,7 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
 
     const patch = (value: Partial<ModelChannel>) => setDraft((current) => (current ? { ...current, ...value } : current));
     const onMainSite = isMainSiteBaseUrl(draft.baseUrl);
-    const foreignEndpoint = Boolean(draft.baseUrl.trim()) && !onMainSite;
+    const foreignEndpoint = Boolean(draft.baseUrl.trim()) && !isOfficialBaseUrl(draft.baseUrl);
     const missingMainSiteKey = onMainSite && !draft.apiKey.trim();
     const setModels = (models: ChannelModel[]) => patch({ models });
 
@@ -89,9 +89,16 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
                         message={t("config.mainSite.foreignEndpointTitle", { site: MAIN_SITE_NAME })}
                         description={t("config.mainSite.foreignEndpoint", { site: MAIN_SITE_NAME })}
                         action={
-                            <Button size="small" type="primary" href={mainSiteLink("/register", "channel-editor")} target="_blank" rel="noopener noreferrer">
-                                {t("config.mainSite.registerCta", { site: MAIN_SITE_NAME })}
-                            </Button>
+                            <div className="flex flex-col gap-2">
+                                <Button size="small" type="primary" href={mainSiteLink("/register", "channel-editor")} target="_blank" rel="noopener noreferrer">
+                                    {t("config.mainSite.registerCta", { site: MAIN_SITE_NAME })}
+                                </Button>
+                                {PARTNER_SITES.map((site) => (
+                                    <Button key={site.url} size="small" href={partnerSiteLink(site, "/purchase", "channel-editor")} target="_blank" rel="noopener noreferrer">
+                                        {t("config.mainSite.partnerBuyCta", { site: site.name })}
+                                    </Button>
+                                ))}
+                            </div>
                         }
                     />
                 ) : null}

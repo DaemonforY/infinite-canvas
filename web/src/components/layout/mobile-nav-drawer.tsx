@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
 import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
-import { MAIN_SITE_NAME, mainSiteLink } from "@/constant/runtime-config";
+import { MAIN_SITE_NAME, PARTNER_SITES, mainSiteLink, partnerSiteLink } from "@/constant/runtime-config";
 import { cn } from "@/lib/utils";
 
 type MobileNavDrawerProps = {
@@ -47,6 +47,19 @@ export function MobileNavDrawer({ open, activeToolSlug, onClose }: MobileNavDraw
                     <Home className="size-5" />
                     <span>{t("topNav.mainSite", { site: MAIN_SITE_NAME })}</span>
                 </a>
+                {PARTNER_SITES.map((site) => (
+                    <a
+                        key={site.url}
+                        href={partnerSiteLink(site, "/", "mobile-nav")}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={onClose}
+                        className="flex items-center gap-3 rounded-lg px-3 py-3 text-base text-stone-600 transition hover:bg-stone-100 hover:text-stone-950 dark:text-stone-300 dark:hover:bg-stone-800 dark:hover:text-stone-100"
+                    >
+                        <Home className="size-5 opacity-60" />
+                        <span>{t("topNav.partnerSite", { site: site.name })}</span>
+                    </a>
+                ))}
             </div>
         </Drawer>
     );

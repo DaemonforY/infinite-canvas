@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 
 import { ModelPicker } from "@/components/model-picker";
 import { ChannelEditorDrawer } from "@/components/layout/channel-editor-drawer";
-import { MAIN_SITE_NAME, isMainSiteBaseUrl, mainSiteLink } from "@/constant/runtime-config";
+import { MAIN_SITE_NAME, PARTNER_SITES, isOfficialBaseUrl, mainSiteLink, partnerSiteLink } from "@/constant/runtime-config";
 import { ConfigLocalProxy } from "@/components/layout/config-local-proxy";
 import { ConfigPromptSources } from "@/components/layout/config-prompt-sources";
 import { ConfigLocalStorage } from "@/components/layout/config-local-storage";
@@ -111,7 +111,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
 
     const saveChannel = (channel: ModelChannel) => {
         updateChannels(config.channels.map((item) => (item.id === channel.id ? channel : item)));
-        if (channel.baseUrl.trim() && !isMainSiteBaseUrl(channel.baseUrl)) {
+        if (channel.baseUrl.trim() && !isOfficialBaseUrl(channel.baseUrl)) {
             message.warning(t("config.mainSite.foreignEndpoint", { site: MAIN_SITE_NAME }));
         }
     };
@@ -201,6 +201,11 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                         <Button size="small" href={mainSiteLink("/keys", "config-banner")} target="_blank" rel="noopener noreferrer">
                                             {t("config.mainSite.getKeyCta")}
                                         </Button>
+                                        {PARTNER_SITES.map((site) => (
+                                            <Button key={site.url} size="small" href={partnerSiteLink(site, "/purchase", "config-banner")} target="_blank" rel="noopener noreferrer">
+                                                {t("config.mainSite.partnerBuyCta", { site: site.name })}
+                                            </Button>
+                                        ))}
                                     </div>
                                 </div>
                                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">

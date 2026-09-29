@@ -13,6 +13,7 @@ type RuntimeConfig = {
     MAIN_SITE_URL?: string; // Main site users register / buy plans / manage keys on (e.g. https://hivegpt.cn)
     MAIN_SITE_NAME?: string; // Display name of the main site
     MAIN_SITE_API_BASE_URL?: string; // Default OpenAI-compatible endpoint (usually the main site's gateway)
+    PARTNER_SITES?: string; // Sister sites that also sell keys: "Name|https://url,Name2|https://url2"
     DEFAULT_SKIN?: string; // Default color skin for first-time visitors (classic/nebula/ocean/forest/sunset/sakura)
 };
 
@@ -60,6 +61,42 @@ function hostOf(value: string): string {
 export function isMainSiteBaseUrl(baseUrl: string): boolean {
     const host = hostOf(baseUrl);
     return Boolean(host) && host === hostOf(MAIN_SITE_API_BASE_URL);
+}
+
+export type PartnerSite = { name: string; url: string };
+
+function parsePartnerSites(raw: string): PartnerSite[] {
+    return raw
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .map((item) => {
+            const [name, url] = item.split("|").map((part) => part.trim());
+            return { name, url: (url || "").replace(/\/+$/, "") };
+        })
+        .filter((site) => site.name && /^https:\/\//.test(site.url) && hostOf(site.url) !== hostOf(MAIN_SITE_URL));
+}
+
+/** Sister sites (same operator) where users can also buy keys. The main site stays the default. */
+export const PARTNER_SITES: PartnerSite[] = parsePartnerSites(read("PARTNER_SITES", import.meta.env.VITE_PARTNER_SITES, ""));
+
+/** Partner site whose gateway a channel endpoint points at, if any. */
+export function partnerSiteForBaseUrl(baseUrl: string): PartnerSite | undefined {
+    const host = hostOf(baseUrl);
+    return host ? PARTNER_SITES.find((site) => hostOf(site.url) === host) : undefined;
+}
+
+/** True for the main site or any partner gateway: no "third-party endpoint" warning. */
+export function isOfficialBaseUrl(baseUrl: string): boolean {
+    return isMainSiteBaseUrl(baseUrl) || Boolean(partnerSiteForBaseUrl(baseUrl));
+}
+
+/** Link into a partner site with UTM tags. */
+export function partnerSiteLink(site: PartnerSite, path: string, medium: string): string {
+    const url = new URL(path.startsWith("/") ? path : `/${path}`, `${site.url}/`);
+    url.searchParams.set("utm_source", "canvas");
+    url.searchParams.set("utm_medium", medium);
+    return url.toString();
 }
 
 const configuredSkin = read("DEFAULT_SKIN", import.meta.env.VITE_DEFAULT_SKIN, DEFAULT_SKIN);

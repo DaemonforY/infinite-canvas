@@ -19,4 +19,6 @@ interface ImportMetaEnv {
     readonly VITE_MAIN_SITE_API_BASE_URL?: string;
     /** Default color skin (default nebula) */
     readonly VITE_DEFAULT_SKIN?: string;
+    /** Sister sites: "Name|https://url,Name2|https://url2" */
+    readonly VITE_PARTNER_SITES?: string;
 }

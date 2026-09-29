@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Trophy, Upload } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Tag, Tooltip, Typography } from "antd";
 import localforage from "localforage";
@@ -17,6 +17,7 @@ import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { requestEdit, requestGeneration } from "@/services/api/image";
 import { deleteStoredImages, ensureImagePreview, getImagePreviewRevision, previewUrlFor, resolveImageUrl, subscribeImagePreviews, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
+import { useContestSubmitStore } from "@/stores/use-contest-submit-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 import type { ReferenceImage } from "@/types/image";
 import i18n from "@/i18n";
@@ -89,6 +90,7 @@ export default function ImagePage() {
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const addAsset = useAssetStore((state) => state.addAsset);
+    const openContestSubmit = useContestSubmitStore((state) => state.open);
     // ?prompt= lets the main site deep-link here with a prompt pre-filled (text only; the param is then removed from the URL).
     const [prompt, setPrompt] = useState(readInitialPromptParam);
     const [references, setReferences] = useState<ReferenceImage[]>([]);
@@ -512,7 +514,7 @@ export default function ImagePage() {
                             <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
                                 {results.map((result, index) =>
                                     result.status === "success" && result.image ? (
-                                        <ResultImageCard key={result.id} image={result.image} index={index} onEdit={addResultToReferences} onDownload={downloadImage} onSaveAsset={saveResultToAssets} />
+                                        <ResultImageCard key={result.id} image={result.image} index={index} onEdit={addResultToReferences} onDownload={downloadImage} onSaveAsset={saveResultToAssets} onSubmitContest={(image) => openContestSubmit({ imageUrl: image.dataUrl, prompt })} />
                                     ) : result.status === "failed" ? (
                                         <FailedImageCard key={result.id} error={result.error || t("workbench.generationFailed")} onRetry={() => retryResult(index)} />
                                     ) : (
@@ -588,12 +590,14 @@ function ResultImageCard({
     onEdit,
     onDownload,
     onSaveAsset,
+    onSubmitContest,
 }: {
     image: GeneratedImage;
     index: number;
     onEdit: (image: GeneratedImage, index: number) => void;
     onDownload: (image: GeneratedImage, index: number) => void;
     onSaveAsset: (image: GeneratedImage, index: number) => void;
+    onSubmitContest: (image: GeneratedImage) => void;
 }) {
     const { t } = useTranslation();
     useSyncExternalStore(subscribeImagePreviews, getImagePreviewRevision);
@@ -625,6 +629,9 @@ function ResultImageCard({
                         </Button>
                     </Tooltip>
                 </div>
+                <Button block size="small" type="primary" icon={<Trophy className="size-3.5" />} onClick={() => onSubmitContest(image)} data-testid="result-submit-contest">
+                    {t("contestSubmit.action")}
+                </Button>
             </div>
         </div>
     );
