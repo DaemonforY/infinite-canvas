@@ -1,3 +1,5 @@
+import { DEFAULT_SKIN, isSkinName, type SkinName } from "@/lib/skins";
+
 // Runtime configuration access layer.
 // Priority: window.__RUNTIME_CONFIG__ (injected by the container entrypoint) > build-time VITE_ variables > defaults.
 // This supports both configuring the same image with docker run -e and injecting values during custom builds.
@@ -11,6 +13,7 @@ type RuntimeConfig = {
     MAIN_SITE_URL?: string; // Main site users register / buy plans / manage keys on (e.g. https://hivegpt.cn)
     MAIN_SITE_NAME?: string; // Display name of the main site
     MAIN_SITE_API_BASE_URL?: string; // Default OpenAI-compatible endpoint (usually the main site's gateway)
+    DEFAULT_SKIN?: string; // Default color skin for first-time visitors (classic/nebula/ocean/forest/sunset/sakura)
 };
 
 declare global {
@@ -58,3 +61,7 @@ export function isMainSiteBaseUrl(baseUrl: string): boolean {
     const host = hostOf(baseUrl);
     return Boolean(host) && host === hostOf(MAIN_SITE_API_BASE_URL);
 }
+
+const configuredSkin = read("DEFAULT_SKIN", import.meta.env.VITE_DEFAULT_SKIN, DEFAULT_SKIN);
+/** Skin used before the visitor picks one. */
+export const DEFAULT_SKIN_NAME: SkinName = isSkinName(configuredSkin) ? configuredSkin : DEFAULT_SKIN;

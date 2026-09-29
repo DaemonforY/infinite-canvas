@@ -331,6 +331,18 @@ export default {
         assets: "我的资产",
         config: "配置",
     },
+    skins: {
+        title: "皮肤",
+        hint: "选择界面配色，与明暗模式搭配使用",
+        names: {
+            classic: "经典",
+            nebula: "星云紫",
+            ocean: "深海蓝",
+            forest: "森林绿",
+            sunset: "落日橙",
+            sakura: "樱花粉",
+        },
+    },
     topNav: {
         openMenu: "打开导航菜单",
         menu: "导航菜单",

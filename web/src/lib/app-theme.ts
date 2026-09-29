@@ -1,6 +1,8 @@
 import type { ThemeConfig } from "antd";
 import { theme as antdTheme } from "antd";
 
+import { SKINS, hexToRgba, tone, type SkinName } from "@/lib/skins";
+
 const neutral = {
     light: {
         primary: "#171717",
@@ -28,12 +30,34 @@ const neutral = {
     },
 };
 
-export function getAntThemeConfig(dark: boolean): ThemeConfig {
-    const color = dark ? neutral.dark : neutral.light;
+type AntPalette = (typeof neutral)["light"];
+
+/** antd palette for a skin; the classic skin keeps the original black / white primary. */
+function skinPalette(dark: boolean, skinName: SkinName): AntPalette {
+    const skin = SKINS[skinName] ?? SKINS.classic;
+    if (skin.tint === 0) return dark ? neutral.dark : neutral.light;
+    const primary = dark ? skin.accent : skin.accentStrong;
+    return {
+        primary,
+        primaryHover: dark ? skin.accentLight : skin.accent,
+        primaryText: "#ffffff",
+        elevatedBg: dark ? tone(skin, 0.22, 0.03) : "#ffffff",
+        itemHoverBg: hexToRgba(skin.accent, dark ? 0.12 : 0.07),
+        itemSelectedBg: hexToRgba(skin.accent, dark ? 0.2 : 0.12),
+        itemSelectedHoverBg: hexToRgba(skin.accent, dark ? 0.26 : 0.16),
+        itemText: dark ? "#fafafa" : tone(skin, 0.22, 0.03),
+        tableSelectedBg: hexToRgba(skin.accent, dark ? 0.12 : 0.06),
+        tableSelectedHoverBg: hexToRgba(skin.accent, dark ? 0.18 : 0.1),
+    };
+}
+
+export function getAntThemeConfig(dark: boolean, skinName: SkinName = "classic"): ThemeConfig {
+    const color = skinPalette(dark, skinName);
+    const darkColor = skinPalette(true, skinName);
 
     return {
         algorithm: dark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
-        cssVar: { key: dark ? "infinite-canvas-dark" : "infinite-canvas-light" },
+        cssVar: { key: `infinite-canvas-${dark ? "dark" : "light"}-${skinName}` },
         token: {
             colorPrimary: color.primary,
             colorInfo: color.primary,
@@ -63,10 +87,10 @@ export function getAntThemeConfig(dark: boolean): ThemeConfig {
                 itemHoverBg: color.itemHoverBg,
                 itemSelectedBg: color.itemSelectedBg,
                 itemSelectedColor: color.itemText,
-                darkPopupBg: neutral.dark.elevatedBg,
-                darkItemHoverBg: neutral.dark.itemHoverBg,
-                darkItemSelectedBg: neutral.dark.itemSelectedBg,
-                darkItemSelectedColor: neutral.dark.itemText,
+                darkPopupBg: darkColor.elevatedBg,
+                darkItemHoverBg: darkColor.itemHoverBg,
+                darkItemSelectedBg: darkColor.itemSelectedBg,
+                darkItemSelectedColor: darkColor.itemText,
             },
             Select: {
                 optionActiveBg: color.itemHoverBg,

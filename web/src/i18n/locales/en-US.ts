@@ -331,6 +331,18 @@ export default {
         assets: "My Assets",
         config: "Settings",
     },
+    skins: {
+        title: "Skin",
+        hint: "Pick a color skin; it combines with light / dark mode",
+        names: {
+            classic: "Classic",
+            nebula: "Nebula",
+            ocean: "Ocean",
+            forest: "Forest",
+            sunset: "Sunset",
+            sakura: "Sakura",
+        },
+    },
     topNav: {
         openMenu: "Open navigation menu",
         menu: "Navigation menu",

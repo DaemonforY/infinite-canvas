@@ -17,4 +17,6 @@ interface ImportMetaEnv {
     readonly VITE_MAIN_SITE_NAME?: string;
     /** Default OpenAI-compatible endpoint (default: main site URL) */
     readonly VITE_MAIN_SITE_API_BASE_URL?: string;
+    /** Default color skin (default nebula) */
+    readonly VITE_DEFAULT_SKIN?: string;
 }
