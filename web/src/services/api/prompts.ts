@@ -3,6 +3,7 @@ import localforage from "localforage";
 import { runPromptSource, type RawPrompt } from "./prompt-source-runtime";
 import { usePromptSourceStore } from "@/stores/use-prompt-source-store";
 import i18n from "@/i18n";
+import { proxiedImageUrl } from "@/constant/runtime-config";
 import type { PromptSource } from "./prompt-source-presets";
 
 export type Prompt = RawPrompt & {
@@ -64,11 +65,29 @@ function sourceSignature(source: PromptSource) {
     return `${value.length}:${hash}`;
 }
 
+// GitHub README images are served through camo.githubusercontent.com; many of those
+// proxy links now return 403 while the original still loads. The hex path segment is the original URL.
+export function unwrapCamoUrl(url: string): string {
+    const match = /^https:\/\/camo\.githubusercontent\.com\/[0-9a-f]+\/([0-9a-f]+)$/i.exec(url);
+    if (!match || match[1].length % 2) return url;
+    try {
+        const decoded = new TextDecoder().decode(new Uint8Array(match[1].match(/../g)!.map((byte) => Number.parseInt(byte, 16))));
+        return /^https?:\/\//i.test(decoded) ? decoded : url;
+    } catch {
+        return url;
+    }
+}
+
+function displayImageUrl(url: string): string {
+    return proxiedImageUrl(unwrapCamoUrl(url));
+}
+
 function withSourceMeta(source: PromptSource, items: RawPrompt[]): Prompt[] {
     return items.map((item) => ({
         ...item,
+        coverUrl: displayImageUrl(item.coverUrl || ""),
         description: item.description || "",
-        referenceImageUrls: Array.isArray(item.referenceImageUrls) ? item.referenceImageUrls : [],
+        referenceImageUrls: Array.isArray(item.referenceImageUrls) ? item.referenceImageUrls.map(displayImageUrl) : [],
         sourceId: source.id,
         category: source.name,
         githubUrl: item.sourceUrl || source.homepage,

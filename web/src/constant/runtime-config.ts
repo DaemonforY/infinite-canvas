@@ -15,6 +15,7 @@ type RuntimeConfig = {
     MAIN_SITE_API_BASE_URL?: string; // Default OpenAI-compatible endpoint (usually the main site's gateway)
     PARTNER_SITES?: string; // Sister sites that also sell keys: "Name|https://url,Name2|https://url2"
     DEFAULT_SKIN?: string; // Default color skin for first-time visitors (classic/nebula/ocean/forest/sunset/sakura)
+    IMAGE_PROXY?: string; // "on": load prompt-library images through this site's /img-proxy/ relay (see nginx.conf)
 };
 
 declare global {
@@ -102,3 +103,21 @@ export function partnerSiteLink(site: PartnerSite, path: string, medium: string)
 const configuredSkin = read("DEFAULT_SKIN", import.meta.env.VITE_DEFAULT_SKIN, DEFAULT_SKIN);
 /** Skin used before the visitor picks one. */
 export const DEFAULT_SKIN_NAME: SkinName = isSkinName(configuredSkin) ? configuredSkin : DEFAULT_SKIN;
+
+// Prompt-library images hosted on these domains are unreachable from some networks (e.g. mainland
+// China). With IMAGE_PROXY=on they are loaded through the same-origin /img-proxy/ relay instead.
+// Keep this list in sync with the allowlist in nginx.conf.
+export const IMAGE_PROXY_ENABLED = /^(1|on|true|yes)$/i.test(read("IMAGE_PROXY", import.meta.env.VITE_IMAGE_PROXY));
+const PROXIED_IMAGE_HOSTS = new Set(["raw.githubusercontent.com", "pbs.twimg.com", "cms-assets.youmind.com", "cdn.imgedify.com", "bibigpt-apps.chatvid.ai", "cdn.jsdelivr.net"]);
+
+/** Rewrites an allowlisted https image URL to the relay; returns other URLs unchanged. */
+export function proxiedImageUrl(url: string): string {
+    if (!IMAGE_PROXY_ENABLED || !url || typeof window === "undefined") return url;
+    try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== "https:" || parsed.port || !PROXIED_IMAGE_HOSTS.has(parsed.host)) return url;
+        return `${window.location.origin}/img-proxy/${parsed.host}${parsed.pathname}${parsed.search}`;
+    } catch {
+        return url;
+    }
+}

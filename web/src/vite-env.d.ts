@@ -21,4 +21,5 @@ interface ImportMetaEnv {
     readonly VITE_DEFAULT_SKIN?: string;
     /** Sister sites: "Name|https://url,Name2|https://url2" */
     readonly VITE_PARTNER_SITES?: string;
+    readonly VITE_IMAGE_PROXY?: string;
 }
