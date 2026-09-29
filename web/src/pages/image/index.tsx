@@ -67,6 +67,17 @@ const LOG_STORE_KEY = "infinite-canvas:image_generation_logs";
 const RESULT_ACTION_BUTTON_CLASS = "min-w-0 px-1.5 [&_.ant-btn-icon]:shrink-0 [&>span:last-child]:min-w-0 [&>span:last-child]:truncate";
 const logStore = localforage.createInstance({ name: "infinite-canvas", storeName: "image_generation_logs" });
 
+function readInitialPromptParam(): string {
+    if (typeof window === "undefined") return "";
+    const params = new URLSearchParams(window.location.search);
+    const value = (params.get("prompt") || "").slice(0, 4000);
+    if (!value) return "";
+    params.delete("prompt");
+    const query = params.toString();
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`);
+    return value;
+}
+
 export default function ImagePage() {
     const { message } = App.useApp();
     const { t } = useTranslation();
@@ -79,7 +90,8 @@ export default function ImagePage() {
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const addAsset = useAssetStore((state) => state.addAsset);
-    const [prompt, setPrompt] = useState("");
+    // ?prompt= lets the main site deep-link here with a prompt pre-filled (text only; the param is then removed from the URL).
+    const [prompt, setPrompt] = useState(readInitialPromptParam);
     const [references, setReferences] = useState<ReferenceImage[]>([]);
     const [results, setResults] = useState<GenerationResult[]>([]);
     const [logs, setLogs] = useState<GenerationLog[]>([]);
