@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Plus, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
-import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Tag, Typography } from "antd";
+import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Popconfirm, Tag, Typography } from "antd";
 import localforage from "localforage";
 import { nanoid } from "nanoid";
 import { saveAs } from "file-saver";
@@ -454,6 +454,13 @@ export default function VideoPage() {
                                 <div className="mb-2 flex items-center justify-between gap-3">
                                     <span className="text-base font-semibold">{t("videoWorkbench.references")}</span>
                                     <div className="flex gap-2">
+                                        {references.length ? (
+                                            <Popconfirm title={t("workbench.clearReferencesConfirm", { count: references.length })} okText={t("workbench.clearReferences")} cancelText={t("common.cancel")} okButtonProps={{ danger: true }} onConfirm={() => setReferences([])}>
+                                                <Button size="small" danger icon={<Trash2 className="size-3.5" />} data-testid="references-clear">
+                                                    {t("workbench.clearReferences")}
+                                                </Button>
+                                            </Popconfirm>
+                                        ) : null}
                                         <Button size="small" icon={<ClipboardPaste className="size-3.5" />} onClick={() => void addReferencesFromClipboard()}>
                                             {t("workbench.clipboard")}
                                         </Button>
@@ -477,7 +484,7 @@ export default function VideoPage() {
                                             <img src={previewUrlFor(item.storageKey) || item.dataUrl} alt={item.name} className="size-full object-cover" />
                                             <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">{index + 1}</span>
                                             <ReferenceOrderButtons index={index} total={references.length} onMove={(offset) => setReferences((value) => moveListItem(value, index, offset))} />
-                                            <button type="button" className="absolute right-1 top-1 hidden size-6 items-center justify-center rounded bg-black/60 text-white group-hover:flex" onClick={() => setReferences((value) => value.filter((ref) => ref.id !== item.id))} aria-label={t("videoWorkbench.removeImage")}>
+                                            <button type="button" className="absolute right-1 top-1 flex size-6 items-center justify-center rounded-full bg-black/55 text-white shadow-sm transition hover:bg-red-600 focus-visible:ring-2 focus-visible:ring-white" onClick={() => setReferences((value) => value.filter((ref) => ref.id !== item.id))} aria-label={t("videoWorkbench.removeImage")} title={t("videoWorkbench.removeImage")} data-testid="reference-remove">
                                                 <Trash2 className="size-3.5" />
                                             </button>
                                         </div>

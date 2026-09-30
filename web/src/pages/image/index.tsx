@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Trophy, Upload, Wand2 } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Tag, Tooltip, Typography } from "antd";
+import { App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Popconfirm, Tag, Tooltip, Typography } from "antd";
 import localforage from "localforage";
 import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
@@ -514,6 +514,13 @@ export default function ImagePage() {
                                 <div className="mb-2 flex items-center justify-between gap-3">
                                     <span className="text-base font-semibold">{t("imageWorkbench.references")}</span>
                                     <div className="flex gap-2">
+                                        {references.length ? (
+                                            <Popconfirm title={t("workbench.clearReferencesConfirm", { count: references.length })} okText={t("workbench.clearReferences")} cancelText={t("common.cancel")} okButtonProps={{ danger: true }} onConfirm={() => setReferences([])}>
+                                                <Button size="small" danger icon={<Trash2 className="size-3.5" />} data-testid="references-clear">
+                                                    {t("workbench.clearReferences")}
+                                                </Button>
+                                            </Popconfirm>
+                                        ) : null}
                                         <Button size="small" icon={<ClipboardPaste className="size-3.5" />} onClick={() => void addReferencesFromClipboard()}>
                                             {t("workbench.clipboard")}
                                         </Button>
@@ -557,9 +564,11 @@ export default function ImagePage() {
                                             <ReferenceOrderButtons index={index} total={references.length} onMove={(offset) => setReferences((value) => moveListItem(value, index, offset))} />
                                             <button
                                                 type="button"
-                                                className="absolute right-1 top-1 hidden size-6 items-center justify-center rounded bg-black/60 text-white group-hover:flex"
+                                                className="absolute right-1 top-1 flex size-6 items-center justify-center rounded-full bg-black/55 text-white shadow-sm transition hover:bg-red-600 focus-visible:ring-2 focus-visible:ring-white"
                                                 onClick={() => setReferences((value) => value.filter((ref) => ref.id !== item.id))}
                                                 aria-label={t("imageWorkbench.removeReference")}
+                                                title={t("imageWorkbench.removeReference")}
+                                                data-testid="reference-remove"
                                             >
                                                 <Trash2 className="size-3.5" />
                                             </button>

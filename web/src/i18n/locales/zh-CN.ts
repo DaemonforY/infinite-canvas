@@ -205,6 +205,8 @@ export default {
         draftReferences: "{{count}} 张参考图",
         draftRestored: "已恢复你之前填写的提示词",
         editedDraft: "提示词已修改，未重新生成",
+        clearReferences: "清空",
+        clearReferencesConfirm: "移除全部 {{count}} 张参考图？",
         new: "新建",
         selectAll: "全选",
         noLogs: "暂无生成记录",

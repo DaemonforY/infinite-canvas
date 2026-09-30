@@ -205,6 +205,8 @@ export default {
         draftReferences: "{{count}} reference images",
         draftRestored: "Restored the prompt you were writing",
         editedDraft: "Prompt edited, not regenerated",
+        clearReferences: "Clear",
+        clearReferencesConfirm: "Remove all {{count}} reference images?",
         new: "New",
         selectAll: "Select all",
         noLogs: "No generation history",
