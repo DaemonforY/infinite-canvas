@@ -18,6 +18,10 @@ import { resolveImageUrl, ensureImagePreview, getImagePreviewRevision, previewUr
 import { createVideoGenerationTask, pollVideoGenerationTask, storeGeneratedVideo, type VideoGenerationTask } from "@/services/api/video";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
+import { readWorkbenchDraft, useWorkbenchDraftStore } from "@/stores/use-workbench-draft-store";
+import { restoreDraftReferences, useWorkbenchDraft } from "@/hooks/use-workbench-draft";
+import { isEmptyDraft, NEW_SESSION_KEY } from "@/lib/workbench-drafts";
+import { DraftSessionCard } from "@/components/workbench/draft-session-card";
 import { boolConfig, modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
 import i18n from "@/i18n";
@@ -79,7 +83,8 @@ export default function VideoPage() {
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const addAsset = useAssetStore((state) => state.addAsset);
-    const [prompt, setPrompt] = useState("");
+    // Restores the prompt the user left in the new-session draft (see use-workbench-draft).
+    const [prompt, setPrompt] = useState(() => readWorkbenchDraft("video")?.prompt || "");
     const [references, setReferences] = useState<ReferenceImage[]>([]);
     const [results, setResults] = useState<GenerationResult[]>([]);
     const [logs, setLogs] = useState<GenerationLog[]>([]);
@@ -100,6 +105,26 @@ export default function VideoPage() {
     const updateAgentTask = useWorkbenchAgentStore((state) => state.updateTask);
     const processedCommandRef = useRef(0);
     const agentTaskIdRef = useRef<string | undefined>(undefined);
+    const sessionKey = previewLog?.id ?? NEW_SESSION_KEY;
+    const draftStore = useWorkbenchDraft({ kind: "video", sessionKey, prompt, references, baseline: previewLog ? { prompt: previewLog.prompt, references: previewLog.references || [] } : undefined });
+    const videoDrafts = useWorkbenchDraftStore((state) => state.drafts.video);
+    const newSessionDraft = videoDrafts[NEW_SESSION_KEY];
+
+    // Bring back the reference images of the new-session draft once, then start saving.
+    useEffect(() => {
+        let cancelled = false;
+        void restoreDraftReferences(readWorkbenchDraft<ReferenceImage>("video"))
+            .then((restored) => {
+                if (!cancelled && restored.length) setReferences((current) => (current.length ? current : restored));
+            })
+            .finally(() => {
+                if (!cancelled) draftStore.markHydrated();
+            });
+        return () => {
+            cancelled = true;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const model = effectiveConfig.videoModel || effectiveConfig.model;
     const canGenerate = Boolean(prompt.trim());
@@ -264,9 +289,14 @@ export default function VideoPage() {
         setAssetPickerOpen(false);
     };
 
+    // From a log: go back to the draft the user was writing. Already in the draft: start a fresh one.
     const createSession = () => {
-        setPrompt("");
+        const saved = previewLog ? readWorkbenchDraft<ReferenceImage>("video") : undefined;
+        if (!previewLog) draftStore.discard(NEW_SESSION_KEY);
+        setPrompt(saved?.prompt || "");
         setReferences([]);
+        if (saved?.references.length) void restoreDraftReferences(saved).then(setReferences);
+        if (saved && !isEmptyDraft(saved)) message.info(t("workbench.draftRestored"));
         setResults([]);
         setElapsedMs(0);
         setStartedAt(0);
@@ -275,6 +305,7 @@ export default function VideoPage() {
     };
 
     const deleteSelectedLogs = () => {
+        selectedLogIds.forEach((id) => draftStore.discard(id));
         const mediaKeys = logs
             .filter((log) => selectedLogIds.includes(log.id))
             .map((log) => log.video?.storageKey)
@@ -356,8 +387,11 @@ export default function VideoPage() {
     const previewGenerationLog = (log: GenerationLog) => {
         setPreviewLog(log);
         setLogsOpen(false);
-        setPrompt(log.prompt);
-        setReferences(log.references || []);
+        // Unsaved edits the user made to this log's prompt win over the log itself.
+        const saved = readWorkbenchDraft<ReferenceImage>("video", log.id);
+        setPrompt(saved ? saved.prompt : log.prompt);
+        setReferences(saved ? [] : log.references || []);
+        if (saved?.references.length) void restoreDraftReferences(saved).then(setReferences);
         if (log.config.videoModel || log.model) updateConfig("videoModel", log.config.videoModel || log.model);
         if (log.config.size) updateConfig("size", log.config.size);
         if (log.config.vquality) updateConfig("vquality", log.config.vquality);
@@ -372,10 +406,10 @@ export default function VideoPage() {
         <div className="flex h-full flex-col overflow-hidden bg-stone-50 text-stone-900 dark:bg-stone-950 dark:text-stone-100">
             <main className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 lg:grid-cols-[300px_minmax(0,1fr)] lg:overflow-hidden xl:grid-cols-[320px_minmax(0,1fr)]">
                 <aside className="thin-scrollbar hidden min-h-0 overflow-y-auto rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:block">
-                    <LogPanel logs={logs} selectedLogIds={selectedLogIds} activeLogId={previewLog?.id} onSelectedLogIdsChange={setSelectedLogIds} onCreateSession={createSession} onDeleteSelected={() => setDeleteConfirmOpen(true)} onPreviewLog={previewGenerationLog} />
+                    <LogPanel logs={logs} selectedLogIds={selectedLogIds} activeLogId={previewLog?.id} draft={newSessionDraft} editedLogIds={videoDrafts} onOpenDraft={() => { setLogsOpen(false); if (previewLog) createSession(); }} onSelectedLogIdsChange={setSelectedLogIds} onCreateSession={createSession} onDeleteSelected={() => setDeleteConfirmOpen(true)} onPreviewLog={previewGenerationLog} />
                 </aside>
 
-                <section className="grid gap-3 lg:min-h-0 lg:overflow-hidden xl:grid-cols-[420px_minmax(0,1fr)]">
+                <section className="grid grid-cols-1 gap-3 lg:min-h-0 lg:overflow-hidden xl:grid-cols-[420px_minmax(0,1fr)]">
                     <div className="thin-scrollbar flex flex-col rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:min-h-0 lg:overflow-y-auto">
                         <div className="flex items-start justify-between gap-3">
                             <h1 className="text-2xl font-semibold text-stone-950 dark:text-stone-100">{t("videoWorkbench.title")}</h1>
@@ -492,7 +526,7 @@ export default function VideoPage() {
                 }}
             />
             <Drawer title={t("workbench.logs")} placement="bottom" size="large" open={logsOpen} onClose={() => setLogsOpen(false)}>
-                <LogPanel logs={logs} selectedLogIds={selectedLogIds} activeLogId={previewLog?.id} onSelectedLogIdsChange={setSelectedLogIds} onCreateSession={createSession} onDeleteSelected={() => setDeleteConfirmOpen(true)} onPreviewLog={previewGenerationLog} />
+                <LogPanel logs={logs} selectedLogIds={selectedLogIds} activeLogId={previewLog?.id} draft={newSessionDraft} editedLogIds={videoDrafts} onOpenDraft={() => { setLogsOpen(false); if (previewLog) createSession(); }} onSelectedLogIdsChange={setSelectedLogIds} onCreateSession={createSession} onDeleteSelected={() => setDeleteConfirmOpen(true)} onPreviewLog={previewGenerationLog} />
             </Drawer>
             <Drawer title={t("workbench.settings")} placement="bottom" height="82vh" open={settingsOpen} onClose={() => setSettingsOpen(false)}>
                 <div className="grid grid-cols-2 gap-3 pb-4">
@@ -586,6 +620,9 @@ function LogPanel({
     logs,
     selectedLogIds,
     activeLogId,
+    draft,
+    editedLogIds,
+    onOpenDraft,
     onSelectedLogIdsChange,
     onCreateSession,
     onDeleteSelected,
@@ -594,6 +631,9 @@ function LogPanel({
     logs: GenerationLog[];
     selectedLogIds: string[];
     activeLogId?: string;
+    draft?: { prompt: string; references: unknown[] };
+    editedLogIds: Record<string, unknown>;
+    onOpenDraft: () => void;
     onSelectedLogIdsChange: (ids: string[]) => void;
     onCreateSession: () => void;
     onDeleteSelected: () => void;
@@ -621,8 +661,9 @@ function LogPanel({
                 </Button>
             </div>
             <div className="space-y-3">
+                {draft && (draft.prompt.trim() || draft.references.length) ? <DraftSessionCard prompt={draft.prompt} referenceCount={draft.references.length} active={!activeLogId} onClick={onOpenDraft} /> : null}
                 {logs.map((log) => (
-                    <LogCard key={log.id} log={log} selected={selectedLogIds.includes(log.id)} active={activeLogId === log.id} onSelectedChange={(checked) => onSelectedLogIdsChange(checked ? [...selectedLogIds, log.id] : selectedLogIds.filter((id) => id !== log.id))} onClick={() => onPreviewLog(log)} />
+                    <LogCard key={log.id} log={log} edited={log.id in editedLogIds} selected={selectedLogIds.includes(log.id)} active={activeLogId === log.id} onSelectedChange={(checked) => onSelectedLogIdsChange(checked ? [...selectedLogIds, log.id] : selectedLogIds.filter((id) => id !== log.id))} onClick={() => onPreviewLog(log)} />
                 ))}
                 {!logs.length ? <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-stone-300 text-center text-sm text-stone-500 dark:border-stone-700">{t("workbench.noLogs")}</div> : null}
             </div>
@@ -630,7 +671,7 @@ function LogPanel({
     );
 }
 
-function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: GenerationLog; selected: boolean; active: boolean; onSelectedChange: (checked: boolean) => void; onClick: () => void }) {
+function LogCard({ log, edited, selected, active, onSelectedChange, onClick }: { log: GenerationLog; edited: boolean; selected: boolean; active: boolean; onSelectedChange: (checked: boolean) => void; onClick: () => void }) {
     const { t } = useTranslation();
     return (
         <button type="button" className={`block w-full rounded-lg border p-2 text-left transition ${active ? "border-stone-900 bg-blue-50 dark:border-stone-100 dark:bg-blue-950/20" : "border-stone-200 bg-background hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-900"}`} onClick={onClick}>
@@ -638,6 +679,7 @@ function LogCard({ log, selected, active, onSelectedChange, onClick }: { log: Ge
                 <Checkbox className="mt-0.5" checked={selected} onClick={(event) => event.stopPropagation()} onChange={(event) => onSelectedChange(event.target.checked)} />
                 <div className="min-w-0">
                     <div className="truncate text-sm font-semibold leading-5">{log.title}</div>
+                    {edited ? <div className="mt-0.5 text-[11px] leading-4 text-amber-600 dark:text-amber-400">{t("workbench.editedDraft")}</div> : null}
                     <div className="mt-2 flex flex-wrap gap-1">
                         <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none">{log.size}</Tag>
                         <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none">{log.resolution}p</Tag>

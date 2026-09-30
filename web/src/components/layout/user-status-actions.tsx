@@ -17,11 +17,13 @@ import { useThemeStore } from "@/stores/use-theme-store";
 type UserStatusActionsProps = {
     showConfig?: boolean;
     variant?: "default" | "canvas";
+    /** Hide docs / language / skin / version / main-site icons below md (the menu drawer has them). */
+    collapseOnMobile?: boolean;
     onOpenShortcuts?: () => void;
     onOpenPlugins?: () => void;
 };
 
-export function UserStatusActions({ showConfig = true, variant = "default", onOpenShortcuts, onOpenPlugins }: UserStatusActionsProps) {
+export function UserStatusActions({ showConfig = true, variant = "default", collapseOnMobile = false, onOpenShortcuts, onOpenPlugins }: UserStatusActionsProps) {
     const { i18n, t } = useTranslation();
     const theme = useThemeStore((state) => state.theme);
     const setTheme = useThemeStore((state) => state.setTheme);
@@ -35,6 +37,8 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const locale = i18n.resolvedLanguage as AppLocale;
     const nextLocale = locale === "zh-CN" ? "en-US" : "zh-CN";
     const languageLabel = t("topNav.switchLanguage", { language: t(nextLocale === "zh-CN" ? "locale.zhCN" : "locale.enUS") });
+    // On phones the top bar has no room for every icon; the secondary ones live in the menu drawer.
+    const secondary = collapseOnMobile ? "hidden md:inline-flex" : "";
 
     return (
         <div className="inline-flex shrink-0 items-center gap-1">
@@ -43,7 +47,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                     <Puzzle className="size-4" />
                 </button>
             ) : null}
-            <a href={DOCS_URL} target="_blank" rel="noopener noreferrer" className={naturalIconClass} style={iconStyle} aria-label={t("topNav.docs")} title={t("topNav.docs")}>
+            <a href={DOCS_URL} target="_blank" rel="noopener noreferrer" className={cn(naturalIconClass, secondary)} style={iconStyle} aria-label={t("topNav.docs")} title={t("topNav.docs")}>
                 <BookOpen className="size-4" />
             </a>
             {showConfig ? (
@@ -52,14 +56,20 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                 </button>
             ) : null}
             <Tooltip title={languageLabel} mouseEnterDelay={0.2}>
-                <button type="button" className={`${naturalIconClass} text-[11px] font-semibold tracking-tight`} style={iconStyle} onClick={() => void changeAppLocale(nextLocale)} aria-label={languageLabel}>
+                <button type="button" className={cn(naturalIconClass, "text-[11px] font-semibold tracking-tight", secondary)} style={iconStyle} onClick={() => void changeAppLocale(nextLocale)} aria-label={languageLabel}>
                     {locale === "zh-CN" ? "中" : "EN"}
                 </button>
             </Tooltip>
-            <SkinPicker className={naturalIconClass} style={iconStyle} />
+            <SkinPicker className={cn(naturalIconClass, secondary)} style={iconStyle} />
             <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className={naturalIconClass} style={iconStyle} aria-label={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} title={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} />
-            <VersionReleaseModal style={versionStyle} />
-            <MainSiteLink className={cn("bg-transparent hover:bg-transparent dark:hover:bg-transparent", mainSiteClassName)} style={mainSiteStyle} medium={variant === "canvas" ? "canvas-nav" : "top-nav"} />
+            {secondary ? (
+                <span className={secondary}>
+                    <VersionReleaseModal style={versionStyle} />
+                </span>
+            ) : (
+                <VersionReleaseModal style={versionStyle} />
+            )}
+            <MainSiteLink className={cn("bg-transparent hover:bg-transparent dark:hover:bg-transparent", mainSiteClassName, secondary)} style={mainSiteStyle} medium={variant === "canvas" ? "canvas-nav" : "top-nav"} />
             {onOpenShortcuts ? (
                 <button type="button" className={naturalIconClass} style={iconStyle} onClick={onOpenShortcuts} aria-label={t("topNav.shortcuts")} title={t("topNav.shortcuts")}>
                     <Keyboard className="size-4" />
