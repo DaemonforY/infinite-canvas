@@ -143,10 +143,21 @@ type ConfigStore = {
     importChannelCredentials: (input: { baseUrl?: string | null; apiKey?: string | null }) => ChannelCredentialsImportResult;
     updateWebdavConfig: <K extends keyof WebdavSyncConfig>(key: K, value: WebdavSyncConfig[K]) => void;
     isAiConfigReady: (config: AiConfig, model: string) => boolean;
-    openConfigDialog: (shouldPromptContinue?: boolean, tab?: ConfigTabKey) => void;
+    /**
+     * Opens configuration. While no channel has an API key yet, this opens the quick-start
+     * (connect HiveGPT) dialog instead — pass `{ advanced: true }` to always open the full dialog.
+     */
+    openConfigDialog: (shouldPromptContinue?: boolean, tab?: ConfigTabKey, options?: { advanced?: boolean }) => void;
     setConfigDialogOpen: (isOpen: boolean) => void;
     clearPromptContinue: () => void;
+    isQuickStartOpen: boolean;
+    closeQuickStart: () => void;
 };
+
+/** True once any channel (or the legacy single config) has an API key. */
+export function hasAnyApiKey(config: AiConfig): boolean {
+    return Boolean(config.apiKey?.trim()) || config.channels.some((channel) => channel.apiKey.trim());
+}
 
 const VIDEO_KEYWORDS = ["video", "sora", "veo", "kling", "wan", "hailuo"];
 
@@ -234,7 +245,15 @@ export const useConfigStore = create<ConfigStore>()(
                     },
                 })),
             isAiConfigReady: (config, model) => isAiConfigReady(config, model),
-            openConfigDialog: (shouldPromptContinue = false, configTab = "channels") => set({ isConfigOpen: true, shouldPromptContinue, configTab }),
+            isQuickStartOpen: false,
+            openConfigDialog: (shouldPromptContinue = false, configTab = "channels", options) => {
+                if (!options?.advanced && configTab === "channels" && !hasAnyApiKey(get().config)) {
+                    set({ isQuickStartOpen: true, shouldPromptContinue });
+                    return;
+                }
+                set({ isConfigOpen: true, isQuickStartOpen: false, shouldPromptContinue, configTab });
+            },
+            closeQuickStart: () => set({ isQuickStartOpen: false }),
             setConfigDialogOpen: (isConfigOpen) => set({ isConfigOpen }),
             clearPromptContinue: () => set({ shouldPromptContinue: false }),
         }),

@@ -28,7 +28,8 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
         searchParams.delete("apikey");
         window.history.replaceState(null, "", `${window.location.pathname}${searchParams.size ? `?${searchParams}` : ""}${window.location.hash}`);
         const result = importChannelCredentials({ baseUrl, apiKey });
-        openConfigDialog(false, "channels");
+        // A link with only the endpoint (e.g. from the main site) still needs a key: show the quick start.
+        openConfigDialog(false, "channels", { advanced: Boolean(apiKey) });
         if (result.status === "created") message.success(t("config.importedChannelCreated", { name: result.channelName }));
         else if (result.status === "updated") message.success(t("config.importedChannelUpdated", { name: result.channelName }));
         else if (result.status === "missing-base-url") message.error(t("config.importedChannelBaseUrlRequired"));
