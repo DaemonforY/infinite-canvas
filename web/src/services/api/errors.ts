@@ -98,7 +98,7 @@ export function humanizeErrorMessage(message: string, fallback: string = apiText
     if (!message) return fallback;
     if (produced.has(message)) return message;
     const kind = classifyProviderError(extractApiError(message));
-    if (!kind || kind.key === "unknown") return message;
+    if (!kind || kind.key === "unknown") return stripEnglishOriginal(message);
     return renderKind(kind, fallback);
 }
 

@@ -413,6 +413,9 @@ export default {
         successHint: "作品已展示在 {{site}} 活动页，快去拉票吧",
         pendingTitle: "投稿成功，等待审核",
         pendingHint: "审核通过后会展示在活动页",
+        notOpenYet: "「{{title}}」将于 {{time}} 开始投稿，到时再来投稿吧",
+        loadFailedGeneric: "活动列表加载失败",
+        submitFailed: "投稿失败，请稍后重试",
         viewContest: "查看活动",
     },
     skins: {

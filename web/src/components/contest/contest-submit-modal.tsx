@@ -4,7 +4,8 @@ import { Trophy } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { MAIN_SITE_NAME, mainSiteLink } from "@/constant/runtime-config";
-import { CONTEST_IMAGE_MAX_BYTES, findMainSiteApiKey, listOpenContests, loadImageBlob, mainSiteContestUrl, submitContestEntry, type MainSiteContest } from "@/services/api/main-site-contests";
+import { readAxiosError } from "@/services/api/errors";
+import { CONTEST_IMAGE_MAX_BYTES, findMainSiteApiKey, listSubmittableContests, loadImageBlob, mainSiteContestUrl, submitContestEntry, type MainSiteContest } from "@/services/api/main-site-contests";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useContestSubmitStore } from "@/stores/use-contest-submit-store";
 
@@ -25,6 +26,7 @@ export function ContestSubmitModal() {
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const [form] = Form.useForm<FormValues>();
     const [contests, setContests] = useState<MainSiteContest[] | null>(null);
+    const [upcoming, setUpcoming] = useState<MainSiteContest | null>(null);
     const [loadError, setLoadError] = useState("");
     const [submitting, setSubmitting] = useState(false);
 
@@ -35,16 +37,18 @@ export function ContestSubmitModal() {
         if (!payload) return;
         const controller = new AbortController();
         setContests(null);
+        setUpcoming(null);
         setLoadError("");
         form.setFieldsValue({ contestId: undefined, title: defaultTitle(payload.prompt, payload.title), description: "", prompt: payload.prompt || "" });
-        listOpenContests(controller.signal)
-            .then((list) => {
-                setContests(list);
-                if (list.length === 1) form.setFieldValue("contestId", list[0].id);
+        listSubmittableContests(controller.signal)
+            .then(({ open, upcoming }) => {
+                setContests(open);
+                setUpcoming(upcoming[0] || null);
+                if (open.length === 1) form.setFieldValue("contestId", open[0].id);
             })
             .catch((error: unknown) => {
                 if (controller.signal.aborted) return;
-                setLoadError(error instanceof Error ? error.message : String(error));
+                setLoadError(readAxiosError(error, t("contestSubmit.loadFailedGeneric")));
                 setContests([]);
             });
         return () => controller.abort();
@@ -72,7 +76,7 @@ export function ContestSubmitModal() {
                 closable: true,
             });
         } catch (error) {
-            message.error(error instanceof Error ? error.message : String(error));
+            message.error(readAxiosError(error, t("contestSubmit.submitFailed")));
         } finally {
             setSubmitting(false);
         }
@@ -134,7 +138,15 @@ export function ContestSubmitModal() {
                             <Spin />
                         </div>
                     ) : noContests ? (
-                        <Empty description={loadError ? t("contestSubmit.loadFailed", { error: loadError }) : t("contestSubmit.noContests")}>
+                        <Empty
+                            description={
+                                loadError
+                                    ? t("contestSubmit.loadFailed", { error: loadError })
+                                    : upcoming
+                                      ? t("contestSubmit.notOpenYet", { title: upcoming.title, time: formatStartTime(upcoming.submission_start_at!) })
+                                      : t("contestSubmit.noContests")
+                            }
+                        >
                             <Button href={mainSiteLink("/contests", "contest-submit-empty")} target="_blank" rel="noopener noreferrer">
                                 {t("contestSubmit.browseContests", { site: MAIN_SITE_NAME })}
                             </Button>
@@ -159,4 +171,10 @@ export function ContestSubmitModal() {
             ) : null}
         </Modal>
     );
+}
+
+function formatStartTime(iso: string) {
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return iso;
+    return date.toLocaleString(undefined, { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
 }

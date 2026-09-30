@@ -413,6 +413,9 @@ export default {
         successHint: "Your entry is live on the {{site}} contest page. Go get some votes!",
         pendingTitle: "Submitted, awaiting review",
         pendingHint: "It will appear on the contest page once approved",
+        notOpenYet: "\"{{title}}\" opens for entries at {{time}}. Come back then to submit.",
+        loadFailedGeneric: "Could not load contests",
+        submitFailed: "Submission failed, please try again later",
         viewContest: "View contest",
     },
     skins: {

@@ -10,6 +10,7 @@ export type MainSiteContest = {
     title: string;
     description: string;
     phase: string;
+    submission_start_at?: string;
     submission_end_at: string;
     voting_end_at: string;
     max_entries_per_user: number;
@@ -36,12 +37,16 @@ async function readEnvelope<T>(res: Response): Promise<T> {
     return body.data as T;
 }
 
-/** Contests currently accepting entries. */
-export async function listOpenContests(signal?: AbortSignal): Promise<MainSiteContest[]> {
+/** Contests currently accepting entries, plus the next ones that have not opened yet. */
+export async function listSubmittableContests(signal?: AbortSignal): Promise<{ open: MainSiteContest[]; upcoming: MainSiteContest[] }> {
     const res = await fetch(`${MAIN_SITE_URL}/api/v1/contests`, { signal });
-    const contests = await readEnvelope<MainSiteContest[]>(res);
-    return (contests || []).filter((c) => OPEN_PHASES.has(c.phase));
+    const contests = (await readEnvelope<MainSiteContest[]>(res)) || [];
+    const upcoming = contests
+        .filter((c) => c.phase === "upcoming" && c.submission_start_at)
+        .sort((a, b) => Date.parse(a.submission_start_at!) - Date.parse(b.submission_start_at!));
+    return { open: contests.filter((c) => OPEN_PHASES.has(c.phase)), upcoming };
 }
+
 
 /** API key of the first provider that points at the main-site gateway, if any. */
 export function findMainSiteApiKey(config: AiConfig): string {
