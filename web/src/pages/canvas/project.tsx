@@ -28,6 +28,7 @@ import { CanvasConfigNodePanel } from "@/components/canvas/canvas-config-node-pa
 import { CanvasNodeContextMenu } from "@/components/canvas/canvas-context-menu";
 import { CanvasNodeAngleDialog, type CanvasImageAngleParams } from "@/components/canvas/canvas-node-angle-dialog";
 import { CanvasNodeCropDialog, type CanvasImageCropRect } from "@/components/canvas/canvas-node-crop-dialog";
+import { ImageEditorDialog, type ImageEditorResult } from "@/components/image-editor/image-editor-dialog";
 import { CanvasNodeMaskEditDialog, type CanvasImageMaskEditPayload } from "@/components/canvas/canvas-node-mask-edit-dialog";
 import { CanvasNodeSplitDialog, type CanvasImageSplitParams } from "@/components/canvas/canvas-node-split-dialog";
 import { CanvasNodeUpscaleDialog, type CanvasImageUpscaleParams } from "@/components/canvas/canvas-node-upscale-dialog";
@@ -245,6 +246,7 @@ function InfiniteCanvasPage() {
     const [infoNodeId, setInfoNodeId] = useState<string | null>(null);
     const [pluginManagerOpen, setPluginManagerOpen] = useState(false);
     const [cropNodeId, setCropNodeId] = useState<string | null>(null);
+    const [editNodeId, setEditNodeId] = useState<string | null>(null);
     const [maskEditNodeId, setMaskEditNodeId] = useState<string | null>(null);
     const [splitNodeId, setSplitNodeId] = useState<string | null>(null);
     const [upscaleNodeId, setUpscaleNodeId] = useState<string | null>(null);
@@ -722,6 +724,7 @@ function InfiniteCanvasPage() {
     const toolbarNode = (toolbarNodeId ? nodeById.get(toolbarNodeId) || null : null) || (singleSelectedNodeId ? nodeById.get(singleSelectedNodeId) || null : null);
     const infoNode = infoNodeId ? nodeById.get(infoNodeId) || null : null;
     const cropNode = cropNodeId ? nodeById.get(cropNodeId) || null : null;
+    const editNode = editNodeId ? nodeById.get(editNodeId) || null : null;
     const maskEditNode = maskEditNodeId ? nodeById.get(maskEditNodeId) || null : null;
     const splitNode = splitNodeId ? nodeById.get(splitNodeId) || null : null;
     const upscaleNode = upscaleNodeId ? nodeById.get(upscaleNodeId) || null : null;
@@ -1931,6 +1934,29 @@ function InfiniteCanvasPage() {
         setSelectedNodeIds(new Set([childId]));
         setDialogNodeId(childId);
         setCropNodeId(null);
+    }, []);
+
+    // Image editor output becomes a new node linked to the original (same pattern as crop).
+    const saveEditedImageNode = useCallback(async (node: CanvasNodeData, result: ImageEditorResult) => {
+        const image = await uploadImage(result.blob);
+        const width = Math.min(node.width, Math.max(220, image.width));
+        const childId = nanoid();
+        const child: CanvasNodeData = {
+            id: childId,
+            type: CanvasNodeType.Image,
+            title: "Edited Image",
+            position: { x: node.position.x + node.width + 96, y: node.position.y },
+            width,
+            height: width * (image.height / image.width),
+            metadata: {
+                ...imageMetadata(image),
+                prompt: node.metadata?.prompt,
+            },
+        };
+        setNodes((prev) => [...prev, child]);
+        setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: node.id, toNodeId: childId }]);
+        setSelectedNodeIds(new Set([childId]));
+        setEditNodeId(null);
     }, []);
 
     const splitImageNode = useCallback(
@@ -3268,6 +3294,7 @@ function InfiniteCanvasPage() {
                         if (node.metadata?.content) openContestSubmit({ imageUrl: node.metadata.content, prompt: node.metadata?.prompt, title: node.title });
                     }}
                     onSaveAsset={(node) => void saveNodeAsset(node)}
+                    onEditImage={(node) => setEditNodeId(node.id)}
                     onMaskEdit={(node) => setMaskEditNodeId(node.id)}
                     onCrop={(node) => setCropNodeId(node.id)}
                     onSplit={(node) => setSplitNodeId(node.id)}
@@ -3356,6 +3383,19 @@ function InfiniteCanvasPage() {
                 <CanvasNodeInfoModal node={infoNode} open={Boolean(infoNode)} onClose={() => setInfoNodeId(null)} />
                 <CanvasPluginManagerModal open={pluginManagerOpen} onClose={() => setPluginManagerOpen(false)} />
 
+                {editNode?.metadata?.content ? (
+                    <ImageEditorDialog
+                        open={Boolean(editNode)}
+                        src={editNode.metadata.content}
+                        onClose={() => setEditNodeId(null)}
+                        onSave={(result) => saveEditedImageNode(editNode!, result)}
+                        onMaskEdit={() => {
+                            const id = editNode!.id;
+                            setEditNodeId(null);
+                            setMaskEditNodeId(id);
+                        }}
+                    />
+                ) : null}
                 {cropNode?.metadata?.content ? <CanvasNodeCropDialog dataUrl={cropNode.metadata.content} open={Boolean(cropNode)} onClose={() => setCropNodeId(null)} onConfirm={(crop) => void cropImageNode(cropNode!, crop)} /> : null}
 
                 {maskEditNode?.metadata?.content ? (

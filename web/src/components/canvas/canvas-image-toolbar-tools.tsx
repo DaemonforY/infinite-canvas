@@ -1,15 +1,16 @@
 import type { ReactNode } from "react";
-import { Brush, Camera, Copy, FileText, Grid2x2, Lock, LockOpen, Maximize2, Scissors, Sparkles, Upload, ZoomIn } from "lucide-react";
+import { Brush, Camera, Copy, FileText, Grid2x2, Lock, LockOpen, Maximize2, Scissors, Sparkles, Upload, Wand2, ZoomIn } from "lucide-react";
 
 import type { CanvasNodeData } from "@/types/canvas";
 import i18n from "@/i18n";
 
-export type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "replace" | "resize" | "maskEdit" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "view";
+export type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "replace" | "resize" | "edit" | "maskEdit" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "view";
 export type ImageQuickToolId = "info" | "delete" | "saveAsset" | "download" | ImageNodeActionToolId;
 
 export type ImageToolHandlers = {
     onUpload: (node: CanvasNodeData) => void;
     onToggleFreeResize: (node: CanvasNodeData) => void;
+    onEditImage: (node: CanvasNodeData) => void;
     onMaskEdit: (node: CanvasNodeData) => void;
     onCrop: (node: CanvasNodeData) => void;
     onSplit: (node: CanvasNodeData) => void;
@@ -34,7 +35,11 @@ export type ImageToolDefinition = {
 export type ImageQuickToolsConfig = {
     ids: ImageQuickToolId[];
     showLabels: boolean;
+    /** Bumped when default-visible tools are added, so saved toolbars pick them up once. */
+    toolsVersion?: number;
 };
+
+export const IMAGE_QUICK_TOOLS_VERSION = 2;
 
 export const IMAGE_QUICK_TOOLS_STORAGE_KEY = "canvas-image-quick-tools-v7";
 
@@ -73,6 +78,14 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
         icon: (node) => (node.metadata?.freeResize ? <LockOpen className="size-4" /> : <Lock className="size-4" />),
         active: (node) => Boolean(node.metadata?.freeResize),
         run: (node, handlers) => handlers.onToggleFreeResize(node),
+    },
+    {
+        id: "edit",
+        defaultVisible: true,
+        label: () => i18n.t("imageEditor.open"),
+        title: () => i18n.t("imageEditor.openTitle"),
+        icon: () => <Wand2 className="size-4" />,
+        run: (node, handlers) => handlers.onEditImage(node),
     },
     {
         id: "maskEdit",
@@ -152,13 +165,21 @@ export function normalizeImageQuickToolIds(value: unknown[]) {
 }
 
 export function readImageQuickToolsConfig(value: unknown): ImageQuickToolsConfig {
-    if (Array.isArray(value)) return { ids: normalizeImageQuickToolIds(value), showLabels: false };
-    if (!value || typeof value !== "object") return { ids: defaultImageQuickToolIds, showLabels: false };
+    if (Array.isArray(value)) return { ids: withNewDefaultTools(normalizeImageQuickToolIds(value)), showLabels: false, toolsVersion: IMAGE_QUICK_TOOLS_VERSION };
+    if (!value || typeof value !== "object") return { ids: defaultImageQuickToolIds, showLabels: false, toolsVersion: IMAGE_QUICK_TOOLS_VERSION };
     const data = value as Partial<ImageQuickToolsConfig>;
+    const ids = Array.isArray(data.ids) ? normalizeImageQuickToolIds(data.ids) : defaultImageQuickToolIds;
     return {
-        ids: Array.isArray(data.ids) ? normalizeImageQuickToolIds(data.ids) : defaultImageQuickToolIds,
+        ids: (data.toolsVersion || 1) < IMAGE_QUICK_TOOLS_VERSION ? withNewDefaultTools(ids) : ids,
         showLabels: data.showLabels === true,
+        toolsVersion: IMAGE_QUICK_TOOLS_VERSION,
     };
+}
+
+/** Toolbars saved before version 2 get the new "edit" tool once (users can still hide it). */
+function withNewDefaultTools(ids: ImageQuickToolId[]): ImageQuickToolId[] {
+    if (ids.includes("edit")) return ids;
+    return normalizeImageQuickToolIds([...ids, "edit"]);
 }
 
 function resolveToolText(value: string | ((node: CanvasNodeData) => string), node: CanvasNodeData) {

@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Trophy, Upload } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Trophy, Upload, Wand2 } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Tag, Tooltip, Typography } from "antd";
 import localforage from "localforage";
@@ -6,6 +6,7 @@ import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
 import { ImageSettingsPanel } from "@/components/image-settings-panel";
+import { ImageEditorDialog, type ImageEditorResult } from "@/components/image-editor/image-editor-dialog";
 import { ModelPicker } from "@/components/model-picker";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
@@ -94,6 +95,7 @@ export default function ImagePage() {
     // ?prompt= lets the main site deep-link here with a prompt pre-filled (text only; the param is then removed from the URL).
     const [prompt, setPrompt] = useState(readInitialPromptParam);
     const [references, setReferences] = useState<ReferenceImage[]>([]);
+    const [editing, setEditing] = useState<{ image: GeneratedImage; index: number } | null>(null);
     const [results, setResults] = useState<GenerationResult[]>([]);
     const [logs, setLogs] = useState<GenerationLog[]>([]);
     const [running, setRunning] = useState(false);
@@ -241,6 +243,43 @@ export default function ImagePage() {
         void generate();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [autoRunToken]);
+
+    // Image editor: an edited copy is inserted right after the original and kept in history.
+    const saveEditedImage = async ({ blob }: ImageEditorResult) => {
+        if (!editing) return;
+        const stored = await uploadImage(blob);
+        const edited: GeneratedImage = { id: nanoid(), dataUrl: stored.url, ...(stored.storageKey ? { storageKey: stored.storageKey } : {}), durationMs: 0, width: stored.width, height: stored.height, bytes: stored.bytes, mimeType: stored.mimeType };
+        const at = editing.index + 1;
+        setResults((value) => [...value.slice(0, at), { id: edited.id, status: "success", image: edited }, ...value.slice(at)]);
+        saveLog(
+            buildLog({
+                prompt: t("imageEditor.editedLogPrompt", { prompt: prompt.trim() || t("imageEditor.untitled") }),
+                model,
+                config: { ...effectiveConfig, model, count: "1" },
+                references: [],
+                durationMs: 0,
+                successCount: 1,
+                failCount: 0,
+                status: "success",
+                images: [edited],
+            }),
+        );
+        setEditing(null);
+        message.success(t("imageEditor.saved"));
+    };
+
+    // "AI 修改": use the (edited) image as the only reference, the instruction as the prompt, and run.
+    const aiEditImage = async ({ instruction, image }: { instruction: string; image: ImageEditorResult }) => {
+        if (running) {
+            message.warning(t("imageWorkbench.busy"));
+            return;
+        }
+        const stored = await uploadImage(image.blob);
+        setReferences([{ id: nanoid(), name: "edit-source.png", type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }]);
+        setPrompt(instruction);
+        setEditing(null);
+        setAutoRunToken((value) => value + 1);
+    };
 
     const downloadImage = (image: GeneratedImage, index: number) => {
         saveAs(image.dataUrl, `image-${index + 1}.png`);
@@ -514,7 +553,7 @@ export default function ImagePage() {
                             <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
                                 {results.map((result, index) =>
                                     result.status === "success" && result.image ? (
-                                        <ResultImageCard key={result.id} image={result.image} index={index} onEdit={addResultToReferences} onDownload={downloadImage} onSaveAsset={saveResultToAssets} onSubmitContest={(image) => openContestSubmit({ imageUrl: image.dataUrl, prompt })} />
+                                        <ResultImageCard key={result.id} image={result.image} index={index} onEdit={addResultToReferences} onOpenEditor={(image, i) => setEditing({ image, index: i })} onDownload={downloadImage} onSaveAsset={saveResultToAssets} onSubmitContest={(image) => openContestSubmit({ imageUrl: image.dataUrl, prompt })} />
                                     ) : result.status === "failed" ? (
                                         <FailedImageCard key={result.id} error={result.error || t("workbench.generationFailed")} onRetry={() => retryResult(index)} />
                                     ) : (
@@ -542,6 +581,7 @@ export default function ImagePage() {
                     event.target.value = "";
                 }}
             />
+            <ImageEditorDialog open={Boolean(editing)} src={editing?.image.dataUrl || ""} onClose={() => setEditing(null)} onSave={saveEditedImage} onAiEdit={aiEditImage} />
             <Drawer title={t("workbench.logs")} placement="bottom" size="large" open={logsOpen} onClose={() => setLogsOpen(false)}>
                 <LogPanel
                     logs={logs}
@@ -588,6 +628,7 @@ function ResultImageCard({
     image,
     index,
     onEdit,
+    onOpenEditor,
     onDownload,
     onSaveAsset,
     onSubmitContest,
@@ -595,6 +636,7 @@ function ResultImageCard({
     image: GeneratedImage;
     index: number;
     onEdit: (image: GeneratedImage, index: number) => void;
+    onOpenEditor: (image: GeneratedImage, index: number) => void;
     onDownload: (image: GeneratedImage, index: number) => void;
     onSaveAsset: (image: GeneratedImage, index: number) => void;
     onSubmitContest: (image: GeneratedImage) => void;
@@ -612,7 +654,12 @@ function ResultImageCard({
                     <span>{formatBytes(image.bytes)}</span>
                     <span>{formatDuration(image.durationMs)}</span>
                 </div>
-                <div className="grid min-w-0 grid-cols-3 gap-2">
+                <div className="grid min-w-0 grid-cols-2 gap-2">
+                    <Tooltip title={t("imageEditor.openTitle")}>
+                        <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<Wand2 className="size-3.5" />} onClick={() => onOpenEditor(image, index)} data-testid="result-open-editor">
+                            {t("imageEditor.open")}
+                        </Button>
+                    </Tooltip>
                     <Tooltip title={t("common.addToAssets")}>
                         <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<FolderPlus className="size-3.5" />} onClick={() => void onSaveAsset(image, index)}>
                             {t("common.addToAssets")}
