@@ -1,54 +1,115 @@
-import { Copy, FileText } from "lucide-react";
-import { type ReactNode, useState } from "react";
-import { Button, Card, Tag } from "antd";
+import { Copy, FileText, FolderPlus, ImagePlus, Star, Wand2 } from "lucide-react";
+import { useState } from "react";
+import { Button, Card, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
-import { formatPromptDate, type Prompt } from "@/services/api/prompts";
+import { cn } from "@/lib/utils";
+import type { Prompt } from "@/services/api/prompts";
+import { PromptBadges } from "./prompt-badges";
 
 export function PromptCard({
     item,
+    favorite = false,
     onOpen,
+    onDraw,
     onCopy,
-    actionLabel,
-    actionIcon = <Copy className="size-3.5" />,
-    actionType = "text",
-    extraAction,
+    onFavorite,
+    onSaveAsset,
     compact = false,
 }: {
     item: Prompt;
+    favorite?: boolean;
     onOpen: () => void;
-    onCopy: () => void;
-    actionLabel?: string;
-    actionIcon?: ReactNode;
-    actionType?: "text" | "primary";
-    extraAction?: ReactNode;
+    onDraw?: () => void;
+    onCopy?: () => void;
+    onFavorite?: () => void;
+    onSaveAsset?: () => void;
     compact?: boolean;
 }) {
-    const { i18n, t } = useTranslation();
+    const { t } = useTranslation();
     // Some upstream images have been deleted; fall back to the placeholder instead of a broken image.
     const [failedCover, setFailedCover] = useState("");
     const showCover = Boolean(item.coverUrl) && failedCover !== item.coverUrl;
+    const video = item.traits.scenes[0] === "video";
+
     return (
         <Card
             hoverable
-            className={compact ? "group cursor-pointer overflow-hidden transition-transform duration-200 hover:-translate-y-1" : "flex h-full flex-col overflow-hidden"}
-            styles={{ body: compact ? { padding: 0 } : { display: "flex", flex: 1, flexDirection: "column", padding: 0 } }}
+            className={cn("group flex h-full flex-col overflow-hidden", compact && "cursor-pointer")}
+            styles={{ body: { display: "flex", flex: 1, flexDirection: "column", padding: 0 } }}
             cover={
-                <button type="button" className="block w-full cursor-pointer text-left" onClick={onOpen}>
-                    {showCover ? <img src={item.coverUrl} alt={item.title} className={compact ? "aspect-square w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" : "aspect-[4/3] w-full object-cover"} loading="lazy" onError={() => setFailedCover(item.coverUrl)} /> : <span className={compact ? "grid aspect-square w-full place-items-center bg-stone-100 text-stone-400 dark:bg-stone-900 dark:text-stone-600" : "grid aspect-[4/3] w-full place-items-center bg-stone-100 text-stone-400 dark:bg-stone-900 dark:text-stone-600"}><FileText className="size-8" /></span>}
-                </button>
+                <div className="relative overflow-hidden">
+                    <button type="button" className="block w-full cursor-pointer text-left" onClick={onOpen} aria-label={item.title}>
+                        {showCover ? (
+                            <img
+                                src={item.coverUrl}
+                                alt={item.title}
+                                className={cn("w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]", compact ? "aspect-square" : "aspect-[4/3]")}
+                                loading="lazy"
+                                onError={() => setFailedCover(item.coverUrl)}
+                            />
+                        ) : (
+                            <span className={cn("grid w-full place-items-center bg-stone-100 text-stone-400 dark:bg-stone-900 dark:text-stone-600", compact ? "aspect-square" : "aspect-[4/3]")}>
+                                <FileText className="size-8" />
+                            </span>
+                        )}
+                    </button>
+                    {item.traits.needsReference ? (
+                        <span className="pointer-events-none absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[11px] text-white backdrop-blur">
+                            <ImagePlus className="size-3" />
+                            {t("prompts.needsReference")}
+                        </span>
+                    ) : null}
+                    {onFavorite ? (
+                        <Tooltip title={favorite ? t("prompts.unfavorite") : t("prompts.favorite")}>
+                            <button
+                                type="button"
+                                data-testid="prompt-favorite"
+                                aria-pressed={favorite}
+                                aria-label={favorite ? t("prompts.unfavorite") : t("prompts.favorite")}
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    onFavorite();
+                                }}
+                                className={cn(
+                                    "absolute right-2 top-2 grid size-8 place-items-center rounded-full bg-black/45 text-white backdrop-blur transition-opacity hover:bg-black/65",
+                                    favorite ? "opacity-100" : "opacity-0 focus:opacity-100 group-hover:opacity-100",
+                                )}
+                            >
+                                <Star className={cn("size-4", favorite && "fill-amber-400 text-amber-400")} />
+                            </button>
+                        </Tooltip>
+                    ) : null}
+                </div>
             }
         >
-            <button type="button" className={compact ? "block w-full cursor-pointer text-left" : "block w-full flex-1 cursor-pointer text-left"} onClick={onOpen}>
-                <div className={compact ? "px-3 py-2.5" : "p-4"}>
-                    <div className="flex items-start justify-between gap-3">
-                        <h2 className="line-clamp-1 text-sm font-semibold text-stone-950 dark:text-stone-100">{item.title}</h2>
-                        {!compact ? <span className="shrink-0 text-xs text-stone-400 dark:text-stone-500">{formatPromptDate(item.updatedAt, i18n.resolvedLanguage)}</span> : null}
-                    </div>
-                    {!compact ? <><p className="mt-2 line-clamp-3 text-xs leading-5 text-stone-600 dark:text-stone-400">{item.description || item.prompt}</p><div className="mt-3 flex flex-wrap gap-1.5">{item.tags.map((tag) => <Tag key={tag} className="m-0 text-[11px]">{tag}</Tag>)}</div></> : null}
+            <button type="button" className="block w-full flex-1 cursor-pointer text-left" onClick={onOpen}>
+                <div className={compact ? "px-3 py-2.5" : "px-4 pb-2 pt-3"}>
+                    <h2 className="line-clamp-1 text-sm font-semibold text-stone-950 dark:text-stone-100">{item.title}</h2>
+                    {!compact ? <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-stone-500 dark:text-stone-400">{item.prompt}</p> : null}
+                    <PromptBadges item={item} className={compact ? "mt-1.5" : "mt-2.5"} max={compact ? 2 : 3} />
                 </div>
             </button>
-            {!compact ? <div className="mt-auto flex items-center gap-2 px-4 pb-4"><Button block={actionType === "primary"} type={actionType} size="small" icon={actionIcon} onClick={onCopy}>{actionLabel || t("common.copy")}</Button>{extraAction}</div> : null}
+            {!compact && (onDraw || onCopy || onSaveAsset) ? (
+                <div className="mt-auto flex items-center gap-1 px-4 pb-4 pt-1">
+                    {onDraw ? (
+                        <Button type="primary" size="small" icon={<Wand2 className="size-3.5" />} onClick={onDraw} data-testid="prompt-draw">
+                            {video ? t("prompts.useToVideo") : t("prompts.useToDraw")}
+                        </Button>
+                    ) : null}
+                    <span className="flex-1" />
+                    {onCopy ? (
+                        <Tooltip title={t("common.copyPrompt")}>
+                            <Button type="text" size="small" icon={<Copy className="size-3.5" />} onClick={onCopy} aria-label={t("common.copyPrompt")} />
+                        </Tooltip>
+                    ) : null}
+                    {onSaveAsset ? (
+                        <Tooltip title={t("common.addToAssets")}>
+                            <Button type="text" size="small" icon={<FolderPlus className="size-3.5" />} onClick={onSaveAsset} aria-label={t("common.addToAssets")} />
+                        </Tooltip>
+                    ) : null}
+                </div>
+            ) : null}
         </Card>
     );
 }

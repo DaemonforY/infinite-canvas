@@ -121,7 +121,7 @@ export function PromptSourceContentModal({ source, onClose }: { source: PromptSo
                     ]}
                 />
             </Modal>
-            <PromptDetailDialog prompt={detail} onClose={() => setDetail(null)} onCopy={(prompt) => copyText(prompt, t("common.promptCopied"))} onSaveAsset={saveAsset} />
+            <PromptDetailDialog prompt={detail} onClose={() => setDetail(null)} onCopy={(prompt) => copyText(prompt.prompt, t("common.promptCopied"))} onSaveAsset={saveAsset} />
         </>
     );
 }
