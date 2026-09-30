@@ -2,7 +2,7 @@ import axios from "axios";
 
 import i18n from "@/i18n";
 import { MAIN_SITE_API_BASE_URL, MAIN_SITE_NAME } from "@/constant/runtime-config";
-import { classifyProviderError, isNetworkFailureMessage, type ProviderErrorInput, type ProviderErrorKind } from "@/lib/provider-errors";
+import { classifyProviderError, isNetworkFailureMessage, stripEnglishOriginal, type ProviderErrorInput, type ProviderErrorKind } from "@/lib/provider-errors";
 
 // Shared "turn any API failure into an actionable sentence" helpers for image / chat / video /
 // audio / model-list requests. Classification lives in lib/provider-errors (pure, unit-tested);
@@ -81,7 +81,7 @@ export function humanizeApiError(input: ProviderErrorInput, fallback: string = a
     const message = (input.message || "").trim();
     if (message && produced.has(message)) return message;
     const kind = classifyProviderError(input);
-    if (!kind) return message || fallback;
+    if (!kind) return message ? remember(stripEnglishOriginal(message)) : fallback;
     return renderKind(kind, fallback);
 }
 

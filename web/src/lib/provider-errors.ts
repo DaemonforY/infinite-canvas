@@ -174,6 +174,15 @@ function statusKind(status: number, message: string, html: boolean): Kind | null
 
 // The gateway already answers several errors in Chinese (group disabled, subscription limits with
 // reset time, …); those are shown untouched. Only a couple of terse ones get a more actionable text.
+/**
+ * The gateway writes bilingual errors: "<中文说明>（<original English>）". The English tail is for
+ * API clients and log search; drop it when showing the message in the (already localized) UI.
+ */
+export function stripEnglishOriginal(message: string): string {
+    const match = /^([\s\S]*[\u3400-\u9fff][\s\S]*?)（[^（）\u3400-\u9fff]+）\s*$/.exec(message);
+    return match ? match[1].trimEnd() : message;
+}
+
 function classifyChinese(message: string): ProviderErrorKind {
     if (/^api key 额度已用完[。.]?$/i.test(message)) return { key: "apiKeyQuotaExhausted" };
     if (/^api key 已过期[。.]?$/i.test(message)) return { key: "apiKeyExpired" };

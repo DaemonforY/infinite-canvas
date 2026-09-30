@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { classifyProviderError, isSafetyRejection, quotedModelName, safetyRequestId, shortErrorDetail, type ProviderErrorInput } from "../src/lib/provider-errors";
+import { classifyProviderError, isSafetyRejection, quotedModelName, safetyRequestId, shortErrorDetail, stripEnglishOriginal, type ProviderErrorInput } from "../src/lib/provider-errors";
 
 const openai = "Your request was rejected by the safety system. If you believe this is an error, contact us at help.openai.com and include the request ID 972e8cc2-a614-49b3-a2ed-91aa2785a88d.";
 
@@ -193,4 +193,15 @@ test("details are collapsed and truncated", () => {
     const long = "x".repeat(300);
     expect(shortErrorDetail(long).length).toBe(121);
     expect(shortErrorDetail("  a\n\n b  ")).toBe("a b");
+});
+
+test("strips the English original from bilingual gateway messages", () => {
+    const daily = "订阅今日额度已用完（已用 $10.50 / 额度 $10.00），将于 2026-10-01 00:00 重置；急用可换一个按量计费分组的 Key（daily usage limit exceeded）";
+    expect(stripEnglishOriginal(daily)).toBe("订阅今日额度已用完（已用 $10.50 / 额度 $10.00），将于 2026-10-01 00:00 重置；急用可换一个按量计费分组的 Key");
+    expect(classifyProviderError({ message: daily, status: 429, code: "USAGE_LIMIT_EXCEEDED" })).toBeNull();
+    const group = '分组「GLM」暂时没有可处理模型 gpt-5.5 的请求的上游账号：请稍后重试；本次请求未扣费（Service temporarily unavailable）';
+    expect(stripEnglishOriginal(group)).toBe("分组「GLM」暂时没有可处理模型 gpt-5.5 的请求的上游账号：请稍后重试；本次请求未扣费");
+    // Chinese-only parentheses and English-only messages are left alone.
+    expect(stripEnglishOriginal("账户余额不足（当前余额 0.00）")).toBe("账户余额不足（当前余额 0.00）");
+    expect(stripEnglishOriginal("Invalid API key（x）")).toBe("Invalid API key（x）");
 });
