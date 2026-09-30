@@ -1,5 +1,6 @@
 import { createBrowserRouter, Outlet } from "react-router-dom";
 
+import { AccountSync } from "@/components/layout/account-sync";
 import { AnalyticsTracker } from "@/components/layout/analytics-tracker";
 import UserLayout from "@/layouts/user-layout";
 import AssetsPage from "@/pages/assets";
@@ -17,6 +18,7 @@ export const router = createBrowserRouter([
         element: (
             <UserLayout>
                 <AnalyticsTracker />
+                <AccountSync />
                 <Outlet />
             </UserLayout>
         ),

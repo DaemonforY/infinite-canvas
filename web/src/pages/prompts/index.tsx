@@ -2,6 +2,7 @@ import { type UIEvent, useEffect, useState } from "react";
 import { App, Button, Empty, Spin } from "antd";
 import { useTranslation } from "react-i18next";
 
+import { AccountSyncBadge } from "@/components/layout/account-sync-badge";
 import { PromptCard } from "@/components/prompts/prompt-card";
 import { PromptFilters } from "@/components/prompts/prompt-filters";
 import { usePromptActions } from "@/components/prompts/use-prompt-actions";
@@ -44,6 +45,7 @@ export default function PromptsPage() {
                         <div>
                             <h1 className="text-2xl font-semibold text-stone-950 dark:text-stone-100">{t("prompts.title")}</h1>
                             <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">{t("prompts.subtitle")}</p>
+                            <AccountSyncBadge className="mt-1.5" />
                         </div>
                         <div className="text-sm text-stone-500 dark:text-stone-400" data-testid="prompt-total">
                             {t("prompts.total", { count: list.total })}

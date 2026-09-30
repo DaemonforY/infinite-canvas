@@ -24,6 +24,7 @@ import { readWorkbenchDraft, useWorkbenchDraftStore } from "@/stores/use-workben
 import { restoreDraftReferences, useWorkbenchDraft } from "@/hooks/use-workbench-draft";
 import { isEmptyDraft, NEW_SESSION_KEY } from "@/lib/workbench-drafts";
 import { DraftSessionCard } from "@/components/workbench/draft-session-card";
+import { AccountSyncBadge } from "@/components/layout/account-sync-badge";
 import type { ReferenceImage } from "@/types/image";
 import i18n from "@/i18n";
 
@@ -124,6 +125,14 @@ export default function ImagePage() {
     const draftStore = useWorkbenchDraft({ kind: "image", sessionKey, prompt, references, baseline: previewLog ? { prompt: previewLog.prompt, references: previewLog.references } : undefined });
     const imageDrafts = useWorkbenchDraftStore((state) => state.drafts.image);
     const newSessionDraft = imageDrafts[NEW_SESSION_KEY];
+    const remoteDraftRevision = useWorkbenchDraftStore((state) => state.remoteRevision.image);
+
+    // A newer draft arrived from another device (account sync): show it if the draft is open.
+    useEffect(() => {
+        if (!remoteDraftRevision || previewLog) return;
+        setPrompt(readWorkbenchDraft("image")?.prompt || "");
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [remoteDraftRevision]);
 
     // Bring back the reference images of the new-session draft once, then start saving.
     useEffect(() => {
@@ -801,6 +810,7 @@ function LogPanel({
             <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                     <h2 className="text-base font-semibold">{t("workbench.logs")}</h2>
+                    <AccountSyncBadge className="mt-0.5" />
                 </div>
                 <Tag className="m-0">{logs.length}</Tag>
             </div>
