@@ -80,7 +80,7 @@ export function QuickStartDialog() {
         try {
             const result = await testApiKey(key);
             if (!result.ok) {
-                setPasteError(t(result.reason === "invalid" ? "quickStart.keyInvalid" : result.reason === "network" ? "quickStart.keyNetwork" : "quickStart.keyHttp", { status: result.status ?? "", site }));
+                setPasteError(result.message || t(result.reason === "invalid" ? "quickStart.keyInvalid" : result.reason === "network" ? "quickStart.keyNetwork" : "quickStart.keyHttp", { status: result.status ?? "", site }));
                 return;
             }
             if (!result.imageCapable) message.warning(t("quickStart.keyNoImageModels"), 6);

@@ -1,7 +1,9 @@
 import axios, { type AxiosRequestConfig } from "axios";
 
 import i18n from "@/i18n";
+import { isNetworkFailureMessage } from "@/lib/provider-errors";
 import { buildApiUrl, withLocalProxy, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { humanizeErrorMessage, readAxiosErrorAsync } from "./errors";
 
 type RequestOptions = { signal?: AbortSignal };
 
@@ -158,7 +160,10 @@ export async function runModelPlugin<T = unknown>(args: RunPluginArgs): Promise<
     } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") throw error;
         if (axios.isCancel(error)) throw error;
-        const message = error instanceof Error ? error.message : String(error);
+        // HTTP / network failures from the script's requests are API errors, not script bugs:
+        // surface the same actionable message as the built-in request paths.
+        if (axios.isAxiosError(error) || (error instanceof TypeError && isNetworkFailureMessage(error.message))) throw new Error(await readAxiosErrorAsync(error));
+        const message = error instanceof Error ? humanizeErrorMessage(error.message) : String(error);
         throw new Error(i18n.t("modelPlugin.executionFailed", { message }));
     }
 }

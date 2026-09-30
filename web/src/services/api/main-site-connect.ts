@@ -1,4 +1,5 @@
 import { MAIN_SITE_API_BASE_URL, MAIN_SITE_URL, mainSiteLink } from "@/constant/runtime-config";
+import { readFetchError } from "./errors";
 
 // "Connect with the main site" handoff.
 //
@@ -55,7 +56,7 @@ export function parseConnectMessage(event: MessageEvent, expectedState: string):
     return { apiKey, baseUrl: MAIN_SITE_API_BASE_URL, keyName };
 }
 
-export type KeyTestResult = { ok: true; modelCount: number; imageCapable: boolean } | { ok: false; reason: "invalid" | "network" | "http"; status?: number };
+export type KeyTestResult = { ok: true; modelCount: number; imageCapable: boolean } | { ok: false; reason: "invalid" | "network" | "http"; status?: number; message?: string };
 
 const IMAGE_MODEL_HINTS = ["image", "dall-e", "seedream", "flux", "imagen"];
 
@@ -68,8 +69,9 @@ export async function testApiKey(apiKey: string, signal?: AbortSignal): Promise<
         if (error instanceof DOMException && error.name === "AbortError") throw error;
         return { ok: false, reason: "network" };
     }
-    if (response.status === 401 || response.status === 403) return { ok: false, reason: "invalid", status: response.status };
-    if (!response.ok) return { ok: false, reason: "http", status: response.status };
+    if (response.status === 401) return { ok: false, reason: "invalid", status: response.status };
+    // 403 / 429 / 5xx carry a reason (no balance, key disabled or expired, IP whitelist, …) worth showing.
+    if (!response.ok) return { ok: false, reason: "http", status: response.status, message: await readFetchError(response) };
     const body = (await response.json().catch(() => null)) as { data?: Array<{ id?: string }> } | null;
     const ids = (body?.data || []).map((m) => String(m.id || "").toLowerCase());
     return { ok: true, modelCount: ids.length, imageCapable: ids.some((id) => IMAGE_MODEL_HINTS.some((hint) => id.includes(hint))) };
