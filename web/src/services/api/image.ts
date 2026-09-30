@@ -10,6 +10,9 @@ import { imageToDataUrl } from "@/services/image-storage";
 import { imageSizePresets, inferMediaScale } from "@/lib/media-size";
 import type { ReferenceImage } from "@/types/image";
 
+import { MAIN_SITE_NAME } from "@/constant/runtime-config";
+import { isSafetyRejection, safetyRequestId } from "@/lib/provider-errors";
+
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
 
 export type AiTextMessage = {
@@ -277,13 +280,23 @@ function parseImagePayload(payload: ImageApiResponse) {
     return images;
 }
 
+export function humanizeSafetyError(message: string): string {
+    if (!isSafetyRejection(message)) return message;
+    const requestId = safetyRequestId(message);
+    return apiText(requestId ? "safetyRejectedWithId" : "safetyRejected", { requestId, site: MAIN_SITE_NAME });
+}
+
 function readApiErrorMessage(value: unknown): string {
+    return humanizeSafetyError(readRawApiErrorMessage(value));
+}
+
+function readRawApiErrorMessage(value: unknown): string {
     if (!value) return "";
     if (typeof value === "string") {
         // The value may be serialized JSON, such as error.message, or a plain-text error.
         try {
             const parsed = JSON.parse(value);
-            const inner = readApiErrorMessage(parsed) || value;
+            const inner = readRawApiErrorMessage(parsed) || value;
             // Treat an empty parsed object such as "{}" as having no useful message.
             if (inner === value && typeof parsed === "object" && Object.keys(parsed).length === 0) return "";
             return inner;
@@ -301,10 +314,10 @@ function readApiErrorMessage(value: unknown): string {
             ? payload.error
             : (payload.error as { message?: unknown })?.message;
     return (
-        readApiErrorMessage(payload.msg) ||
-        readApiErrorMessage(payload.message) ||
-        readApiErrorMessage(errorMsg) ||
-        readApiErrorMessage(payload.detail) ||
+        readRawApiErrorMessage(payload.msg) ||
+        readRawApiErrorMessage(payload.message) ||
+        readRawApiErrorMessage(errorMsg) ||
+        readRawApiErrorMessage(payload.detail) ||
         ""
     );
 }
@@ -441,7 +454,7 @@ function stringValue(value: unknown) {
 
 function validateResponsePayload(payload: ResponseApiPayload) {
     if (typeof payload.code === "number" && payload.code !== 0) throw new Error(payload.msg || apiText("requestFailed"));
-    if (payload.error?.message) throw new Error(payload.error.message);
+    if (payload.error?.message) throw new Error(humanizeSafetyError(payload.error.message));
 }
 
 function validateGeminiPayload(payload: GeminiPayload) {
@@ -453,9 +466,9 @@ async function readFetchError(response: Response, fallback: string) {
     const text = await response.text();
     if (!text) return readStatusError(response.status, fallback);
     try {
-        return responseErrorMessage(JSON.parse(text)) || readStatusError(response.status, fallback);
+        return humanizeSafetyError(responseErrorMessage(JSON.parse(text))) || readStatusError(response.status, fallback);
     } catch {
-        return text.slice(0, 300) || readStatusError(response.status, fallback);
+        return humanizeSafetyError(text.slice(0, 300)) || readStatusError(response.status, fallback);
     }
 }
 
