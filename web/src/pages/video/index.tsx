@@ -115,7 +115,9 @@ export default function VideoPage() {
     // A newer draft arrived from another device (account sync): show it if the draft is open.
     useEffect(() => {
         if (!remoteDraftRevision || previewLog) return;
-        setPrompt(readWorkbenchDraft("video")?.prompt || "");
+        const remote = readWorkbenchDraft<ReferenceImage>("video");
+        setPrompt(remote?.prompt || "");
+        void restoreDraftReferences(remote).then(setReferences);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [remoteDraftRevision]);
 

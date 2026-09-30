@@ -130,7 +130,9 @@ export default function ImagePage() {
     // A newer draft arrived from another device (account sync): show it if the draft is open.
     useEffect(() => {
         if (!remoteDraftRevision || previewLog) return;
-        setPrompt(readWorkbenchDraft("image")?.prompt || "");
+        const remote = readWorkbenchDraft<ReferenceImage>("image");
+        setPrompt(remote?.prompt || "");
+        void restoreDraftReferences(remote).then(setReferences);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [remoteDraftRevision]);
 

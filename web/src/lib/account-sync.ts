@@ -15,7 +15,9 @@ const MAX_TOMBSTONES = 500;
 export type FavoriteEntry<P> = { at: number; removed?: boolean; prompt?: P };
 export type FavoritesDoc<P> = { v: 1; items: Record<string, FavoriteEntry<P>> };
 
-export type DraftEntry = { prompt: string; at: number };
+/** A reference image as synced: the account keeps the bytes, devices keep a local copy. */
+export type SyncedReference = { id: string; name: string; type: string; blobId: string };
+export type DraftEntry = { prompt: string; at: number; references?: SyncedReference[] };
 /** Only the new-session draft travels: log drafts refer to generation logs that live on one device. */
 export type DraftsDoc = { v: 1; image?: DraftEntry; video?: DraftEntry };
 
@@ -69,7 +71,13 @@ export function readDraftsDoc(value: unknown): DraftsDoc {
     if (!isRecord(value)) return doc;
     for (const kind of ["image", "video"] as const) {
         const entry = value[kind];
-        if (isRecord(entry) && typeof entry.prompt === "string" && typeof entry.at === "number") doc[kind] = { prompt: entry.prompt, at: entry.at };
+        if (!isRecord(entry) || typeof entry.prompt !== "string" || typeof entry.at !== "number") continue;
+        const references = Array.isArray(entry.references)
+            ? entry.references
+                  .filter((ref): ref is SyncedReference => isRecord(ref) && typeof ref.id === "string" && typeof ref.blobId === "string" && /^[a-f0-9]{32}$/.test(ref.blobId))
+                  .map((ref) => ({ id: ref.id, name: typeof ref.name === "string" ? ref.name : "", type: typeof ref.type === "string" ? ref.type : "", blobId: ref.blobId }))
+            : [];
+        doc[kind] = references.length ? { prompt: entry.prompt, at: entry.at, references } : { prompt: entry.prompt, at: entry.at };
     }
     return doc;
 }

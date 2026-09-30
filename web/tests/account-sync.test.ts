@@ -50,3 +50,19 @@ test("canonical JSON ignores key order", () => {
     expect(canonicalJson({ b: 1, a: { d: [1, { y: 2, x: 1 }], c: null } })).toBe(canonicalJson({ a: { c: null, d: [1, { x: 1, y: 2 }] }, b: 1 }));
     expect(canonicalJson({ a: 1 })).not.toBe(canonicalJson({ a: 2 }));
 });
+
+test("draft references survive the round trip and bad ids are dropped", () => {
+    const doc = readDraftsDoc({
+        image: {
+            prompt: "猫",
+            at: 3,
+            references: [
+                { id: "r1", name: "a.png", type: "image/png", blobId: "0123456789abcdef0123456789abcdef" },
+                { id: "r2", name: "b.png", type: "image/png", blobId: "-" },
+                { id: "r3", blobId: "../../etc/passwd" },
+            ],
+        },
+    });
+    expect(doc.image?.references?.map((ref) => ref.id)).toEqual(["r1"]);
+    expect(readDraftsDoc({ image: { prompt: "猫", at: 3, references: [] } }).image).toEqual({ prompt: "猫", at: 3 });
+});

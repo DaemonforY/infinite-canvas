@@ -14,8 +14,10 @@ type DraftStore = {
     remoteRevision: Record<WorkbenchKind, number>;
     saveDraft: (kind: WorkbenchKind, key: string, prompt: string, references: DraftReference[]) => void;
     removeDraft: (kind: WorkbenchKind, key: string) => void;
-    /** Applies the account's new-session draft if it is newer than the local one. */
-    applyRemoteNewDraft: (kind: WorkbenchKind, entry: DraftEntry) => void;
+    /** Applies the account's new-session draft if it is newer; `references` are the downloaded local copies. */
+    applyRemoteNewDraft: (kind: WorkbenchKind, entry: DraftEntry, references?: DraftReference[]) => void;
+    /** Records the account copies of new-session reference images (does not count as an edit). */
+    setReferenceBlobIds: (kind: WorkbenchKind, blobIds: Record<string, string>) => void;
 };
 
 export const useWorkbenchDraftStore = create<DraftStore>()(
@@ -29,6 +31,9 @@ export const useWorkbenchDraftStore = create<DraftStore>()(
                     const current = state.drafts[kind][key];
                     // Re-saving identical content must not make this device's copy look newer than another's.
                     if (current && !differsFromBaseline({ prompt, references }, current)) return state;
+                    // Page state does not know the account copies of its images; keep them by reference id.
+                    const known = new Map((current?.references || []).map((ref) => [ref.id, ref.blobId]));
+                    references = references.map((ref) => (ref.blobId || !known.get(ref.id) ? ref : { ...ref, blobId: known.get(ref.id) }));
                     return {
                         drafts: {
                             ...state.drafts,
@@ -43,18 +48,26 @@ export const useWorkbenchDraftStore = create<DraftStore>()(
                     delete next[key];
                     return { drafts: { ...state.drafts, [kind]: next }, clearedAt: key === NEW_SESSION_KEY ? { ...state.clearedAt, [kind]: Date.now() } : state.clearedAt };
                 }),
-            applyRemoteNewDraft: (kind, entry) =>
+            setReferenceBlobIds: (kind, blobIds) =>
+                set((state) => {
+                    const draft = state.drafts[kind][NEW_SESSION_KEY];
+                    if (!draft || !draft.references.some((ref) => blobIds[ref.id] && blobIds[ref.id] !== ref.blobId)) return state;
+                    const references = draft.references.map((ref) => (blobIds[ref.id] ? { ...ref, blobId: blobIds[ref.id] } : ref));
+                    return { drafts: { ...state.drafts, [kind]: { ...state.drafts[kind], [NEW_SESSION_KEY]: { ...draft, references } } } };
+                }),
+            applyRemoteNewDraft: (kind, entry, references) =>
                 set((state) => {
                     const local = localNewDraftEntry(state, kind);
                     if (entry.at <= local.at) return state;
                     const current = state.drafts[kind][NEW_SESSION_KEY];
                     const next = { ...state.drafts[kind] };
                     // Reference images stay on the device that added them; only the text travels.
-                    if (entry.prompt) next[NEW_SESSION_KEY] = { prompt: entry.prompt, references: current?.references || [], updatedAt: entry.at };
+                    const refs = serializeDraftReferences(references ?? current?.references ?? []);
+                    if (entry.prompt || refs.length) next[NEW_SESSION_KEY] = { prompt: entry.prompt, references: refs, updatedAt: entry.at };
                     else delete next[NEW_SESSION_KEY];
                     return {
                         drafts: { ...state.drafts, [kind]: next },
-                        clearedAt: entry.prompt ? state.clearedAt : { ...state.clearedAt, [kind]: entry.at },
+                        clearedAt: next[NEW_SESSION_KEY] ? state.clearedAt : { ...state.clearedAt, [kind]: entry.at },
                         remoteRevision: { ...state.remoteRevision, [kind]: state.remoteRevision[kind] + 1 },
                     };
                 }),
@@ -77,7 +90,15 @@ export const useWorkbenchDraftStore = create<DraftStore>()(
 /** The new-session draft as it is synced: its text, or "" with the time it was emptied. */
 export function localNewDraftEntry(state: Pick<DraftStore, "drafts" | "clearedAt">, kind: WorkbenchKind): DraftEntry {
     const draft = state.drafts[kind][NEW_SESSION_KEY];
-    return draft ? { prompt: draft.prompt, at: draft.updatedAt } : { prompt: "", at: state.clearedAt[kind] || 0 };
+    if (!draft) return { prompt: "", at: state.clearedAt[kind] || 0 };
+    // Only images already stored on the account travel; the sync uploads the others first.
+    const references = draft.references.filter((ref) => ref.blobId && ref.blobId !== "-").map((ref) => ({ id: ref.id, name: ref.name || "", type: ref.type || "", blobId: ref.blobId as string }));
+    return references.length ? { prompt: draft.prompt, at: draft.updatedAt, references } : { prompt: draft.prompt, at: draft.updatedAt };
+}
+
+/** New-session reference images that still need an account copy. */
+export function pendingReferenceUploads(state: Pick<DraftStore, "drafts">, kind: WorkbenchKind): DraftReference[] {
+    return (state.drafts[kind][NEW_SESSION_KEY]?.references || []).filter((ref) => !ref.blobId);
 }
 
 export function readWorkbenchDraft<R extends DraftReference>(kind: WorkbenchKind, key: string = NEW_SESSION_KEY): WorkbenchDraft<R> | undefined {

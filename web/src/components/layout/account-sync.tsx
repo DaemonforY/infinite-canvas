@@ -1,13 +1,15 @@
 import { useEffect, useMemo } from "react";
 
 import { canonicalJson, DRAFTS_NAMESPACE, FAVORITES_NAMESPACE, mergeDraftsDocs, mergeFavoritesDocs, readDraftsDoc, readFavoritesDoc, type DraftsDoc, type FavoritesDoc } from "@/lib/account-sync";
-import { getAppState, putAppState } from "@/services/api/main-site-app-state";
+import { APP_BLOB_MAX_BYTES, downloadAppBlob, getAppState, putAppState, uploadAppBlob } from "@/services/api/main-site-app-state";
+import { getImageBlob, uploadImage } from "@/services/image-storage";
+import type { DraftReference } from "@/lib/workbench-drafts";
 import { findMainSiteApiKey } from "@/services/api/main-site-contests";
 import type { Prompt } from "@/services/api/prompts";
 import { useAccountSyncStore } from "@/stores/use-account-sync-store";
 import { useConfigStore } from "@/stores/use-config-store";
 import { usePromptLibraryStore } from "@/stores/use-prompt-library-store";
-import { localNewDraftEntry, useWorkbenchDraftStore } from "@/stores/use-workbench-draft-store";
+import { localNewDraftEntry, pendingReferenceUploads, useWorkbenchDraftStore, type WorkbenchKind } from "@/stores/use-workbench-draft-store";
 
 const KINDS = ["image", "video"] as const;
 const PERIODIC_MS = 2 * 60 * 1000;
@@ -99,16 +101,55 @@ function createSyncEngine(apiKey: string) {
         }
     }
 
+    /** Gives every new-session reference image an account copy before the draft is pushed. */
+    async function uploadPendingReferences(kind: WorkbenchKind) {
+        const pending = pendingReferenceUploads(useWorkbenchDraftStore.getState(), kind);
+        if (!pending.length) return;
+        const blobIds: Record<string, string> = {};
+        for (const ref of pending) {
+            const blob = await readLocalReference(ref);
+            if (!blob) continue;
+            if (blob.size > APP_BLOB_MAX_BYTES) {
+                blobIds[ref.id] = "-"; // stays on this device only
+                continue;
+            }
+            blobIds[ref.id] = (await uploadAppBlob(apiKey, blob, controller.signal)).id;
+        }
+        applyLocally(() => useWorkbenchDraftStore.getState().setReferenceBlobIds(kind, blobIds));
+    }
+
+    /** Local copies of a remote draft's images: reuse what this device has, download the rest. */
+    async function localizeReferences(kind: WorkbenchKind, refs: NonNullable<ReturnType<typeof readDraftsDoc>["image"]>["references"]): Promise<DraftReference[]> {
+        const local = useWorkbenchDraftStore.getState().drafts[kind].new?.references || [];
+        const out: DraftReference[] = [];
+        for (const ref of refs || []) {
+            const existing = local.find((item) => item.blobId === ref.blobId);
+            if (existing) {
+                out.push({ ...existing, id: ref.id });
+                continue;
+            }
+            try {
+                const blob = await downloadAppBlob(apiKey, ref.blobId, controller.signal);
+                const stored = await uploadImage(blob);
+                out.push({ id: ref.id, name: ref.name, type: stored.mimeType || ref.type, dataUrl: "", storageKey: stored.storageKey, blobId: ref.blobId });
+            } catch {
+                // Evicted from the account (quota) or unreadable: keep the text, skip the image.
+            }
+        }
+        return out;
+    }
+
     async function syncDrafts() {
+        for (const kind of KINDS) await uploadPendingReferences(kind);
         let remote = await getAppState(DRAFTS_NAMESPACE, apiKey, controller.signal);
         for (let attempt = 0; attempt < 3; attempt += 1) {
             const remoteDoc = readDraftsDoc(remote.value);
-            applyLocally(() => {
-                for (const kind of KINDS) {
-                    const entry = remoteDoc[kind];
-                    if (entry) useWorkbenchDraftStore.getState().applyRemoteNewDraft(kind, entry);
-                }
-            });
+            for (const kind of KINDS) {
+                const entry = remoteDoc[kind];
+                if (!entry || entry.at <= localNewDraftEntry(useWorkbenchDraftStore.getState(), kind).at) continue;
+                const references = await localizeReferences(kind, entry.references);
+                applyLocally(() => useWorkbenchDraftStore.getState().applyRemoteNewDraft(kind, entry, references));
+            }
             const state = useWorkbenchDraftStore.getState();
             const localDoc: DraftsDoc = { v: 1 };
             for (const kind of KINDS) {
@@ -149,4 +190,17 @@ function createSyncEngine(apiKey: string) {
     }
 
     return engine;
+}
+
+async function readLocalReference(ref: DraftReference): Promise<Blob | undefined> {
+    try {
+        if (ref.storageKey) {
+            const blob = await getImageBlob(ref.storageKey);
+            if (blob) return blob;
+        }
+        if (ref.dataUrl) return await (await fetch(ref.dataUrl)).blob();
+    } catch {
+        // Unreadable locally: nothing to upload.
+    }
+    return undefined;
 }

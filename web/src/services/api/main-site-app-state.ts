@@ -32,3 +32,23 @@ export async function putAppState(namespace: string, apiKey: string, value: unkn
     const data = await readEnvelope<{ value: unknown; version: number; conflict: boolean }>(res);
     return { value: data.value ?? {}, version: data.version || 0, conflict: Boolean(data.conflict) };
 }
+
+export type AppBlob = { id: string; mime_type: string; size_bytes: number };
+
+/** Stores an image on the account; the same bytes return the same id. */
+export async function uploadAppBlob(apiKey: string, blob: Blob, signal?: AbortSignal): Promise<AppBlob> {
+    const form = new FormData();
+    form.append("file", blob, `reference.${(blob.type.split("/")[1] || "png").replace("jpeg", "jpg")}`);
+    const res = await fetch(`${MAIN_SITE_URL}/api/v1/app-state/blobs`, { method: "POST", headers: { Authorization: `Bearer ${apiKey}` }, body: form, signal });
+    return readEnvelope<AppBlob>(res);
+}
+
+/** Downloads an image stored on the account (owner only). */
+export async function downloadAppBlob(apiKey: string, id: string, signal?: AbortSignal): Promise<Blob> {
+    const res = await fetch(`${MAIN_SITE_URL}/api/v1/app-state/blobs/${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${apiKey}` }, signal });
+    if (!res.ok) throw new Error(await readFetchError(res));
+    return res.blob();
+}
+
+/** Size limit of one synced image on the server. */
+export const APP_BLOB_MAX_BYTES = 10 * 1024 * 1024;

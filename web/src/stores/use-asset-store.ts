@@ -97,7 +97,10 @@ export const useAssetStore = create<AssetStore>()(
             cleanupImages: (extra) => {
                 window.setTimeout(async () => {
                     const { useCanvasStore } = await import("@/stores/canvas/use-canvas-store");
-                    await cleanupUnusedImages({ assets: get().assets, projects: useCanvasStore.getState().projects, extra });
+                    // Workbench drafts keep their reference images by storage key; never collect those.
+                    const { useWorkbenchDraftStore } = await import("@/stores/use-workbench-draft-store");
+                    const drafts = useWorkbenchDraftStore.getState().drafts;
+                    await cleanupUnusedImages({ assets: get().assets, projects: useCanvasStore.getState().projects, drafts, extra });
                     await cleanupUnusedMedia({ assets: get().assets, projects: useCanvasStore.getState().projects, extra });
                 }, 0);
             },

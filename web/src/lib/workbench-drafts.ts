@@ -10,7 +10,7 @@ export const MAX_DRAFTS = 40;
 /** References without a storage key keep their data URL; skip huge ones so localStorage stays small. */
 const MAX_INLINE_REFERENCE_CHARS = 400_000;
 
-export type DraftReference = { id: string; dataUrl?: string; storageKey?: string };
+export type DraftReference = { id: string; dataUrl?: string; storageKey?: string; blobId?: string; name?: string; type?: string };
 
 export type WorkbenchDraft<R extends DraftReference = DraftReference> = {
     prompt: string;
