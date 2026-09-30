@@ -1,4 +1,4 @@
-import { Clock3, Search, Star } from "lucide-react";
+import { Clock3, Heart, Search, Sparkles, Star } from "lucide-react";
 import { Input, Segmented, Select, Tag } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -10,7 +10,7 @@ import type { PromptBrowserState, PromptTab } from "./use-prompt-list";
 type Props = {
     state: PromptBrowserState;
     onChange: (patch: Partial<PromptBrowserState>) => void;
-    sources: string[];
+    sources: { id: string; name: string }[];
     sceneCounts: Partial<Record<PromptScene, number>>;
     favoriteCount: number;
     recentCount: number;
@@ -26,34 +26,53 @@ export function PromptFilters({ state, onChange, sources, sceneCounts, favoriteC
     return (
         <div className="space-y-3" data-testid="prompt-filters">
             <div className="flex flex-wrap items-center gap-2">
-                <Segmented<PromptTab>
-                    className="shrink-0"
-                    value={state.tab}
-                    onChange={(tab) => onChange({ tab })}
-                    options={[
-                        { value: "all", label: t("prompts.tabAll") },
-                        {
-                            value: "favorites",
-                            label: (
-                                <span className="inline-flex items-center gap-1">
-                                    <Star className="size-3.5" />
-                                    {t("prompts.tabFavorites")}
-                                    {favoriteCount ? ` ${favoriteCount}` : ""}
-                                </span>
-                            ),
-                        },
-                        {
-                            value: "recent",
-                            label: (
-                                <span className="inline-flex items-center gap-1">
-                                    <Clock3 className="size-3.5" />
-                                    {t("prompts.tabRecent")}
-                                    {recentCount ? ` ${recentCount}` : ""}
-                                </span>
-                            ),
-                        },
-                    ]}
-                />
+                <div className="thin-scrollbar max-w-full shrink-0 overflow-x-auto">
+                    <Segmented<PromptTab>
+                        value={state.tab}
+                        onChange={(tab) => onChange({ tab })}
+                        options={[
+                            { value: "all", label: t("prompts.tabAll") },
+                            {
+                                value: "forYou",
+                                label: (
+                                    <span className="inline-flex items-center gap-1" data-testid="prompt-tab-for-you">
+                                        <Sparkles className="size-3.5" />
+                                        {t("prompts.tabForYou")}
+                                    </span>
+                                ),
+                            },
+                            {
+                                value: "mine",
+                                label: (
+                                    <span className="inline-flex items-center gap-1" data-testid="prompt-tab-mine">
+                                        <Heart className="size-3.5" />
+                                        {t("prompts.tabMine")}
+                                    </span>
+                                ),
+                            },
+                            {
+                                value: "favorites",
+                                label: (
+                                    <span className="inline-flex items-center gap-1">
+                                        <Star className="size-3.5" />
+                                        {t("prompts.tabFavorites")}
+                                        {favoriteCount ? ` ${favoriteCount}` : ""}
+                                    </span>
+                                ),
+                            },
+                            {
+                                value: "recent",
+                                label: (
+                                    <span className="inline-flex items-center gap-1">
+                                        <Clock3 className="size-3.5" />
+                                        {t("prompts.tabRecent")}
+                                        {recentCount ? ` ${recentCount}` : ""}
+                                    </span>
+                                ),
+                            },
+                        ]}
+                    />
+                </div>
                 <Input
                     allowClear
                     className="order-first min-w-0 basis-full sm:order-none sm:min-w-48 sm:flex-1 sm:basis-0"
@@ -76,11 +95,12 @@ export function PromptFilters({ state, onChange, sources, sceneCounts, favoriteC
                 />
                 {remote ? (
                     <Select<PromptSort>
-                        className="w-24 sm:w-28"
+                        className="w-28"
                         size={compact ? "middle" : "large"}
                         value={state.sort}
                         onChange={(sort) => onChange({ sort })}
                         options={[
+                            { value: "popular", label: t("prompts.sortPopular") },
                             { value: "recommended", label: t("prompts.sortRecommended") },
                             { value: "latest", label: t("prompts.sortLatest") },
                         ]}
@@ -95,7 +115,7 @@ export function PromptFilters({ state, onChange, sources, sceneCounts, favoriteC
                             value={state.source}
                             onChange={(source) => onChange({ source })}
                             popupMatchSelectWidth={false}
-                            options={[{ value: ALL_PROMPTS_OPTION, label: t("prompts.allSources") }, ...sources.map((source) => ({ value: source, label: source }))]}
+                            options={[{ value: ALL_PROMPTS_OPTION, label: t("prompts.allSources") }, ...sources.map((source) => ({ value: source.id, label: source.name }))]}
                         />
                     </div>
                 ) : null}

@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
 import { AppConfigModal } from "@/components/layout/app-config-modal";
 import { ContestSubmitModal } from "@/components/contest/contest-submit-modal";
+import { MyPromptDialog } from "@/components/prompts/my-prompt-dialog";
 import { QuickStartDialog } from "@/components/onboarding/quick-start-dialog";
 import { SetupBanner } from "@/components/onboarding/setup-banner";
 import { MobileNavDrawer } from "@/components/layout/mobile-nav-drawer";
@@ -99,6 +100,7 @@ export function AppTopNav() {
             <MobileNavDrawer open={mobileNavOpen} activeToolSlug={activeToolSlug} onClose={() => setMobileNavOpen(false)} />
             <AppConfigModal />
             <ContestSubmitModal />
+            <MyPromptDialog />
             <QuickStartDialog />
         </>
     );

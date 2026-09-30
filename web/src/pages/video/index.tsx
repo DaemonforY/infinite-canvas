@@ -1,6 +1,6 @@
-import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Plus, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookmarkPlus, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Plus, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
-import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Popconfirm, Tag, Typography } from "antd";
+import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Popconfirm, Tag, Tooltip, Typography } from "antd";
 import localforage from "localforage";
 import { nanoid } from "nanoid";
 import { saveAs } from "file-saver";
@@ -16,6 +16,7 @@ import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { deleteStoredMedia, resolveMediaUrl } from "@/services/file-storage";
 import { resolveImageUrl, ensureImagePreview, getImagePreviewRevision, previewUrlFor, subscribeImagePreviews, uploadImage } from "@/services/image-storage";
 import { createVideoGenerationTask, pollVideoGenerationTask, storeGeneratedVideo, type VideoGenerationTask } from "@/services/api/video";
+import { useMyPromptEditorStore } from "@/stores/use-my-prompt-editor-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 import { readWorkbenchDraft, useWorkbenchDraftStore } from "@/stores/use-workbench-draft-store";
@@ -86,6 +87,7 @@ export default function VideoPage() {
     const addAsset = useAssetStore((state) => state.addAsset);
     // Restores the prompt the user left in the new-session draft (see use-workbench-draft).
     const [prompt, setPrompt] = useState(() => readWorkbenchDraft("video")?.prompt || "");
+    const openMyPromptEditor = useMyPromptEditorStore((state) => state.open);
     const [references, setReferences] = useState<ReferenceImage[]>([]);
     const [results, setResults] = useState<GenerationResult[]>([]);
     const [logs, setLogs] = useState<GenerationLog[]>([]);
@@ -445,6 +447,9 @@ export default function VideoPage() {
                                         <Button size="small" icon={<FolderPlus className="size-3.5" />} onClick={() => setAssetPickerOpen(true)}>
                                             {t("workbench.viewAssets")}
                                         </Button>
+                                        <Tooltip title={t("myPrompts.saveCurrent")}>
+                                            <Button size="small" icon={<BookmarkPlus className="size-3.5" />} disabled={!prompt.trim()} onClick={() => openMyPromptEditor({ prompt, kind: "video" })} aria-label={t("myPrompts.saveCurrent")} data-testid="workbench-save-prompt" />
+                                        </Tooltip>
                                     </div>
                                 </div>
                                 <Input.TextArea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={7} placeholder={t("videoWorkbench.promptPlaceholder")} />

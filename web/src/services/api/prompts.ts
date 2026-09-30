@@ -5,7 +5,8 @@ import { usePromptSourceStore } from "@/stores/use-prompt-source-store";
 import i18n from "@/i18n";
 import { proxiedImageUrl } from "@/constant/runtime-config";
 import type { PromptSource } from "./prompt-source-presets";
-import { dedupePrompts, displayTitle, promptTraits, recommendScore, type PromptModel, type PromptScene, type PromptTraits } from "@/lib/prompt-taxonomy";
+import { dedupePrompts, displayTitle, PROMPT_SCENES, promptTraits, recommendScore, type PromptModel, type PromptScene, type PromptTraits } from "@/lib/prompt-taxonomy";
+import { listServerPrompts, mainSiteAssetUrl, type ServerPrompt, type ServerPromptStatus } from "./main-site-prompts";
 
 export type Prompt = RawPrompt & {
     sourceId: string;
@@ -13,18 +14,36 @@ export type Prompt = RawPrompt & {
     githubUrl: string;
     /** Normalized scene / model / flags; see lib/prompt-taxonomy. */
     traits: PromptTraits;
+    /** Set for entries served by the main-site library (usage is reported with it). */
+    serverId?: number;
+    useCount?: number;
+    favoriteCount?: number;
+    featured?: boolean;
+    /** The user's own prompt ("我的"); status / visibility / reviewNote only matter then. */
+    mine?: boolean;
+    status?: ServerPromptStatus;
+    visibility?: "public" | "private";
+    reviewNote?: string;
+    /** Tags an admin (or the author) set by hand. */
+    curatedTags?: string[];
+    /** Cover as stored on the main site (coverUrl may be rewritten through the image proxy). */
+    coverPath?: string;
 };
 
 export const ALL_PROMPTS_OPTION = "all";
 
-export type PromptSort = "recommended" | "latest";
+/** "popular" = most used across the site (default), "recommended" = quality + usage, "latest". */
+export type PromptSort = "popular" | "recommended" | "latest";
 /** "gpt-image-2" = usable on this site's default model; "other" = written for another model. */
 export type PromptModelFilter = typeof ALL_PROMPTS_OPTION | "gpt-image-2" | "other";
 
 export type PromptListResponse = {
     items: Prompt[];
     tags: string[];
+    /** Source names (agent tools). */
     categories: string[];
+    /** Source filter options: value = source id. */
+    sourceOptions: { id: string; name: string }[];
     /** Entry count per scene for the current keyword / model / source filters. */
     sceneCounts: Partial<Record<PromptScene, number>>;
     total: number;
@@ -175,6 +194,83 @@ async function getAllPrompts(): Promise<Prompt[]> {
     return dedupePrompts(settled.flat().filter(isOffered));
 }
 
+const PROMPT_MODELS = new Set<PromptModel>(["gpt-image-2", "nano-banana", "gpt-4o", "unknown"]);
+
+/** Maps a main-site library entry onto the canvas prompt shape (ids stay compatible with local sources). */
+export function serverPromptToPrompt(item: ServerPrompt): Prompt {
+    const scenes = (item.scenes || []).filter((scene): scene is PromptScene => (PROMPT_SCENES as readonly string[]).includes(scene));
+    const model = PROMPT_MODELS.has(item.model as PromptModel) ? (item.model as PromptModel) : "unknown";
+    const tags = item.tags?.length ? item.tags : item.source_tags || [];
+    return {
+        id: item.external_id,
+        title: item.title,
+        prompt: item.prompt,
+        description: item.description || "",
+        coverUrl: item.cover_url ? displayImageUrl(mainSiteAssetUrl(item.cover_url)) : "",
+        referenceImageUrls: (item.reference_image_urls || []).map((url) => displayImageUrl(mainSiteAssetUrl(url))),
+        tags,
+        preview: "",
+        createdAt: item.published_at || item.created_at || "",
+        updatedAt: item.updated_at || "",
+        author: item.author || "",
+        sourceUrl: item.source_url || "",
+        imageModel: model === "unknown" ? undefined : model,
+        sourceId: item.source_id,
+        category: item.source_name || item.source_id,
+        githubUrl: item.source_url || "",
+        traits: { scenes: scenes.length ? scenes : ["other"], model, nsfw: false, sensitive: false, needsReference: Boolean(item.needs_reference), lang: item.lang === "zh" ? "zh" : "en" },
+        serverId: item.id,
+        useCount: item.use_count || 0,
+        favoriteCount: item.favorite_count || 0,
+        featured: Boolean(item.featured),
+        mine: Boolean(item.mine),
+        status: item.status,
+        visibility: item.visibility,
+        reviewNote: item.review_note || "",
+        curatedTags: item.tags || [],
+        coverPath: item.cover_url || "",
+    };
+}
+
+/** Sources the user added themselves are still read locally (the server only knows the built-in ones). */
+function customLocalSource(category: string) {
+    if (!isActiveOption(category)) return undefined;
+    return enabledSources().find((source) => !source.builtIn && (source.id === category || source.name === category));
+}
+
+function customSourceOptions() {
+    return enabledSources()
+        .filter((source) => !source.builtIn)
+        .map((source) => ({ id: source.id, name: source.name }));
+}
+
+async function fetchServerPrompts({ keyword = "", tag = [], category = ALL_PROMPTS_OPTION, scene = ALL_PROMPTS_OPTION, model = ALL_PROMPTS_OPTION, sort = "popular", page = 1, pageSize = 20 }: PromptQuery): Promise<PromptListResponse> {
+    const res = await listServerPrompts({
+        q: keyword.trim() || undefined,
+        scene: isActiveOption(scene) ? scene : undefined,
+        model: model === "gpt-image-2" ? "here" : model === "other" ? "other" : undefined,
+        source: isActiveOption(category) ? category : undefined,
+        tag: tag[0] || undefined,
+        sort,
+        page,
+        page_size: pageSize,
+    });
+    // Agent tools may pass a source name (or a localized "all") instead of a source id.
+    if (isActiveOption(category) && !res.sources?.some((source) => source.id === category)) {
+        const byName = res.sources?.find((source) => source.name === category);
+        return fetchServerPrompts({ keyword, tag, category: byName ? byName.id : ALL_PROMPTS_OPTION, scene, model, sort, page, pageSize });
+    }
+    const sourceOptions = [...(res.sources || []), ...customSourceOptions()];
+    return {
+        items: (res.items || []).map(serverPromptToPrompt),
+        tags: [],
+        categories: sourceOptions.map((source) => source.name),
+        sourceOptions,
+        sceneCounts: (res.scene_counts || {}) as Partial<Record<PromptScene, number>>,
+        total: res.total || 0,
+    };
+}
+
 export type PromptQuery = {
     keyword?: string;
     /** Legacy raw-tag filter (agent tools); the UI filters by scene instead. */
@@ -188,19 +284,36 @@ export type PromptQuery = {
     pageSize?: number;
 };
 
-export async function fetchPrompts({ keyword = "", tag = [], category = ALL_PROMPTS_OPTION, scene = ALL_PROMPTS_OPTION, model = ALL_PROMPTS_OPTION, sort = "recommended", page = 1, pageSize = 20 }: PromptQuery = {}): Promise<PromptListResponse> {
+/**
+ * The library listing: the main-site catalog (usage-ranked, curated) when reachable; the community
+ * sources read directly in the browser when it is not, and for sources the user added themselves.
+ */
+export async function fetchPrompts(query: PromptQuery = {}): Promise<PromptListResponse> {
+    if (!customLocalSource(query.category || ALL_PROMPTS_OPTION)) {
+        try {
+            return await fetchServerPrompts(query);
+        } catch (error) {
+            console.warn("[prompts] main-site library unavailable, reading sources directly", error);
+        }
+    }
+    return fetchLocalPrompts(query);
+}
+
+async function fetchLocalPrompts({ keyword = "", tag = [], category = ALL_PROMPTS_OPTION, scene = ALL_PROMPTS_OPTION, model = ALL_PROMPTS_OPTION, sort = "popular", page = 1, pageSize = 20 }: PromptQuery = {}): Promise<PromptListResponse> {
     const items = await getAllPrompts();
     const normalizedPage = Math.max(1, page);
     const normalizedPageSize = Math.max(1, Math.min(100, pageSize));
     const base = { keyword: keyword.trim().toLowerCase(), category, model };
     const withoutSceneFilter = filterPrompts(items, { ...base, tags: tag, scene: ALL_PROMPTS_OPTION });
     const filtered = sortPrompts(filterPrompts(withoutSceneFilter, { ...base, tags: [], scene }), sort);
-    const categories = enabledSources().map((source) => source.name);
+    const sourceOptions = enabledSources().map((source) => ({ id: source.id, name: source.name }));
+    const categories = sourceOptions.map((source) => source.name);
 
     return {
         items: filtered.slice((normalizedPage - 1) * normalizedPageSize, normalizedPage * normalizedPageSize),
         tags: collectTags(filterPrompts(items, { ...base, tags: [], scene })),
         categories,
+        sourceOptions,
         sceneCounts: countScenes(withoutSceneFilter),
         total: filtered.length,
     };
@@ -212,6 +325,7 @@ export function filterPromptList(items: Prompt[], query: Pick<PromptQuery, "keyw
 }
 
 function sortPrompts(items: Prompt[], sort: PromptSort) {
+    // Without usage data locally, "popular" falls back to the recommended order.
     const decorated = items.map((item, index) => ({ item, index, score: sort === "latest" ? promptTime(item) : recommendScore(item) }));
     decorated.sort((a, b) => b.score - a.score || a.index - b.index);
     return decorated.map(({ item }) => item);
@@ -280,13 +394,13 @@ function summarizeRefresh(results: PromptSourceRefreshResult[]): PromptSourceRef
 
 function filterPrompts(items: Prompt[], options: { keyword: string; category: string; tags: string[]; scene: string; model: PromptModelFilter }) {
     return items.filter((item) => {
-        if (isActiveOption(options.category) && item.category !== options.category) return false;
+        if (isActiveOption(options.category) && item.sourceId !== options.category && item.category !== options.category) return false;
         if (options.tags.length && !options.tags.some((tag) => item.tags.includes(tag))) return false;
         if (isActiveOption(options.scene) && !item.traits.scenes.includes(options.scene as PromptScene)) return false;
         if (options.model === "gpt-image-2" && !modelUsableHere(item.traits.model)) return false;
         if (options.model === "other" && modelUsableHere(item.traits.model)) return false;
         if (!options.keyword) return true;
-        return [item.title, item.prompt, item.description, item.category, ...item.tags].join(" ").toLowerCase().includes(options.keyword);
+        return [item.title, item.prompt, item.description, item.category, ...item.tags, ...(item.curatedTags || [])].join(" ").toLowerCase().includes(options.keyword);
     });
 }
 
