@@ -8,9 +8,7 @@ import { useWorksFeed } from "@/components/community/use-works-feed";
 import { WorkGrid } from "@/components/community/work-grid";
 import { usePublishWorkStore } from "@/stores/use-publish-work-store";
 import { useMainAccountStore } from "@/stores/use-main-account-store";
-import type { Feed } from "@/services/api/community";
-
-const TAGS = ["人像", "插画", "国风", "海报", "电商", "风景", "动漫", "建筑", "美食", "Logo", "3D", "摄影"];
+import { COMMUNITY_TAGS as TAGS, type Feed } from "@/services/api/community";
 
 /** 发现: recommended / latest / following works, filtered by tag. */
 export default function ExplorePage() {

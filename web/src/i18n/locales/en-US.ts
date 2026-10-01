@@ -103,6 +103,19 @@ export default {
             manage: "Add to collection",
             deleteConfirm: "Deleting a collection keeps its works. Delete it?",
         },
+        inspiration: {
+            feeds: { recommended: "For you", latest: "Latest", following: "Following", favorites: "Favorites" },
+            addImage: "Add image to canvas",
+            addPrompt: "Add prompt to canvas",
+            viewWork: "View work",
+            imageAdded: "Image added to the canvas",
+            imageFailed: "Couldn’t load the image. Try again later.",
+            promptAdded: "Prompt added to the canvas",
+            signIn: "Sign in",
+            signInForFavorites: "Sign in to see the works you favorited",
+            noFavorites: "No favorites yet. Star works you like to keep them here.",
+            empty: "No works here yet",
+        },
         poster: {
             action: "Share poster",
             title: "Share poster",
@@ -489,7 +502,7 @@ export default {
         },
         videoFrames: { first: "Capture first frame", last: "Capture last frame", current: "Capture current frame", firstTitle: "{{name}} first frame", lastTitle: "{{name}} last frame", currentTitle: "{{name}} current frame", captured: "Image node created", failed: "Could not capture this frame. Try again." },
         sidePanel: {
-            canvas: "Canvas", assets: "Assets", prompts: "Prompt Library", resize: "Resize left panel", elements: "Canvas elements", select: "Select", searchNodes: "Search nodes", focusNode: "Focus node", preview: "Large preview", noNodes: "No nodes on this canvas", clearAll: "Clear all", selected: "{{count}} selected", exporting: "Exporting selected elements…", exportName: "canvas-elements-{{count}}", exported: "Exported {{count}} elements", exportFailed: "Export failed. Try again.",
+            canvas: "Canvas", assets: "Assets", prompts: "Prompt Library", inspiration: "Inspiration", resize: "Resize left panel", elements: "Canvas elements", select: "Select", searchNodes: "Search nodes", focusNode: "Focus node", preview: "Large preview", noNodes: "No nodes on this canvas", clearAll: "Clear all", selected: "{{count}} selected", exporting: "Exporting selected elements…", exportName: "canvas-elements-{{count}}", exported: "Exported {{count}} elements", exportFailed: "Export failed. Try again.",
             addingAssets: "Adding assets…", addedAssets: "Added {{count}} assets", mediaOnly: "Only image and video files are supported", addFailed: "Failed to add assets. Try again.", searchAssets: "Search assets", add: "Add", noAssets: "No assets", inserted: "Insert into canvas", removeAssetTitle: "Remove this asset?", remove: "Remove", removeAsset: "Remove asset", assetRemoved: "Asset removed",
             searchPrompts: "Search prompts", noPrompts: "No prompts", promptCopied: "Prompt copied", copyFailed: "Copy failed", loadFailedRetry: "Load failed. Click to retry.", noMatchingPrompts: "No matching prompts", sourceEmpty: "No prompts from this source", viewDetails: "View details",
             filter: { image: "Image", video: "Video", text: "Text", audio: "Audio", config: "Configuration", group: "Group" },

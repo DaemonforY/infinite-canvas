@@ -81,6 +81,9 @@ export type Feed = "recommended" | "latest" | "following" | "favorites";
 export type WorksPage = { works: Work[]; next_offset: number; has_more: boolean };
 export type InteractionState = { like_count: number; favorite_count: number; liked_by_me: boolean; favorited_by_me: boolean };
 
+/** Scene tags offered as filters (works may carry others). */
+export const COMMUNITY_TAGS = ["人像", "插画", "国风", "海报", "电商", "风景", "动漫", "建筑", "美食", "Logo", "3D", "摄影"];
+
 const base = () => `${MAIN_SITE_URL}/api/v1/canvas/community`;
 const CANVAS_HEADER = { "X-HiveGPT-Canvas": "1" };
 

@@ -103,6 +103,19 @@ export default {
             manage: "放进作品集",
             deleteConfirm: "删除作品集不会删除里面的作品，确定删除吗？",
         },
+        inspiration: {
+            feeds: { recommended: "推荐", latest: "最新", following: "关注", favorites: "我的收藏" },
+            addImage: "图片加到画布",
+            addPrompt: "提示词加到画布",
+            viewWork: "查看作品",
+            imageAdded: "已把图片加到画布",
+            imageFailed: "图片加载失败，请稍后重试",
+            promptAdded: "已把提示词加到画布",
+            signIn: "登录",
+            signInForFavorites: "登录后可以看到你收藏的作品",
+            noFavorites: "还没有收藏作品，在推荐里看到喜欢的可以点星标收藏",
+            empty: "这里还没有作品",
+        },
         poster: {
             action: "生成分享海报",
             title: "分享海报",
@@ -489,7 +502,7 @@ export default {
         },
         videoFrames: { first: "截取首帧", last: "截取尾帧", current: "截取当前帧", firstTitle: "{{name}} 首帧", lastTitle: "{{name}} 尾帧", currentTitle: "{{name}} 当前帧", captured: "已生成图片节点", failed: "无法截取该画面，请重试" },
         sidePanel: {
-            canvas: "画布", assets: "资产", prompts: "提示词库", resize: "调整左侧面板宽度", elements: "画布元素", select: "选择", searchNodes: "搜索节点", focusNode: "定位到节点", preview: "放大预览", noNodes: "画布暂无节点", clearAll: "取消全选", selected: "已选 {{count}}", exporting: "正在导出选中元素…", exportName: "画布元素-{{count}}个", exported: "已导出 {{count}} 个元素", exportFailed: "导出失败，请重试",
+            canvas: "画布", assets: "资产", prompts: "提示词库", inspiration: "灵感", resize: "调整左侧面板宽度", elements: "画布元素", select: "选择", searchNodes: "搜索节点", focusNode: "定位到节点", preview: "放大预览", noNodes: "画布暂无节点", clearAll: "取消全选", selected: "已选 {{count}}", exporting: "正在导出选中元素…", exportName: "画布元素-{{count}}个", exported: "已导出 {{count}} 个元素", exportFailed: "导出失败，请重试",
             addingAssets: "正在添加资产…", addedAssets: "已添加 {{count}} 个资产", mediaOnly: "仅支持图片或视频文件", addFailed: "添加失败，请重试", searchAssets: "搜索资产", add: "添加", noAssets: "暂无资产", inserted: "插入画布", removeAssetTitle: "移除该资产？", remove: "移除", removeAsset: "移除资产", assetRemoved: "资产已移除",
             searchPrompts: "搜索提示词", noPrompts: "暂无提示词", promptCopied: "已复制提示词", copyFailed: "复制失败", loadFailedRetry: "加载失败，点击重试", noMatchingPrompts: "无匹配提示词", sourceEmpty: "该来源暂无提示词", viewDetails: "查看详情",
             filter: { image: "图片", video: "视频", text: "文本", audio: "音频", config: "配置", group: "分组" },
