@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useContestSubmitStore } from "@/stores/use-contest-submit-store";
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Group, Video } from "lucide-react";
+import { Globe, Group, Video } from "lucide-react";
 import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
@@ -33,6 +33,8 @@ import { CanvasNodeMaskEditDialog, type CanvasImageMaskEditPayload } from "@/com
 import { CanvasNodeSplitDialog, type CanvasImageSplitParams } from "@/components/canvas/canvas-node-split-dialog";
 import { CanvasNodeUpscaleDialog, type CanvasImageUpscaleParams } from "@/components/canvas/canvas-node-upscale-dialog";
 import { CanvasNodeSuperResolveDialog } from "@/components/canvas/canvas-node-super-resolve-dialog";
+import { CanvasPublishSiteDialog } from "@/components/canvas/canvas-publish-site-dialog";
+import { extractHtmlPage, htmlTitle } from "@/lib/publish-html";
 import { buildNodeGenerationContext, buildNodeGenerationInputs, buildNodeResponseMessages, hydrateNodeGenerationContext, type NodeGenerationInput } from "@/components/canvas/canvas-node-generation";
 import { CanvasNodeHoverToolbar, CanvasNodeInfoModal } from "@/components/canvas/canvas-node-hover-toolbar";
 import { CanvasSelectionToolbar } from "@/components/canvas/canvas-selection-toolbar";
@@ -252,6 +254,7 @@ function InfiniteCanvasPage() {
     const [splitNodeId, setSplitNodeId] = useState<string | null>(null);
     const [upscaleNodeId, setUpscaleNodeId] = useState<string | null>(null);
     const [superResolveNodeId, setSuperResolveNodeId] = useState<string | null>(null);
+    const [publishNodeId, setPublishNodeId] = useState<string | null>(null);
     const [angleNodeId, setAngleNodeId] = useState<string | null>(null);
     const [previewNodeId, setPreviewNodeId] = useState<string | null>(null);
     const [previewImageId, setPreviewImageId] = useState<string | null>(null);
@@ -730,6 +733,17 @@ function InfiniteCanvasPage() {
     const splitNode = splitNodeId ? nodeById.get(splitNodeId) || null : null;
     const upscaleNode = upscaleNodeId ? nodeById.get(upscaleNodeId) || null : null;
     const superResolveNode = superResolveNodeId ? nodeById.get(superResolveNodeId) || null : null;
+    const publishNode = publishNodeId ? nodeById.get(publishNodeId) || null : null;
+    // "发布为网页" for text nodes holding a web page (e.g. an AI answer with the page in an html block).
+    const nodeHtmlPage = (node: CanvasNodeData) => {
+        const texts = node.metadata?.texts || [];
+        const primary = texts.find((text) => text.id === (node.metadata?.primaryTextId || texts[0]?.id));
+        return extractHtmlPage(primary?.content || node.metadata?.content || "");
+    };
+    const publishToolbarItems = (node: CanvasNodeData) =>
+        node.type === CanvasNodeType.Text && nodeHtmlPage(node)
+            ? [{ id: "publishSite", title: t(node.metadata?.siteId ? "publishSite.updateTitle" : "publishSite.actionTitle"), label: t("publishSite.action"), icon: <Globe className="size-4" />, onClick: () => setPublishNodeId(node.id) }]
+            : [];
     const angleNode = angleNodeId ? nodeById.get(angleNodeId) || null : null;
     const contextMenuNode = contextMenu?.type === "node" ? nodeById.get(contextMenu.nodeId) || null : null;
     const previewNode = previewNodeId ? nodeById.get(previewNodeId) || null : null;
@@ -3286,7 +3300,7 @@ function InfiniteCanvasPage() {
                 <CanvasNodeHoverToolbar
                     node={isNodeDragging || isNodeResizing || nodeImageSettingsOpen || expandedBatchNodeIds.has(toolbarNode?.id || "") ? null : toolbarNode}
                     viewport={viewport}
-                    extraTools={toolbarNode ? buildNodeToolbarItems(toolbarNode) : undefined}
+                    extraTools={toolbarNode ? [...buildNodeToolbarItems(toolbarNode), ...publishToolbarItems(toolbarNode)] : undefined}
                     onKeep={keepNodeToolbar}
                     onLeave={hideNodeToolbar}
                     onInfo={(node) => setInfoNodeId(node.id)}
@@ -3412,6 +3426,17 @@ function InfiniteCanvasPage() {
 
                 {upscaleNode?.metadata?.content ? (
                     <CanvasNodeUpscaleDialog dataUrl={upscaleNode.metadata.content} open={Boolean(upscaleNode)} onClose={() => setUpscaleNodeId(null)} onConfirm={(params) => void upscaleImageNode(upscaleNode!, params)} />
+                ) : null}
+
+                {publishNode ? (
+                    <CanvasPublishSiteDialog
+                        open
+                        html={nodeHtmlPage(publishNode)}
+                        defaultTitle={htmlTitle(nodeHtmlPage(publishNode)) || publishNode.title || t("publishSite.untitled")}
+                        siteId={publishNode.metadata?.siteId}
+                        onClose={() => setPublishNodeId(null)}
+                        onPublished={(site) => setNodes((prev) => prev.map((item) => (item.id === publishNode.id ? { ...item, metadata: { ...item.metadata, siteId: site.id, siteUrl: site.url } } : item)))}
+                    />
                 ) : null}
 
                 {superResolveNode?.metadata?.content ? (
