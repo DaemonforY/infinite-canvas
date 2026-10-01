@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { App, Button, Checkbox, Dropdown, Modal } from "antd";
 import { CreditCard, Globe, LogIn, LogOut, Settings, UserRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 
 import { isMainSiteBaseUrl, MAIN_SITE_NAME, mainSiteLink } from "@/constant/runtime-config";
 import { accountDisplayName, latestSubscription } from "@/services/api/main-site-account";
-import { createConnectState, openConnectPopup, parseConnectMessage } from "@/services/api/main-site-connect";
+import { useMainSiteSignIn } from "@/components/layout/use-main-site-sign-in";
+import { useCommunityMeStore } from "@/stores/use-community-me-store";
 import { findMainSiteApiKey } from "@/services/api/main-site-contests";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useMainAccountStore } from "@/stores/use-main-account-store";
@@ -19,12 +21,11 @@ export function AccountMenu({ style }: { style?: CSSProperties }) {
     const refresh = useMainAccountStore((state) => state.refresh);
     const signOut = useMainAccountStore((state) => state.signOut);
     const config = useConfigStore((state) => state.config);
-    const importChannelCredentials = useConfigStore((state) => state.importChannelCredentials);
     const updateConfig = useConfigStore((state) => state.updateConfig);
-    const [waiting, setWaiting] = useState(false);
+    const { signIn, waiting } = useMainSiteSignIn();
+    const communityProfile = useCommunityMeStore((state) => state.profile);
     const [confirmOut, setConfirmOut] = useState(false);
     const [removeKey, setRemoveKey] = useState(true);
-    const stateRef = useRef("");
     const site = MAIN_SITE_NAME;
     const hasKey = Boolean(findMainSiteApiKey(config));
 
@@ -35,31 +36,11 @@ export function AccountMenu({ style }: { style?: CSSProperties }) {
         return () => window.removeEventListener("focus", onFocus);
     }, [refresh, status]);
 
+    // The community profile follows the account (loaded once signed in, cleared on sign-out).
     useEffect(() => {
-        if (!waiting) return;
-        const onMessage = (event: MessageEvent) => {
-            const reply = parseConnectMessage(event, stateRef.current);
-            if (!reply) return;
-            setWaiting(false);
-            if (reply.apiKey) importChannelCredentials({ baseUrl: reply.baseUrl, apiKey: reply.apiKey });
-            void refresh().then(() => {
-                if (useMainAccountStore.getState().status === "signedIn") message.success(t(reply.apiKey ? "account.signedIn" : "account.signedInNoKey", { site }));
-                else message.warning(t("account.cookieBlocked", { site }), 8);
-            });
-        };
-        window.addEventListener("message", onMessage);
-        return () => window.removeEventListener("message", onMessage);
-    }, [importChannelCredentials, message, refresh, site, t, waiting]);
-
-    const signIn = () => {
-        stateRef.current = createConnectState();
-        const popup = openConnectPopup(stateRef.current);
-        if (!popup) {
-            message.warning(t("quickStart.popupBlocked"));
-            return;
-        }
-        setWaiting(true);
-    };
+        if (status === "signedIn") void useCommunityMeStore.getState().refresh();
+        else if (status === "signedOut") useCommunityMeStore.getState().clear();
+    }, [status]);
 
     const doSignOut = async () => {
         await signOut();
@@ -97,6 +78,11 @@ export function AccountMenu({ style }: { style?: CSSProperties }) {
             ),
         },
         { type: "divider" as const },
+        {
+            key: "home",
+            icon: <UserRound className="size-4" />,
+            label: communityProfile ? <Link to={`/u/${communityProfile.handle}`}>{t("account.myPage")}</Link> : <Link to="/explore">{t("account.discover")}</Link>,
+        },
         {
             key: "topup",
             icon: <CreditCard className="size-4" />,

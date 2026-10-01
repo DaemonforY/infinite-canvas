@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, BookmarkPlus, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Trophy, Upload, Wand2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookmarkPlus, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, Send, SlidersHorizontal, Sparkles, Trash2, Trophy, Upload, Wand2 } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Popconfirm, Tag, Tooltip, Typography } from "antd";
 import localforage from "localforage";
@@ -14,7 +14,8 @@ import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { useCanvasTheme } from "@/lib/canvas-theme";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
-import { modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { modelOptionLabel, modelOptionName, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { usePublishWorkStore } from "@/stores/use-publish-work-store";
 import { nanoid } from "nanoid";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { requestEdit, requestGeneration } from "@/services/api/image";
@@ -609,7 +610,7 @@ export default function ImagePage() {
                             <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
                                 {results.map((result, index) =>
                                     result.status === "success" && result.image ? (
-                                        <ResultImageCard key={result.id} image={result.image} index={index} onEdit={addResultToReferences} onOpenEditor={(image, i) => setEditing({ image, index: i })} onDownload={downloadImage} onSaveAsset={saveResultToAssets} onSubmitContest={(image) => openContestSubmit({ imageUrl: image.dataUrl, prompt })} onSaveMine={(image) => openMyPromptEditor({ imageUrl: image.dataUrl, prompt, kind: "image" })} />
+                                        <ResultImageCard key={result.id} image={result.image} index={index} onEdit={addResultToReferences} onOpenEditor={(image, i) => setEditing({ image, index: i })} onDownload={downloadImage} onSaveAsset={saveResultToAssets} onSubmitContest={(image) => openContestSubmit({ imageUrl: image.dataUrl, prompt })} onPublish={(image) => usePublishWorkStore.getState().open({ images: [image.dataUrl], prompt, model: modelOptionName(effectiveConfig.imageModel || effectiveConfig.model || ""), params: { ...(effectiveConfig.size ? { size: effectiveConfig.size } : {}), ...(effectiveConfig.quality ? { quality: effectiveConfig.quality } : {}) }, source: "image_workbench" })} onSaveMine={(image) => openMyPromptEditor({ imageUrl: image.dataUrl, prompt, kind: "image" })} />
                                     ) : result.status === "failed" ? (
                                         <FailedImageCard key={result.id} error={result.error || t("workbench.generationFailed")} onRetry={() => retryResult(index)} />
                                     ) : (
@@ -695,6 +696,7 @@ function ResultImageCard({
     onDownload,
     onSaveAsset,
     onSubmitContest,
+    onPublish,
     onSaveMine,
 }: {
     image: GeneratedImage;
@@ -704,6 +706,7 @@ function ResultImageCard({
     onDownload: (image: GeneratedImage, index: number) => void;
     onSaveAsset: (image: GeneratedImage, index: number) => void;
     onSubmitContest: (image: GeneratedImage) => void;
+    onPublish: (image: GeneratedImage) => void;
     onSaveMine: (image: GeneratedImage) => void;
 }) {
     const { t } = useTranslation();
@@ -741,13 +744,16 @@ function ResultImageCard({
                         </Button>
                     </Tooltip>
                 </div>
-                <div className="grid min-w-0 grid-cols-2 gap-2">
+                <div className="grid min-w-0 grid-cols-3 gap-2">
                     <Tooltip title={t("myPrompts.saveWithCover")}>
                         <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<BookmarkPlus className="size-3.5" />} onClick={() => onSaveMine(image)} data-testid="result-save-prompt">
                             {t("myPrompts.saveShort")}
                         </Button>
                     </Tooltip>
-                    <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" type="primary" icon={<Trophy className="size-3.5" />} onClick={() => onSubmitContest(image)} data-testid="result-submit-contest">
+                    <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" type="primary" icon={<Send className="size-3.5" />} onClick={() => onPublish(image)} data-testid="result-publish">
+                        {t("community.publish.short")}
+                    </Button>
+                    <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<Trophy className="size-3.5" />} onClick={() => onSubmitContest(image)} data-testid="result-submit-contest">
                         {t("contestSubmit.action")}
                     </Button>
                 </div>

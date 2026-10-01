@@ -19,7 +19,12 @@ test("fresh installs show the edit tool by default", () => {
 
 test("toolbars saved at version 2 get the outpaint tool once, and keep it hidden afterwards", () => {
     const upgraded = readImageQuickToolsConfig({ ids: ["info", "edit", "maskEdit", "crop"], showLabels: false, toolsVersion: 2 });
-    expect(upgraded.ids).toEqual(["info", "edit", "maskEdit", "outpaint", "crop"]);
+    expect(upgraded.ids).toEqual(["info", "edit", "maskEdit", "outpaint", "crop", "publish"]);
     const hidden = readImageQuickToolsConfig({ ids: ["info", "edit", "maskEdit", "crop"], showLabels: false, toolsVersion: IMAGE_QUICK_TOOLS_VERSION });
     expect(hidden.ids.includes("outpaint")).toBe(false);
+});
+
+test("toolbars saved at version 3 get only the publish tool", () => {
+    const upgraded = readImageQuickToolsConfig({ ids: ["info", "edit", "crop"], showLabels: false, toolsVersion: 3 });
+    expect(upgraded.ids).toEqual(["info", "edit", "crop", "publish"]);
 });

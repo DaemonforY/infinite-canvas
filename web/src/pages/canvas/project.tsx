@@ -9,7 +9,7 @@ import { useTranslation } from "react-i18next";
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { createVideoGenerationTask, isVideoTaskFailed, storeGeneratedVideo, waitForVideoGenerationTask } from "@/services/api/video";
-import { defaultConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
+import { defaultConfig, modelOptionName, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { ensureImagePreview, uploadImage } from "@/services/image-storage";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { nanoid } from "nanoid";
@@ -34,6 +34,7 @@ import { CanvasNodeSplitDialog, type CanvasImageSplitParams } from "@/components
 import { CanvasNodeUpscaleDialog, type CanvasImageUpscaleParams } from "@/components/canvas/canvas-node-upscale-dialog";
 import { CanvasNodeSuperResolveDialog } from "@/components/canvas/canvas-node-super-resolve-dialog";
 import { CanvasNodeOutpaintDialog, type CanvasImageOutpaintPayload } from "@/components/canvas/canvas-node-outpaint-dialog";
+import { usePublishWorkStore } from "@/stores/use-publish-work-store";
 import { CanvasPublishSiteDialog } from "@/components/canvas/canvas-publish-site-dialog";
 import { extractHtmlPage, htmlTitle } from "@/lib/publish-html";
 import { buildNodeGenerationContext, buildNodeGenerationInputs, buildNodeResponseMessages, hydrateNodeGenerationContext, type NodeGenerationInput } from "@/components/canvas/canvas-node-generation";
@@ -3381,6 +3382,17 @@ function InfiniteCanvasPage() {
                     onUpscale={(node) => setUpscaleNodeId(node.id)}
                     onSuperResolve={(node) => setSuperResolveNodeId(node.id)}
                     onOutpaint={(node) => setOutpaintNodeId(node.id)}
+                    onPublish={(node) => {
+                        if (!node.metadata?.content) return;
+                        usePublishWorkStore.getState().open({
+                            images: [node.metadata.content],
+                            prompt: node.metadata.prompt,
+                            title: node.title,
+                            model: node.metadata.model ? modelOptionName(node.metadata.model) : "",
+                            params: { ...(node.metadata.size ? { size: node.metadata.size } : {}), ...(node.metadata.quality ? { quality: node.metadata.quality } : {}) },
+                            source: "canvas",
+                        });
+                    }}
                     onAngle={(node) => setAngleNodeId(node.id)}
                     onViewImage={handleNodeViewImage}
                     onReversePrompt={createImageReversePromptNodes}

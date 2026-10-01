@@ -13,6 +13,10 @@ import NotFound from "@/pages/not-found";
 import PromptsPage from "@/pages/prompts";
 import ToolsPage from "@/pages/tools";
 import VideoPage from "@/pages/video";
+import ExplorePage from "@/pages/explore";
+import WorkPage from "@/pages/work";
+import UserPage from "@/pages/user";
+import CollectionPage from "@/pages/collection";
 
 export const router = createBrowserRouter([
     {
@@ -33,6 +37,10 @@ export const router = createBrowserRouter([
             { path: "/canvas", element: <CanvasPage /> },
             { path: "/canvas/:id", element: <CanvasProjectPage /> },
             { path: "/config", element: <ConfigPage /> },
+            { path: "/explore", element: <ExplorePage /> },
+            { path: "/w/:id", element: <WorkPage /> },
+            { path: "/u/:handle", element: <UserPage /> },
+            { path: "/c/:id", element: <CollectionPage /> },
         ],
     },
     { path: "*", element: <NotFound /> },
