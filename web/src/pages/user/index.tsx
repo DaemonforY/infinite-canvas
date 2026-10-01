@@ -27,7 +27,7 @@ export default function UserPage() {
     const [tab, setTab] = useState<Tab>("works");
     const [editing, setEditing] = useState(false);
     const [follows, setFollows] = useState<"followers" | "following" | null>(null);
-    const share = useShareLink(`/u/${encodeURIComponent(handle)}`);
+    const share = useShareLink(`/u/${encodeURIComponent(handle)}`, { syncAddressBar: true });
 
     useEffect(() => {
         let cancelled = false;

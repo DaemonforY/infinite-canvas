@@ -17,6 +17,7 @@ export default {
         copied: "链接已复制",
         copiedWithInvite: "链接已复制，带有你的邀请码：好友通过它注册 HiveGPT 会计入你的邀请",
         copyLink: "复制链接",
+        inviteSignInHint: "登录后，分享出去的链接会带上你的邀请码，好友通过它注册 HiveGPT 会计入你的邀请。",
         inviteHint: "分享的链接和二维码带有你的邀请码，好友通过它注册 HiveGPT 会计入你的邀请。",
         share: "分享",
         edit: "编辑",

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 
+import { forgetOwnReferral } from "@/lib/referral";
 import { fetchMainSiteAccount, signOutMainSite, type MainSiteAccount } from "@/services/api/main-site-account";
 
 type AccountStatus = "unknown" | "signedOut" | "signedIn";
@@ -19,7 +20,10 @@ export const useMainAccountStore = create<MainAccountStore>((set) => ({
     account: null,
     refresh: () => {
         inflight ??= fetchMainSiteAccount()
-            .then((account) => set(account ? { status: "signedIn", account } : { status: "signedOut", account: null }))
+            .then((account) => {
+                if (account) forgetOwnReferral(account.aff_code);
+                set(account ? { status: "signedIn", account } : { status: "signedOut", account: null });
+            })
             .catch(() => set((state) => (state.status === "unknown" ? { status: "signedOut" } : state)))
             .finally(() => {
                 inflight = null;

@@ -33,3 +33,16 @@ describe("referral", () => {
         expect(withReferral("https://canvas.example/w/3?aff=OLD1", "new22")).toBe("https://canvas.example/w/3?aff=NEW22");
     });
 });
+
+describe("forgetOwnReferral", () => {
+    test("drops only the signed-in user's own code", async () => {
+        const { forgetOwnReferral } = await import("../src/lib/referral");
+        localStorage.clear();
+        captureReferral("?aff=OTHER1");
+        forgetOwnReferral("MINE22");
+        expect(loadReferral()).toBe("OTHER1");
+        captureReferral("?aff=mine22");
+        forgetOwnReferral("MINE22");
+        expect(loadReferral()).toBe("");
+    });
+});

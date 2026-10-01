@@ -39,6 +39,17 @@ export function loadReferral(now = Date.now()): string {
     return "";
 }
 
+/** Drops the kept code when it is the signed-in user's own (their address bar carries it). */
+export function forgetOwnReferral(ownCode: unknown): void {
+    const own = normalizeReferralCode(ownCode);
+    if (!own || loadReferral() !== own) return;
+    try {
+        localStorage.removeItem(STORAGE_KEY);
+    } catch {
+        // Nothing kept, nothing to drop.
+    }
+}
+
 /** Adds ?aff=code to url (unchanged when the code is empty or invalid). */
 export function withReferral(url: string, code: unknown): string {
     const aff = normalizeReferralCode(code);

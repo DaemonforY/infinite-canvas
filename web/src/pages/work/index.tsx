@@ -48,7 +48,7 @@ export default function WorkPage() {
     const [editing, setEditing] = useState(false);
     const [reporting, setReporting] = useState(false);
     const [posterOpen, setPosterOpen] = useState(false);
-    const share = useShareLink(`/w/${id}`);
+    const share = useShareLink(`/w/${id}`, { syncAddressBar: Boolean(work && work.visibility !== "private") });
     const [managing, setManaging] = useState(false);
 
     useEffect(() => {
@@ -253,6 +253,7 @@ export default function WorkPage() {
                                 items: [
                                     { key: "link", icon: <Link2 className="size-4" />, label: t("community.copyLink"), onClick: share.copy },
                                     { key: "poster", icon: <ImageIcon className="size-4" />, label: t("community.poster.action"), onClick: () => setPosterOpen(true) },
+                                    ...(share.signedIn ? [] : [{ key: "invite", disabled: true, label: <span className="block max-w-56 whitespace-normal text-xs">{t("community.inviteSignInHint")}</span> }]),
                                 ],
                             }}
                         >

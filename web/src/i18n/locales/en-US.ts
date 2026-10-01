@@ -17,6 +17,7 @@ export default {
         copied: "Link copied",
         copiedWithInvite: "Link copied with your invite code: friends who sign up to HiveGPT through it count as your invites",
         copyLink: "Copy link",
+        inviteSignInHint: "Sign in and the links you share carry your invite code; friends who sign up to HiveGPT through them count as your invites.",
         inviteHint: "Shared links and QR codes carry your invite code; friends who sign up to HiveGPT through them count as your invites.",
         share: "Share",
         edit: "Edit",

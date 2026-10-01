@@ -19,7 +19,7 @@ export default function CollectionPage() {
     const [error, setError] = useState("");
     const [editing, setEditing] = useState(false);
     const feed = useWorksFeed({ collection: id }, Boolean(collection));
-    const share = useShareLink(`/c/${id}`);
+    const share = useShareLink(`/c/${id}`, { syncAddressBar: collection?.visibility === "public" });
 
     useEffect(() => {
         setCollection(null);
