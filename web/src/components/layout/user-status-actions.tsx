@@ -4,6 +4,7 @@ import { BookOpen, Keyboard, Puzzle, Settings2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
+import { AccountMenu } from "@/components/layout/account-menu";
 import { MainSiteLink } from "@/components/layout/main-site-link";
 import { SkinPicker } from "@/components/layout/skin-picker";
 import { VersionReleaseModal } from "@/components/layout/version-release-modal";
@@ -75,6 +76,9 @@ export function UserStatusActions({ showConfig = true, variant = "default", coll
                     <Keyboard className="size-4" />
                 </button>
             ) : null}
+            <span className="ml-1 inline-flex">
+                <AccountMenu />
+            </span>
         </div>
     );
 }

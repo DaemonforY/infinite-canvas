@@ -27,3 +27,12 @@ test("rejects malformed keys", () => {
     expect(parseConnectMessage(event("https://hivegpt.cn", { ...valid, apiKey: "sk a" }), STATE)).toBeNull();
     expect(parseConnectMessage(event("https://hivegpt.cn", { ...valid, apiKey: "x".repeat(300) }), STATE)).toBeNull();
 });
+
+test("a sign-in without a key is accepted only when marked signed in and carrying no key at all", () => {
+    const signIn = { type: CONNECT_MESSAGE_TYPE, state: STATE, signedIn: true };
+    expect(parseConnectMessage(event("https://hivegpt.cn", signIn), STATE)).toMatchObject({ apiKey: "", signedIn: true });
+    expect(parseConnectMessage(event("https://hivegpt.cn", { type: CONNECT_MESSAGE_TYPE, state: STATE }), STATE)).toBeNull();
+    expect(parseConnectMessage(event("https://hivegpt.cn", { ...signIn, apiKey: "" }), STATE)).toBeNull();
+    expect(parseConnectMessage(event("https://evil.example", signIn), STATE)).toBeNull();
+    expect(parseConnectMessage(event("https://hivegpt.cn", { ...valid, signedIn: true }), STATE)).toMatchObject({ apiKey: "sk-abc123", signedIn: true });
+});

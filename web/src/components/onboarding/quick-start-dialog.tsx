@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { MAIN_SITE_API_BASE_URL, MAIN_SITE_NAME, mainSiteLink } from "@/constant/runtime-config";
 import { createConnectState, openConnectPopup, parseConnectMessage, testApiKey } from "@/services/api/main-site-connect";
 import { useConfigStore } from "@/stores/use-config-store";
+import { useMainAccountStore } from "@/stores/use-main-account-store";
 
 /**
  * First-run setup: shown instead of the full configuration dialog while no channel has an API key.
@@ -52,11 +53,19 @@ export function QuickStartDialog() {
         if (!waiting) return;
         const onMessage = (event: MessageEvent) => {
             const key = parseConnectMessage(event, stateRef.current);
-            if (key) finish(key.apiKey, true);
+            if (!key) return;
+            if (key.signedIn) void useMainAccountStore.getState().refresh();
+            if (key.apiKey) {
+                finish(key.apiKey, true);
+                return;
+            }
+            // Signed in without a key: drawing still needs one.
+            setWaiting(false);
+            message.info(t("account.signedInNoKey", { site }), 6);
         };
         window.addEventListener("message", onMessage);
         return () => window.removeEventListener("message", onMessage);
-    }, [finish, waiting]);
+    }, [finish, message, site, t, waiting]);
 
     useEffect(() => {
         if (open) return;

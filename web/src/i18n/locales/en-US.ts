@@ -1,7 +1,26 @@
 export default {
     meta: {
-        title: "Infinite Canvas",
-        description: "An infinite canvas creation tool",
+        title: "HiveGPT Infinite Canvas",
+        description: "HiveGPT Infinite Canvas: draw, make videos and web pages with AI, and connect and remix your work on a canvas",
+    },
+    account: {
+        signIn: "Sign in",
+        menu: "Account menu for {{name}}",
+        signedIn: "Signed in with a {{site}} key connected — ready to draw",
+        signedInNoKey: "Signed in with your {{site}} account. Drawing still needs an image-capable key: use “Connect” in settings.",
+        cookieBlocked: "Sign-in didn’t stick: the browser blocked {{site}}’s cookie. Allow cookies for {{site}} and try again.",
+        balance: "Balance ¥{{amount}}",
+        subscription: "{{name}} · until {{date}}",
+        noSubscription: "No subscription",
+        noKey: "No drawing key connected yet",
+        topUp: "Top up / subscribe",
+        sites: "My sites",
+        settings: "{{site}} account settings",
+        signOut: "Sign out",
+        signOutTitle: "Sign out?",
+        signOutHint: "The canvas on this computer signs out of {{site}}; your canvas projects stay in this browser.",
+        removeKey: "Also delete the {{site}} API key saved on this computer (recommended on shared computers)",
+        signedOut: "Signed out",
     },
     theme: { toggle: "Toggle theme" },
     common: {

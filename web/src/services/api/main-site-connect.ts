@@ -1,17 +1,19 @@
 import { MAIN_SITE_API_BASE_URL, MAIN_SITE_URL, mainSiteLink } from "@/constant/runtime-config";
 import { readFetchError } from "./errors";
 
-// "Connect with the main site" handoff.
+// "Sign in / connect with the main site" handoff.
 //
-// The canvas opens MAIN_SITE_URL/canvas-connect in a popup with a random `state`. After the user
-// picks (or creates) a key there, the main site posts it back with window.opener.postMessage,
+// The canvas opens MAIN_SITE_URL/canvas-connect in a popup with a random `state`. Authorizing there
+// signs the canvas in (the main site sets its session cookie) and, when the user picked (or created)
+// a key, the key is posted back too; the main site answers with window.opener.postMessage,
 // targeted at this origin only. We accept the message only from the main site's exact origin and
 // only with the state we generated, so another page cannot inject a key and a stale popup cannot
 // answer a newer request. The key never travels in a URL.
 
 export const CONNECT_MESSAGE_TYPE = "hivegpt:canvas-key";
 
-export type ConnectedKey = { apiKey: string; baseUrl: string; keyName: string };
+/** apiKey is "" when the user signed in without connecting a key. */
+export type ConnectedKey = { apiKey: string; baseUrl: string; keyName: string; signedIn: boolean };
 
 export function mainSiteOrigin(): string {
     try {
@@ -50,10 +52,12 @@ export function parseConnectMessage(event: MessageEvent, expectedState: string):
     const data = event.data as Record<string, unknown> | null;
     if (!data || typeof data !== "object" || data.type !== CONNECT_MESSAGE_TYPE) return null;
     if (typeof data.state !== "string" || data.state !== expectedState) return null;
+    const signedIn = data.signedIn === true;
     const apiKey = typeof data.apiKey === "string" ? data.apiKey.trim() : "";
+    if (!apiKey && signedIn && data.apiKey === undefined) return { apiKey: "", baseUrl: MAIN_SITE_API_BASE_URL, keyName: "", signedIn };
     if (!apiKey || apiKey.length > 256 || /\s/.test(apiKey)) return null;
     const keyName = typeof data.keyName === "string" ? data.keyName.slice(0, 80) : "";
-    return { apiKey, baseUrl: MAIN_SITE_API_BASE_URL, keyName };
+    return { apiKey, baseUrl: MAIN_SITE_API_BASE_URL, keyName, signedIn };
 }
 
 export type KeyTestResult = { ok: true; modelCount: number; imageCapable: boolean } | { ok: false; reason: "invalid" | "network" | "http"; status?: number; message?: string };

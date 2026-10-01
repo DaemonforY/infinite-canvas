@@ -1,7 +1,26 @@
 export default {
     meta: {
-        title: "无限画布",
-        description: "一个无限画布创作工具",
+        title: "HiveGPT 无限画布",
+        description: "HiveGPT 无限画布：用 AI 画图、做视频、做网页，在画布上连接和重组你的创作",
+    },
+    account: {
+        signIn: "登录",
+        menu: "{{name}} 的账号菜单",
+        signedIn: "已登录并连接 {{site}} Key，可以开始画图了",
+        signedInNoKey: "已用 {{site}} 账号登录。画图还需要一个支持画图的 Key：点设置里的「一键连接」。",
+        cookieBlocked: "登录没有生效：浏览器拦截了 {{site}} 的 Cookie。请允许 {{site}} 的 Cookie 后重试。",
+        balance: "余额 ¥{{amount}}",
+        subscription: "{{name}} · 到期 {{date}}",
+        noSubscription: "未订阅",
+        noKey: "还没连接画图用的 Key",
+        topUp: "充值 / 订阅",
+        sites: "我的网站",
+        settings: "{{site}} 账号设置",
+        signOut: "退出登录",
+        signOutTitle: "退出登录？",
+        signOutHint: "这台电脑上的画布会退出 {{site}} 账号，画布作品仍保存在本机浏览器里。",
+        removeKey: "同时删除本机保存的 {{site}} API Key（公共电脑建议勾选）",
+        signedOut: "已退出登录",
     },
     theme: { toggle: "切换主题" },
     common: {
