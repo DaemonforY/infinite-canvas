@@ -17,12 +17,14 @@ export function CanvasPublishSiteDialog({ open, html, defaultTitle, siteId, onCl
     const copyText = useCopyText();
     const apiKey = useConfigStore((state) => findMainSiteApiKey(state.config));
     const [title, setTitle] = useState(defaultTitle);
+    const [name, setName] = useState("");
     const [busy, setBusy] = useState(false);
     const [site, setSite] = useState<HostedSite | null>(null);
 
     useEffect(() => {
         if (open) {
             setTitle(defaultTitle);
+            setName("");
             setSite(null);
         }
     }, [open, defaultTitle]);
@@ -31,7 +33,7 @@ export function CanvasPublishSiteDialog({ open, html, defaultTitle, siteId, onCl
         setBusy(true);
         try {
             const page = asHtmlDocument(html, title.trim() || defaultTitle);
-            const result = asUpdate && siteId ? await updateSite(apiKey, siteId, title.trim(), page) : await publishSite(apiKey, title.trim(), page);
+            const result = asUpdate && siteId ? await updateSite(apiKey, siteId, title.trim(), page) : await publishSite(apiKey, title.trim(), page, name);
             setSite(result);
             onPublished(result);
         } catch (error) {
@@ -66,6 +68,10 @@ export function CanvasPublishSiteDialog({ open, html, defaultTitle, siteId, onCl
                     <div className="grid gap-1.5">
                         <span className="text-sm font-medium">{t("publishSite.name")}</span>
                         <Input value={title} maxLength={60} onChange={(event) => setTitle(event.target.value)} />
+                    </div>
+                    <div className="grid gap-1.5">
+                        <span className="text-sm font-medium">{siteId ? t("publishSite.addressNew") : t("publishSite.address")}</span>
+                        <Input value={name} maxLength={30} placeholder={t("publishSite.addressPlaceholder")} onChange={(event) => setName(event.target.value.trim().toLowerCase())} data-testid="publish-site-name" />
                     </div>
                     <p className="m-0 text-xs leading-5 opacity-70">{t("publishSite.hint", { site: MAIN_SITE_NAME })}</p>
                     <div className="flex flex-wrap justify-end gap-2">

@@ -39,8 +39,9 @@ async function request(input: string, init: RequestInit): Promise<HostedSite> {
     throw new Error(humanizeApiError({ ...extractApiError(text), status: res.status }));
 }
 
-export function publishSite(apiKey: string, title: string, html: string): Promise<HostedSite> {
-    return request(base(), { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ title, html }) });
+/** `name` picks the address (3–30 lowercase letters, digits, hyphens); empty means a random one. */
+export function publishSite(apiKey: string, title: string, html: string, name = ""): Promise<HostedSite> {
+    return request(base(), { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ title, html, ...(name ? { name } : {}) }) });
 }
 
 export function updateSite(apiKey: string, id: number, title: string, html: string): Promise<HostedSite> {
