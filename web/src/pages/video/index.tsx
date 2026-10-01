@@ -7,11 +7,13 @@ import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
+import { createReferenceImage, ReferenceSizeBadge, useReferenceImageTool } from "@/components/image-tools/reference-image-tool";
 import { ModelPicker } from "@/components/model-picker";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeValue, videoModeLabel, videoSizeLabel } from "@/components/video-settings-panel";
 import { useCanvasTheme } from "@/lib/canvas-theme";
 import { clampVideoSeconds } from "@/lib/media-size";
+import { isImageFile } from "@/lib/image-tools";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { deleteStoredMedia, resolveMediaUrl } from "@/services/file-storage";
 import { resolveImageUrl, ensureImagePreview, getImagePreviewRevision, previewUrlFor, subscribeImagePreviews, uploadImage } from "@/services/image-storage";
@@ -89,6 +91,7 @@ export default function VideoPage() {
     const [prompt, setPrompt] = useState(() => readWorkbenchDraft("video")?.prompt || "");
     const openMyPromptEditor = useMyPromptEditorStore((state) => state.open);
     const [references, setReferences] = useState<ReferenceImage[]>([]);
+    const referenceTool = useReferenceImageTool(setReferences);
     const [results, setResults] = useState<GenerationResult[]>([]);
     const [logs, setLogs] = useState<GenerationLog[]>([]);
     const [running, setRunning] = useState(false);
@@ -154,15 +157,10 @@ export default function VideoPage() {
 
     const addReferences = async (files?: FileList | null) => {
         const selectedFiles = Array.from(files || []);
-        const unsupported = selectedFiles.filter((file) => !file.type.startsWith("image/"));
+        const unsupported = selectedFiles.filter((file) => !isImageFile(file));
         if (unsupported.length) message.warning(t("videoWorkbench.unsupportedFiles"));
-        const imageFiles = selectedFiles.filter((file) => file.type.startsWith("image/")).slice(0, 7 - references.length);
-        const nextReferences = await Promise.all(
-            imageFiles.map(async (file) => {
-                const image = await uploadImage(file);
-                return { id: nanoid(), name: file.name, type: image.mimeType, dataUrl: image.url, storageKey: image.storageKey };
-            }),
-        );
+        const imageFiles = selectedFiles.filter(isImageFile).slice(0, 7 - references.length);
+        const nextReferences = await Promise.all(imageFiles.map((file) => createReferenceImage(file, file.name)));
         setReferences((value) => [...value, ...nextReferences].slice(0, 7));
     };
 
@@ -193,12 +191,7 @@ export default function VideoPage() {
                 message.error(t("videoWorkbench.clipboardEmpty"));
                 return;
             }
-            const nextReferences = await Promise.all(
-                blobs.slice(0, 7 - references.length).map(async (blob, index) => {
-                    const image = await uploadImage(blob);
-                    return { id: nanoid(), name: `clipboard-${index + 1}.png`, type: image.mimeType, dataUrl: image.url, storageKey: image.storageKey };
-                }),
-            );
+            const nextReferences = await Promise.all(blobs.slice(0, 7 - references.length).map((blob, index) => createReferenceImage(blob, `clipboard-${index + 1}.png`)));
             setReferences((value) => [...value, ...nextReferences].slice(0, 7));
             message.success(t("videoWorkbench.clipboardAdded", { count: nextReferences.length }));
         } catch {
@@ -488,6 +481,7 @@ export default function VideoPage() {
                                         <div key={item.id} className="group relative size-20 shrink-0 overflow-hidden rounded-md border border-stone-200 dark:border-stone-800">
                                             <img src={previewUrlFor(item.storageKey) || item.dataUrl} alt={item.name} className="size-full object-cover" />
                                             <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">{index + 1}</span>
+                                            <ReferenceSizeBadge item={item} onOpen={() => void referenceTool.open(item)} />
                                             <ReferenceOrderButtons index={index} total={references.length} onMove={(offset) => setReferences((value) => moveListItem(value, index, offset))} />
                                             <button type="button" className="absolute right-1 top-1 flex size-6 items-center justify-center rounded-full bg-black/55 text-white shadow-sm transition hover:bg-red-600 focus-visible:ring-2 focus-visible:ring-white" onClick={() => setReferences((value) => value.filter((ref) => ref.id !== item.id))} aria-label={t("videoWorkbench.removeImage")} title={t("videoWorkbench.removeImage")} data-testid="reference-remove">
                                                 <Trash2 className="size-3.5" />
@@ -557,6 +551,7 @@ export default function VideoPage() {
                 </div>
             </Drawer>
             <PromptSelectDialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen} onSelect={setPrompt} kind="video" />
+            {referenceTool.dialog}
             <AssetPickerModal open={assetPickerOpen} defaultTab="my-assets" onInsert={(payload) => void insertPickedAsset(payload)} onClose={() => setAssetPickerOpen(false)} />
             <Modal title={t("workbench.deleteLogs")} open={deleteConfirmOpen} onCancel={() => setDeleteConfirmOpen(false)} onOk={deleteSelectedLogs} okText={t("common.delete")} okButtonProps={{ danger: true }} cancelText={t("common.cancel")}>
                 {t("workbench.deleteLogsConfirm", { count: selectedLogIds.length })}

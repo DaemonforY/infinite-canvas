@@ -7,6 +7,8 @@ import { useTranslation } from "react-i18next";
 
 import { ImageSettingsPanel } from "@/components/image-settings-panel";
 import { ImageEditorDialog, type ImageEditorResult } from "@/components/image-editor/image-editor-dialog";
+import { createReferenceImage, ReferenceSizeBadge, useReferenceImageTool } from "@/components/image-tools/reference-image-tool";
+import { isImageFile } from "@/lib/image-tools";
 import { ModelPicker } from "@/components/model-picker";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
@@ -103,6 +105,7 @@ export default function ImagePage() {
     // Falls back to the prompt the user left in the new-session draft (see use-workbench-draft).
     const [prompt, setPrompt] = useState(() => readInitialPromptParam() || readWorkbenchDraft("image")?.prompt || "");
     const [references, setReferences] = useState<ReferenceImage[]>([]);
+    const referenceTool = useReferenceImageTool(setReferences);
     const [editing, setEditing] = useState<{ image: GeneratedImage; index: number } | null>(null);
     const [results, setResults] = useState<GenerationResult[]>([]);
     const [logs, setLogs] = useState<GenerationLog[]>([]);
@@ -169,13 +172,8 @@ export default function ImagePage() {
     }, []);
 
     const addReferences = async (files?: FileList | null) => {
-        const imageFiles = Array.from(files || []).filter((file) => file.type.startsWith("image/"));
-        const nextReferences = await Promise.all(
-            imageFiles.map(async (file) => {
-                const image = await uploadImage(file);
-                return { id: nanoid(), name: file.name, type: image.mimeType, dataUrl: image.url, storageKey: image.storageKey };
-            }),
-        );
+        const imageFiles = Array.from(files || []).filter(isImageFile);
+        const nextReferences = await Promise.all(imageFiles.map((file) => createReferenceImage(file, file.name)));
         setReferences((value) => [...value, ...nextReferences]);
     };
 
@@ -187,12 +185,7 @@ export default function ImagePage() {
                 message.error(t("imageWorkbench.clipboardEmpty"));
                 return;
             }
-            const nextReferences = await Promise.all(
-                blobs.map(async (blob, index) => {
-                    const image = await uploadImage(blob);
-                    return { id: nanoid(), name: `clipboard-${index + 1}.png`, type: image.mimeType, dataUrl: image.url, storageKey: image.storageKey };
-                }),
-            );
+            const nextReferences = await Promise.all(blobs.map((blob, index) => createReferenceImage(blob, `clipboard-${index + 1}.png`)));
             setReferences((value) => [...value, ...nextReferences]);
             message.success(t("imageWorkbench.clipboardAdded", { count: nextReferences.length }));
         } catch {
@@ -566,6 +559,7 @@ export default function ImagePage() {
                                         <div key={item.id} className="group relative size-20 shrink-0 overflow-hidden rounded-md border border-stone-200 dark:border-stone-800">
                                             <img src={previewUrlFor(item.storageKey) || item.dataUrl} alt={item.name} className="size-full object-cover" />
                                             <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">{imageReferenceLabel(index)}</span>
+                                            <ReferenceSizeBadge item={item} onOpen={() => void referenceTool.open(item)} />
                                             <ReferenceOrderButtons index={index} total={references.length} onMove={(offset) => setReferences((value) => moveListItem(value, index, offset))} />
                                             <button
                                                 type="button"
@@ -643,6 +637,7 @@ export default function ImagePage() {
                     event.target.value = "";
                 }}
             />
+            {referenceTool.dialog}
             <ImageEditorDialog open={Boolean(editing)} src={editing?.image.dataUrl || ""} onClose={() => setEditing(null)} onSave={saveEditedImage} onAiEdit={aiEditImage} />
             <Drawer title={t("workbench.logs")} placement="bottom" size="large" open={logsOpen} onClose={() => setLogsOpen(false)}>
                 <LogPanel
