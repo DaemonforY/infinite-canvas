@@ -132,3 +132,30 @@ export async function normalizeImageFile(file: File): Promise<File> {
     const result = await processImage(file, file.name, { ...DEFAULT_IMAGE_TOOL_OPTIONS, format: "jpeg", quality: 0.9 });
     return new File([result.blob], result.name, { type: result.blob.type });
 }
+
+/** Keeps an image inside what the server tools accept (long edge, file size) before uploading it. */
+export async function fitForUpload(source: Blob, name: string, maxEdge: number, maxBytes: number): Promise<Blob> {
+    const bitmap = await decodeImage(source, name);
+    const edge = Math.max(bitmap.width, bitmap.height);
+    bitmap.close();
+    if (edge <= maxEdge && source.size <= maxBytes && !isHeicFile({ name, type: source.type })) return source;
+    return (await processImage(source, name, { format: "original", quality: 0.92, resize: { mode: "longEdge", value: maxEdge }, targetBytes: maxBytes })).blob;
+}
+
+/** Puts a cut-out (transparent PNG) on a solid colour; no colour keeps it transparent. */
+export async function applyBackground(cutout: Blob, color: string): Promise<Blob> {
+    if (!color) return cutout;
+    const bitmap = await createImageBitmap(cutout);
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("canvas unavailable");
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    if (!blob) throw new Error("export failed");
+    return blob;
+}

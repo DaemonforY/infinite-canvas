@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
-import { App, Button, Empty, Popconfirm, Tag } from "antd";
+import { App, Button, Empty, Popconfirm, Segmented, Tag } from "antd";
 import { Crop, Download, FolderPlus, ImagePlus, LoaderCircle, Play, Trash2, X } from "lucide-react";
 import { saveAs } from "file-saver";
 import { nanoid } from "nanoid";
 import { useTranslation } from "react-i18next";
 
 import { ImageEditorDialog } from "@/components/image-editor/image-editor-dialog";
+import { AiToolOptionsForm, DEFAULT_AI_TOOL_SETTINGS, runAiTool, useImageToolsQuota, type AiToolMode, type AiToolSettings } from "@/components/image-tools/ai-image-tools";
 import { ImageToolOptionsForm } from "@/components/image-tools/image-tool-dialog";
 import { DEFAULT_IMAGE_TOOL_OPTIONS, isImageFile, normalizeImageFile, processImage, renameForType, type ImageToolOptions, type ImageToolResult } from "@/lib/image-tools";
 import { formatBytes } from "@/lib/image-utils";
@@ -23,6 +24,9 @@ type ToolItem = {
     resultUrl?: string;
 };
 
+// Shows transparent areas of cut-outs.
+const CHECKERBOARD = { backgroundImage: "repeating-conic-gradient(#d6d3d1 0 25%, #fafaf9 0 50%)", backgroundSize: "16px 16px" };
+
 function revoke(item: ToolItem) {
     URL.revokeObjectURL(item.sourceUrl);
     if (item.resultUrl) URL.revokeObjectURL(item.resultUrl);
@@ -34,6 +38,9 @@ export default function ToolsPage() {
     const addAsset = useAssetStore((state) => state.addAsset);
     const [items, setItems] = useState<ToolItem[]>([]);
     const [options, setOptions] = useState<ImageToolOptions>(DEFAULT_IMAGE_TOOL_OPTIONS);
+    const [mode, setMode] = useState<"local" | AiToolMode>("local");
+    const [aiSettings, setAiSettings] = useState<AiToolSettings>(DEFAULT_AI_TOOL_SETTINGS);
+    const { apiKey, quota, refresh: refreshQuota } = useImageToolsQuota();
     const [running, setRunning] = useState(false);
     const [saving, setSaving] = useState(false);
     const [editingId, setEditingId] = useState("");
@@ -83,13 +90,19 @@ export default function ToolsPage() {
             if (item.status === "done") continue;
             update(item.id, { status: "processing" });
             try {
-                const result = await processImage(item.source, item.name, options);
+                const result = mode === "local" ? await processImage(item.source, item.name, options) : await runAiTool(apiKey, mode, aiSettings, item.source, item.name);
                 update(item.id, { status: "done", result, resultUrl: URL.createObjectURL(result.blob) });
-            } catch {
+            } catch (error) {
                 update(item.id, { status: "error" });
+                // A server-side failure (balance, queue, unreadable image) is explained once and stops the batch.
+                if (mode !== "local") {
+                    message.error((error as Error)?.message || t("toolbox.failed"));
+                    break;
+                }
             }
         }
         setRunning(false);
+        if (mode !== "local") void refreshQuota();
     };
 
     const outputs = items.filter((item) => item.result).map((item) => item.result!);
@@ -200,7 +213,7 @@ export default function ToolsPage() {
                                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
                                         {items.map((item) => (
                                             <div key={item.id} className="overflow-hidden rounded-lg border border-stone-200 dark:border-stone-800" data-testid="tools-item">
-                                                <div className="relative flex aspect-square items-center justify-center bg-stone-50 dark:bg-stone-900">
+                                                <div className="relative flex aspect-square items-center justify-center bg-stone-50 dark:bg-stone-900" style={item.result?.blob.type === "image/png" ? CHECKERBOARD : undefined}>
                                                     <img src={item.resultUrl || item.sourceUrl} alt={item.name} className="max-h-full max-w-full object-contain" />
                                                     {item.status === "processing" ? (
                                                         <div className="absolute inset-0 flex items-center justify-center bg-black/30">
@@ -258,14 +271,48 @@ export default function ToolsPage() {
 
                         <aside className="grid content-start gap-4 rounded-xl border border-stone-200 p-4 lg:sticky lg:top-0 dark:border-stone-800">
                             <span className="text-base font-semibold">{t("toolbox.options")}</span>
-                            <ImageToolOptionsForm
-                                value={options}
+                            <Segmented
+                                block
+                                value={mode}
+                                disabled={running}
                                 onChange={(next) => {
-                                    setOptions(next);
+                                    setMode(next as typeof mode);
                                     resetResults();
                                 }}
+                                options={[
+                                    { value: "local", label: t("toolbox.modes.local") },
+                                    { value: "removeBg", label: t("toolbox.modes.removeBg") },
+                                    { value: "upscale", label: t("toolbox.modes.upscale") },
+                                ]}
                             />
-                            <Button type="primary" icon={<Play className="size-4" />} loading={running} disabled={!items.some((item) => item.status !== "done")} onClick={() => void run()} data-testid="tools-run">
+                            {mode === "local" ? (
+                                <ImageToolOptionsForm
+                                    value={options}
+                                    onChange={(next) => {
+                                        setOptions(next);
+                                        resetResults();
+                                    }}
+                                />
+                            ) : (
+                                <AiToolOptionsForm
+                                    mode={mode}
+                                    value={aiSettings}
+                                    onChange={(next) => {
+                                        setAiSettings(next);
+                                        resetResults();
+                                    }}
+                                    quota={quota}
+                                    connected={Boolean(apiKey)}
+                                />
+                            )}
+                            <Button
+                                type="primary"
+                                icon={<Play className="size-4" />}
+                                loading={running}
+                                disabled={!items.some((item) => item.status !== "done") || (mode !== "local" && !(quota?.enabled && apiKey))}
+                                onClick={() => void run()}
+                                data-testid="tools-run"
+                            >
                                 {running ? t("toolbox.processing") : t("toolbox.process")}
                             </Button>
                             <Button icon={<Download className="size-4" />} disabled={!outputs.length || running} onClick={() => void downloadAll()}>
