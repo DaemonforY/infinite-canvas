@@ -33,6 +33,7 @@ import { CanvasNodeMaskEditDialog, type CanvasImageMaskEditPayload } from "@/com
 import { CanvasNodeSplitDialog, type CanvasImageSplitParams } from "@/components/canvas/canvas-node-split-dialog";
 import { CanvasNodeUpscaleDialog, type CanvasImageUpscaleParams } from "@/components/canvas/canvas-node-upscale-dialog";
 import { CanvasNodeSuperResolveDialog } from "@/components/canvas/canvas-node-super-resolve-dialog";
+import { CanvasNodeOutpaintDialog, type CanvasImageOutpaintPayload } from "@/components/canvas/canvas-node-outpaint-dialog";
 import { CanvasPublishSiteDialog } from "@/components/canvas/canvas-publish-site-dialog";
 import { extractHtmlPage, htmlTitle } from "@/lib/publish-html";
 import { buildNodeGenerationContext, buildNodeGenerationInputs, buildNodeResponseMessages, hydrateNodeGenerationContext, type NodeGenerationInput } from "@/components/canvas/canvas-node-generation";
@@ -254,6 +255,7 @@ function InfiniteCanvasPage() {
     const [splitNodeId, setSplitNodeId] = useState<string | null>(null);
     const [upscaleNodeId, setUpscaleNodeId] = useState<string | null>(null);
     const [superResolveNodeId, setSuperResolveNodeId] = useState<string | null>(null);
+    const [outpaintNodeId, setOutpaintNodeId] = useState<string | null>(null);
     const [publishNodeId, setPublishNodeId] = useState<string | null>(null);
     const [angleNodeId, setAngleNodeId] = useState<string | null>(null);
     const [previewNodeId, setPreviewNodeId] = useState<string | null>(null);
@@ -733,6 +735,7 @@ function InfiniteCanvasPage() {
     const splitNode = splitNodeId ? nodeById.get(splitNodeId) || null : null;
     const upscaleNode = upscaleNodeId ? nodeById.get(upscaleNodeId) || null : null;
     const superResolveNode = superResolveNodeId ? nodeById.get(superResolveNodeId) || null : null;
+    const outpaintNode = outpaintNodeId ? nodeById.get(outpaintNodeId) || null : null;
     const publishNode = publishNodeId ? nodeById.get(publishNodeId) || null : null;
     // "发布为网页" for text nodes holding a web page (e.g. an AI answer with the page in an html block).
     const nodeHtmlPage = (node: CanvasNodeData) => {
@@ -892,6 +895,7 @@ function InfiniteCanvasPage() {
             setInfoNodeId((current) => (current && allIds.has(current) ? null : current));
             setCropNodeId((current) => (current && allIds.has(current) ? null : current));
             setMaskEditNodeId((current) => (current && allIds.has(current) ? null : current));
+            setOutpaintNodeId((current) => (current && allIds.has(current) ? null : current));
             setAngleNodeId((current) => (current && allIds.has(current) ? null : current));
             setPreviewNodeId((current) => (current && allIds.has(current) ? null : current));
             setRunningNodeId((current) => (current && allIds.has(current) ? null : current));
@@ -992,6 +996,7 @@ function InfiniteCanvasPage() {
         setInfoNodeId(null);
         setCropNodeId(null);
         setMaskEditNodeId(null);
+        setOutpaintNodeId(null);
         setAngleNodeId(null);
         setPreviewNodeId(null);
         setRunningNodeId(null);
@@ -2021,7 +2026,9 @@ function InfiniteCanvasPage() {
                 return;
             }
             const userPrompt = payload.prompt.trim();
-            const prompt = t("canvas.projectPage.maskPrompt", { source: imageReferenceLabel(0), mask: imageReferenceLabel(1), prompt: userPrompt });
+            const prompt = payload.erase
+                ? t("canvas.projectPage.erasePrompt", { source: imageReferenceLabel(0), mask: imageReferenceLabel(1) })
+                : t("canvas.projectPage.maskPrompt", { source: imageReferenceLabel(0), mask: imageReferenceLabel(1), prompt: userPrompt });
             setMaskEditNodeId(null);
             const maskImage = await uploadImage(payload.maskDataUrl);
             const maskNodeId = nanoid();
@@ -2045,7 +2052,7 @@ function InfiniteCanvasPage() {
                 {
                     id: childId,
                     type: CanvasNodeType.Image,
-                    title: userPrompt.slice(0, 32) || t("canvas.projectPage.maskResult"),
+                    title: payload.erase ? t("canvas.projectPage.eraseResult") : userPrompt.slice(0, 32) || t("canvas.projectPage.maskResult"),
                     position: { x: node.position.x + node.width + 96, y: node.position.y },
                     width: node.width,
                     height: node.height,
@@ -2071,6 +2078,59 @@ function InfiniteCanvasPage() {
             } catch (error) {
                 if (isGenerationCanceled(error)) return;
                 const errorDetails = error instanceof Error ? error.message : t("canvas.projectPage.maskFailed");
+                message.error(errorDetails);
+                setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails } } : item)));
+            } finally {
+                finishGenerationRequest(childId, controller);
+                setRunningNodeId(null);
+            }
+        },
+        [effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, startGenerationRequest, t],
+    );
+
+    // 扩图: the original on a larger grey canvas goes to the edit model, which fills in the grey area.
+    const outpaintImageNode = useCallback(
+        async (node: CanvasNodeData, payload: CanvasImageOutpaintPayload) => {
+            if (!node.metadata?.content) return;
+            const generationConfig = { ...buildGenerationConfig(effectiveConfig, node, "image"), count: "1", size: payload.size };
+            if (!isAiConfigReady(generationConfig, generationConfig.model)) {
+                openConfigDialog(true);
+                return;
+            }
+            setOutpaintNodeId(null);
+            const prompt = t("canvas.projectPage.outpaintPrompt", { source: imageReferenceLabel(0), extra: payload.prompt ? t("canvas.projectPage.outpaintExtra", { prompt: payload.prompt }) : "" }).trim();
+            const childId = nanoid();
+            const [ratioWidth, ratioHeight] = payload.size.split(":").map(Number);
+            const { width, height } = fitNodeSize(Math.max(node.width, (node.height * ratioWidth) / ratioHeight), Math.max(node.height, (node.width * ratioHeight) / ratioWidth));
+            setNodes((prev) => [
+                ...prev,
+                {
+                    id: childId,
+                    type: CanvasNodeType.Image,
+                    title: t("canvas.projectPage.outpaintResult"),
+                    position: { x: node.position.x + node.width + 96, y: node.position.y },
+                    width,
+                    height,
+                    metadata: { prompt, status: NODE_STATUS_LOADING },
+                },
+            ]);
+            setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: node.id, toNodeId: childId }]);
+            setSelectedNodeIds(new Set([childId]));
+            setSelectedConnectionId(null);
+            setRunningNodeId(childId);
+            const controller = startGenerationRequest(childId, node.id, childId);
+            try {
+                const layout = await uploadImage(payload.layoutDataUrl, { signal: controller.signal });
+                const references = [{ id: nanoid(), name: "outpaint.png", type: layout.mimeType || "image/png", dataUrl: layout.url, storageKey: layout.storageKey }];
+                const generationMetadata = buildImageGenerationMetadata("edit", generationConfig, 1, references);
+                setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, metadata: { ...item.metadata, ...generationMetadata } } : item)));
+                const image = await requestEdit(generationConfig, prompt, references, { signal: controller.signal }).then((items) => items[0]);
+                const uploaded = await uploadImage(image.dataUrl, { signal: controller.signal });
+                const size = fitNodeSize(uploaded.width, uploaded.height, width, height);
+                setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, width: size.width, height: size.height, metadata: { ...item.metadata, ...imageMetadata(uploaded), prompt, ...generationMetadata } } : item)));
+            } catch (error) {
+                if (isGenerationCanceled(error)) return;
+                const errorDetails = error instanceof Error ? error.message : t("canvas.projectPage.outpaintFailed");
                 message.error(errorDetails);
                 setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails } } : item)));
             } finally {
@@ -3320,6 +3380,7 @@ function InfiniteCanvasPage() {
                     onSplit={(node) => setSplitNodeId(node.id)}
                     onUpscale={(node) => setUpscaleNodeId(node.id)}
                     onSuperResolve={(node) => setSuperResolveNodeId(node.id)}
+                    onOutpaint={(node) => setOutpaintNodeId(node.id)}
                     onAngle={(node) => setAngleNodeId(node.id)}
                     onViewImage={handleNodeViewImage}
                     onReversePrompt={createImageReversePromptNodes}
@@ -3441,6 +3502,10 @@ function InfiniteCanvasPage() {
 
                 {superResolveNode?.metadata?.content ? (
                     <CanvasNodeSuperResolveDialog dataUrl={superResolveNode.metadata.content} open={Boolean(superResolveNode)} onClose={() => setSuperResolveNodeId(null)} onDone={(blob) => addDerivedImageNode(superResolveNode!, blob, t("canvas.projectPage.superResolve"))} />
+                ) : null}
+
+                {outpaintNode?.metadata?.content ? (
+                    <CanvasNodeOutpaintDialog dataUrl={outpaintNode.metadata.content} open={Boolean(outpaintNode)} onClose={() => setOutpaintNodeId(null)} onConfirm={(payload) => void outpaintImageNode(outpaintNode!, payload)} />
                 ) : null}
 
                 {angleNode?.metadata?.content ? <CanvasNodeAngleDialog dataUrl={angleNode.metadata.content} open={Boolean(angleNode)} onClose={() => setAngleNodeId(null)} onConfirm={(params) => void generateAngleNode(angleNode!, params)} /> : null}

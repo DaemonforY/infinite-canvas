@@ -1,4 +1,4 @@
-// Image toolbox (compress / convert / resize), run entirely in the browser: nothing is uploaded.
+// Image toolbox (compress / convert / resize / watermark), run entirely in the browser: nothing is uploaded.
 // Used by the /tools page and by the reference images of the workbenches.
 
 export type ImageToolFormat = "original" | "jpeg" | "webp" | "png";
@@ -10,6 +10,18 @@ export type ImageToolOptions = {
     resize: ImageToolResize;
     /** Shrink until the file is at most this big (0 = no target). */
     targetBytes: number;
+    /** Text drawn on the image; empty text means none. */
+    watermark?: ImageWatermark;
+};
+export type WatermarkPosition = "tl" | "tc" | "tr" | "ml" | "c" | "mr" | "bl" | "bc" | "br" | "tile";
+export type ImageWatermark = {
+    text: string;
+    color: string;
+    /** 0.1–1. */
+    opacity: number;
+    /** Font size as a percentage of the image's short edge (1–20). */
+    size: number;
+    position: WatermarkPosition;
 };
 export type ImageToolResult = {
     blob: Blob;
@@ -25,6 +37,73 @@ export type ImageToolResult = {
 };
 
 export const DEFAULT_IMAGE_TOOL_OPTIONS: ImageToolOptions = { format: "original", quality: 0.85, resize: { mode: "none" }, targetBytes: 0 };
+export const DEFAULT_WATERMARK: ImageWatermark = { text: "", color: "#ffffff", opacity: 0.6, size: 4, position: "br" };
+
+export function hasWatermark(watermark?: ImageWatermark): watermark is ImageWatermark {
+    return Boolean(watermark?.text.trim());
+}
+
+/** Font size in pixels for a watermark on a width × height image. */
+export function watermarkFontSize(width: number, height: number, size: number) {
+    return Math.max(10, Math.round((Math.min(width, height) * Math.min(20, Math.max(1, size))) / 100));
+}
+
+/** Top-left corner of a block of text placed at one of the nine positions, `margin` away from the edges. */
+export function watermarkOrigin(width: number, height: number, blockWidth: number, blockHeight: number, margin: number, position: Exclude<WatermarkPosition, "tile">) {
+    const column = position === "tl" || position === "ml" || position === "bl" ? 0 : position === "tc" || position === "c" || position === "bc" ? 1 : 2;
+    const row = position[0] === "t" ? 0 : position[0] === "b" ? 2 : 1;
+    const x = column === 0 ? margin : column === 1 ? (width - blockWidth) / 2 : width - blockWidth - margin;
+    const y = row === 0 ? margin : row === 1 ? (height - blockHeight) / 2 : height - blockHeight - margin;
+    return { x: Math.round(x), y: Math.round(y) };
+}
+
+export function drawWatermark(ctx: CanvasRenderingContext2D, width: number, height: number, watermark: ImageWatermark) {
+    const lines = watermark.text.trim().split(/\r?\n/).slice(0, 5);
+    const fontSize = watermarkFontSize(width, height, watermark.size);
+    const lineHeight = Math.round(fontSize * 1.25);
+    ctx.save();
+    ctx.font = `600 ${fontSize}px system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif`;
+    ctx.textBaseline = "top";
+    ctx.globalAlpha = Math.min(1, Math.max(0.05, watermark.opacity));
+    ctx.fillStyle = watermark.color;
+    // A soft shadow keeps light text readable on light photos (and dark text on dark ones).
+    ctx.shadowColor = isLightColor(watermark.color) ? "rgba(0,0,0,0.35)" : "rgba(255,255,255,0.35)";
+    ctx.shadowBlur = Math.max(2, fontSize * 0.12);
+    const blockWidth = Math.max(...lines.map((line) => ctx.measureText(line).width));
+    const blockHeight = lineHeight * lines.length;
+    if (watermark.position === "tile") {
+        ctx.translate(width / 2, height / 2);
+        ctx.rotate(-Math.PI / 6);
+        const stepX = blockWidth + fontSize * 4;
+        const stepY = blockHeight + fontSize * 3;
+        const reach = Math.hypot(width, height) / 2 + Math.max(stepX, stepY);
+        for (let y = -reach, row = 0; y < reach; y += stepY, row += 1) {
+            for (let x = -reach + (row % 2 ? stepX / 2 : 0); x < reach; x += stepX) {
+                lines.forEach((line, index) => ctx.fillText(line, x, y + index * lineHeight));
+            }
+        }
+    } else {
+        const origin = watermarkOrigin(width, height, blockWidth, blockHeight, Math.round(fontSize * 0.8), watermark.position);
+        const align = watermark.position.endsWith("l") ? "left" : watermark.position.endsWith("r") ? "right" : "center";
+        lines.forEach((line, index) => {
+            const lineWidth = ctx.measureText(line).width;
+            const x = align === "left" ? origin.x : align === "right" ? origin.x + blockWidth - lineWidth : origin.x + (blockWidth - lineWidth) / 2;
+            ctx.fillText(line, x, origin.y + index * lineHeight);
+        });
+    }
+    ctx.restore();
+}
+
+export function isLightColor(color: string) {
+    const hex = color.replace("#", "");
+    const full = hex.length === 3 ? hex.replace(/./g, (c) => c + c) : hex.slice(0, 6);
+    const value = Number.parseInt(full, 16);
+    if (Number.isNaN(value)) return true;
+    const r = (value >> 16) & 255;
+    const g = (value >> 8) & 255;
+    const b = value & 255;
+    return r * 0.299 + g * 0.587 + b * 0.114 > 150;
+}
 
 /** Safari (and iOS in particular) refuses canvases above ~16.7M pixels. */
 export const MAX_CANVAS_PIXELS = 16_777_216;
@@ -78,7 +157,7 @@ export async function decodeImage(blob: Blob, name = ""): Promise<ImageBitmap> {
     }
 }
 
-async function encode(bitmap: ImageBitmap, width: number, height: number, type: string, quality: number): Promise<Blob> {
+async function encode(bitmap: ImageBitmap, width: number, height: number, type: string, quality: number, watermark?: ImageWatermark): Promise<Blob> {
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
@@ -91,6 +170,7 @@ async function encode(bitmap: ImageBitmap, width: number, height: number, type: 
     }
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(bitmap, 0, 0, width, height);
+    if (hasWatermark(watermark)) drawWatermark(ctx, width, height, watermark);
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, quality));
     canvas.width = canvas.height = 0;
     if (!blob) throw new Error("export failed");
@@ -106,20 +186,21 @@ export async function processImage(source: Blob, name: string, options: ImageToo
         const type = resolveOutputType(source.type || (isHeicFile({ name }) ? "image/heic" : ""), options.format);
         let { width, height, capped } = resolveOutputSize(sourceWidth, sourceHeight, options.resize);
         const lossy = type !== "image/png";
-        let blob = await encode(bitmap, width, height, type, options.quality);
+        const watermark = hasWatermark(options.watermark) ? options.watermark : undefined;
+        let blob = await encode(bitmap, width, height, type, options.quality, watermark);
         if (options.targetBytes > 0) {
             for (const quality of lossy ? qualitySteps(options.quality).slice(1) : []) {
                 if (blob.size <= options.targetBytes) break;
-                blob = await encode(bitmap, width, height, type, quality);
+                blob = await encode(bitmap, width, height, type, quality, watermark);
             }
             for (let attempt = 0; attempt < 6 && blob.size > options.targetBytes && Math.max(width, height) > 256; attempt += 1) {
                 const scale = Math.max(0.5, Math.min(0.9, Math.sqrt(options.targetBytes / blob.size)));
                 width = Math.max(1, Math.floor(width * scale));
                 height = Math.max(1, Math.floor(height * scale));
-                blob = await encode(bitmap, width, height, type, lossy ? Math.min(options.quality, 0.8) : 1);
+                blob = await encode(bitmap, width, height, type, lossy ? Math.min(options.quality, 0.8) : 1, watermark);
             }
         }
-        const kept = type === source.type && width === sourceWidth && height === sourceHeight && blob.size >= source.size;
+        const kept = !watermark && type === source.type && width === sourceWidth && height === sourceHeight && blob.size >= source.size;
         return { blob: kept ? source : blob, name: kept ? name : renameForType(name, type), width, height, sourceWidth, sourceHeight, capped, kept };
     } finally {
         bitmap.close();

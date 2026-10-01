@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { Button, Input, Modal, Slider, Tooltip } from "antd";
-import { Brush, Eraser, ImagePlus, Redo2, RotateCcw, Undo2, WandSparkles, ZoomIn, ZoomOut } from "lucide-react";
+import { Brush, Eraser, ImagePlus, Redo2, RotateCcw, Sparkles, Undo2, WandSparkles, ZoomIn, ZoomOut } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { readImageMeta } from "@/lib/image-utils";
@@ -11,6 +11,8 @@ export type CanvasImageMaskEditPayload = {
     prompt: string;
     maskDataUrl: string;
     generate: boolean;
+    /** Remove what was painted over; no prompt needed. */
+    erase?: boolean;
 };
 
 type DrawMode = "paint" | "erase";
@@ -203,14 +205,14 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
         return () => window.removeEventListener("keydown", handleKeyDown, true);
     }, [open, redoMask, undoMask]);
 
-    const submit = (generate: boolean) => {
+    const submit = (generate: boolean, erase = false) => {
         const nextPrompt = prompt.trim();
         const canvas = maskCanvasRef.current;
         const element = imageRef.current;
-        if (!nextPrompt) return setError(t("canvas.editors.maskPromptRequired"));
+        if (!nextPrompt && !erase) return setError(t("canvas.editors.maskPromptRequired"));
         if (!canvas || !element) return;
         if (!canvasHasPaint(canvas)) return setError(t("canvas.editors.maskRequired"));
-        onConfirm({ prompt: nextPrompt, maskDataUrl: buildMaskOverlay(element, canvas), generate });
+        onConfirm({ prompt: erase ? "" : nextPrompt, maskDataUrl: buildMaskOverlay(element, canvas), generate, erase });
     };
 
     return (
@@ -306,10 +308,17 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
                         <Slider min={8} max={160} step={2} value={brushSize} onChange={setBrushSize} />
                     </div>
 
+                    <div className="grid gap-1.5 rounded-lg border border-black/10 p-3 dark:border-white/10">
+                        <Button block icon={<Sparkles className="size-4" />} onClick={() => submit(true, true)} data-testid="mask-erase">
+                            {t("canvas.editors.maskErase")}
+                        </Button>
+                        <div className="text-xs leading-5 opacity-55">{t("canvas.editors.maskEraseHint")}</div>
+                    </div>
+
                     <div className="space-y-2">
                         <div className="text-sm font-medium opacity-75">{t("canvas.editors.editInstructions")}</div>
                         <Input.TextArea
-                            rows={6}
+                            rows={4}
                             value={prompt}
                             status={error && !prompt.trim() ? "error" : undefined}
                             placeholder={t("canvas.editors.maskPlaceholder")}
