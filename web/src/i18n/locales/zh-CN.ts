@@ -101,6 +101,14 @@ export default {
             manage: "放进作品集",
             deleteConfirm: "删除作品集不会删除里面的作品，确定删除吗？",
         },
+        poster: {
+            action: "生成分享海报",
+            title: "分享海报",
+            hint: "保存图片后发到微信、朋友圈或群里，扫码即可打开作品；手机上可以长按图片保存。",
+            download: "下载海报",
+            scanHint: "扫码查看作品，在 HiveGPT 无限画布一键做同款",
+            failed: "海报生成失败，请稍后重试",
+        },
         report: {
             action: "举报",
             title: "举报作品",

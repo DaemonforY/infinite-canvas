@@ -15,6 +15,9 @@ FROM nginx:1.27-alpine
 COPY --from=web-build /app/web/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY web/docker-entrypoint.sh /docker-entrypoint.d/40-runtime-config.sh
-RUN chmod +x /docker-entrypoint.d/40-runtime-config.sh
+# Default (no main site): share cards off until the entrypoint writes the real values.
+RUN chmod +x /docker-entrypoint.d/40-runtime-config.sh \
+    && mkdir -p /etc/nginx/snippets \
+    && printf 'set $main_site_origin "";\nset $main_site_host "";\n' > /etc/nginx/snippets/main-site.conf
 
 EXPOSE 3000

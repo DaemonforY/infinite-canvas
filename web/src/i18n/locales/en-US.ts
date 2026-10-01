@@ -101,6 +101,14 @@ export default {
             manage: "Add to collection",
             deleteConfirm: "Deleting a collection keeps its works. Delete it?",
         },
+        poster: {
+            action: "Share poster",
+            title: "Share poster",
+            hint: "Save it and post it anywhere; scanning the code opens the work. On phones, long-press the image to save it.",
+            download: "Download poster",
+            scanHint: "Scan to view this work and remix it on HiveGPT Infinite Canvas",
+            failed: "Couldn’t create the poster. Try again later.",
+        },
         report: {
             action: "Report",
             title: "Report this work",

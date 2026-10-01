@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { App, Button, Checkbox, Empty, Input, Modal, Popconfirm, Radio, Segmented, Select, Spin, Switch, Tag } from "antd";
-import { Copy, Eye, Flag, FolderPlus, Heart, Pencil, Share2, Sparkles, Star, Trash2, Wand2 } from "lucide-react";
+import { App, Button, Checkbox, Dropdown, Empty, Input, Modal, Popconfirm, Radio, Segmented, Select, Spin, Switch, Tag } from "antd";
+import { Copy, Eye, Flag, FolderPlus, Heart, Image as ImageIcon, Link2, Pencil, Share2, Sparkles, Star, Trash2, Wand2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { AuthorAvatar } from "@/components/community/author-avatar";
 import { WorkGrid } from "@/components/community/work-grid";
+import { SharePosterDialog } from "@/components/community/share-poster-dialog";
 import { useMainSiteSignIn } from "@/components/layout/use-main-site-sign-in";
 import {
     authorName,
@@ -45,6 +46,8 @@ export default function WorkPage() {
     const [more, setMore] = useState<Work[]>([]);
     const [editing, setEditing] = useState(false);
     const [reporting, setReporting] = useState(false);
+    const [posterOpen, setPosterOpen] = useState(false);
+    const shareUrl = `${window.location.origin}/w/${id}`;
     const [managing, setManaging] = useState(false);
 
     useEffect(() => {
@@ -110,8 +113,8 @@ export default function WorkPage() {
         navigate(`/image?prompt=${encodeURIComponent(work.prompt.slice(0, 4000))}`);
     };
 
-    const share = () => {
-        void navigator.clipboard?.writeText(`${window.location.origin}/w/${id}`);
+    const copyLink = () => {
+        void navigator.clipboard?.writeText(shareUrl);
         message.success(t("community.copied"));
     };
 
@@ -248,9 +251,19 @@ export default function WorkPage() {
                         <Button icon={<Star className="size-4" color={work.favorited_by_me ? "#f59e0b" : "currentColor"} fill={work.favorited_by_me ? "#f59e0b" : "none"} />} onClick={() => void toggle("favorite")} data-testid="work-favorite">
                             {compactCount(work.favorite_count)}
                         </Button>
-                        <Button icon={<Share2 className="size-4" />} onClick={share}>
-                            {t("community.share")}
-                        </Button>
+                        <Dropdown
+                            trigger={["click"]}
+                            menu={{
+                                items: [
+                                    { key: "link", icon: <Link2 className="size-4" />, label: t("community.copyLink"), onClick: copyLink },
+                                    { key: "poster", icon: <ImageIcon className="size-4" />, label: t("community.poster.action"), onClick: () => setPosterOpen(true) },
+                                ],
+                            }}
+                        >
+                            <Button icon={<Share2 className="size-4" />} data-testid="work-share">
+                                {t("community.share")}
+                            </Button>
+                        </Dropdown>
                         {!work.is_mine ? <Button type="text" icon={<Flag className="size-4" />} aria-label={t("community.report.action")} title={t("community.report.action")} onClick={() => setReporting(true)} /> : null}
                     </div>
 
@@ -303,6 +316,7 @@ export default function WorkPage() {
             ) : null}
 
             {editing ? <EditWorkDialog work={work} onClose={() => setEditing(false)} onSaved={(w) => (setWork({ ...work, ...w }), setEditing(false))} /> : null}
+            {posterOpen ? <SharePosterDialog work={work} url={shareUrl} onClose={() => setPosterOpen(false)} /> : null}
             {reporting ? <ReportDialog workId={work.id} onClose={() => setReporting(false)} /> : null}
             {managing ? <CollectionsDialog work={work} onClose={() => setManaging(false)} /> : null}
         </div>

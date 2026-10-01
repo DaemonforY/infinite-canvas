@@ -29,6 +29,15 @@ DEFAULT_SKIN_VALUE=$(sanitize_id "${DEFAULT_SKIN:-}")
 PARTNER_SITES_VALUE=$(printf '%s' "${PARTNER_SITES:-}" | tr -cd 'A-Za-z0-9:/._%|, -')
 IMAGE_PROXY_VALUE=$(sanitize_id "${IMAGE_PROXY:-}")
 
+# Main site origin and host for the share-card subrequests in nginx.conf (empty: no share cards).
+MAIN_SITE_ORIGIN=$(printf '%s' "$MAIN_SITE_URL_VALUE" | sed -nE 's#^(https?://[^/]+).*$#\1#p')
+MAIN_SITE_HOST=$(printf '%s' "$MAIN_SITE_ORIGIN" | sed -E 's#^https?://##')
+mkdir -p /etc/nginx/snippets
+cat > /etc/nginx/snippets/main-site.conf <<EOF
+set \$main_site_origin "${MAIN_SITE_ORIGIN}";
+set \$main_site_host "${MAIN_SITE_HOST}";
+EOF
+
 cat > /usr/share/nginx/html/config.js <<EOF
 window.__RUNTIME_CONFIG__ = {
   ANALYTICS_GA4_ID: "${GA4_ID}",
