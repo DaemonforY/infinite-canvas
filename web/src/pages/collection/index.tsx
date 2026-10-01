@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { App, Button, Empty, Input, Modal, Popconfirm, Segmented, Spin } from "antd";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Share2, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { AuthorAvatar } from "@/components/community/author-avatar";
+import { useShareLink } from "@/components/community/use-share-link";
 import { useWorksFeed } from "@/components/community/use-works-feed";
 import { WorkGrid } from "@/components/community/work-grid";
 import { authorName, deleteCollection, getCollection, updateCollection, type Collection } from "@/services/api/community";
@@ -18,6 +19,7 @@ export default function CollectionPage() {
     const [error, setError] = useState("");
     const [editing, setEditing] = useState(false);
     const feed = useWorksFeed({ collection: id }, Boolean(collection));
+    const share = useShareLink(`/c/${id}`);
 
     useEffect(() => {
         setCollection(null);
@@ -58,27 +60,34 @@ export default function CollectionPage() {
                             </Link>
                         ) : null}
                     </div>
-                    {collection.is_mine ? (
-                        <div className="flex gap-2">
-                            <Button icon={<Pencil className="size-4" />} onClick={() => setEditing(true)}>
-                                {t("community.edit")}
+                    <div className="flex gap-2">
+                        {collection.visibility === "public" ? (
+                            <Button icon={<Share2 className="size-4" />} onClick={share.copy}>
+                                {t("community.share")}
                             </Button>
-                            <Popconfirm
-                                title={t("community.collections.deleteConfirm")}
-                                okText={t("community.delete")}
-                                okButtonProps={{ danger: true }}
-                                cancelText={t("common.cancel")}
-                                onConfirm={async () => {
-                                    await deleteCollection(collection.id);
-                                    navigate(collection.author ? `/u/${collection.author.handle}` : "/explore");
-                                }}
-                            >
-                                <Button danger icon={<Trash2 className="size-4" />}>
-                                    {t("community.delete")}
+                        ) : null}
+                        {collection.is_mine ? (
+                            <>
+                                <Button icon={<Pencil className="size-4" />} onClick={() => setEditing(true)}>
+                                    {t("community.edit")}
                                 </Button>
-                            </Popconfirm>
-                        </div>
-                    ) : null}
+                                <Popconfirm
+                                    title={t("community.collections.deleteConfirm")}
+                                    okText={t("community.delete")}
+                                    okButtonProps={{ danger: true }}
+                                    cancelText={t("common.cancel")}
+                                    onConfirm={async () => {
+                                        await deleteCollection(collection.id);
+                                        navigate(collection.author ? `/u/${collection.author.handle}` : "/explore");
+                                    }}
+                                >
+                                    <Button danger icon={<Trash2 className="size-4" />}>
+                                        {t("community.delete")}
+                                    </Button>
+                                </Popconfirm>
+                            </>
+                        ) : null}
+                    </div>
                 </div>
                 <div className="mt-6">
                     {!feed.works.length && !feed.loading ? <Empty description={t("community.collections.noWorks")} className="py-12" /> : <WorkGrid works={feed.works} />}

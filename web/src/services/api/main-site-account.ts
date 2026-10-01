@@ -17,6 +17,8 @@ export type MainSiteAccount = {
     avatar_url: string;
     balance: number;
     subscriptions: MainSiteSubscription[];
+    /** Invite code, when the main site has invites enabled; shared links carry it. */
+    aff_code?: string;
 };
 
 const CANVAS_HEADER = { "X-HiveGPT-Canvas": "1" };

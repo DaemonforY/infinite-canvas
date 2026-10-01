@@ -7,6 +7,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { AuthorAvatar } from "@/components/community/author-avatar";
 import { WorkGrid } from "@/components/community/work-grid";
 import { SharePosterDialog } from "@/components/community/share-poster-dialog";
+import { useShareLink } from "@/components/community/use-share-link";
 import { useMainSiteSignIn } from "@/components/layout/use-main-site-sign-in";
 import {
     authorName,
@@ -47,7 +48,7 @@ export default function WorkPage() {
     const [editing, setEditing] = useState(false);
     const [reporting, setReporting] = useState(false);
     const [posterOpen, setPosterOpen] = useState(false);
-    const shareUrl = `${window.location.origin}/w/${id}`;
+    const share = useShareLink(`/w/${id}`);
     const [managing, setManaging] = useState(false);
 
     useEffect(() => {
@@ -111,11 +112,6 @@ export default function WorkPage() {
         if (!work) return;
         void countRemix(work.id);
         navigate(`/image?prompt=${encodeURIComponent(work.prompt.slice(0, 4000))}`);
-    };
-
-    const copyLink = () => {
-        void navigator.clipboard?.writeText(shareUrl);
-        message.success(t("community.copied"));
     };
 
     if (error) {
@@ -255,7 +251,7 @@ export default function WorkPage() {
                             trigger={["click"]}
                             menu={{
                                 items: [
-                                    { key: "link", icon: <Link2 className="size-4" />, label: t("community.copyLink"), onClick: copyLink },
+                                    { key: "link", icon: <Link2 className="size-4" />, label: t("community.copyLink"), onClick: share.copy },
                                     { key: "poster", icon: <ImageIcon className="size-4" />, label: t("community.poster.action"), onClick: () => setPosterOpen(true) },
                                 ],
                             }}
@@ -316,7 +312,7 @@ export default function WorkPage() {
             ) : null}
 
             {editing ? <EditWorkDialog work={work} onClose={() => setEditing(false)} onSaved={(w) => (setWork({ ...work, ...w }), setEditing(false))} /> : null}
-            {posterOpen ? <SharePosterDialog work={work} url={shareUrl} onClose={() => setPosterOpen(false)} /> : null}
+            {posterOpen ? <SharePosterDialog work={work} url={share.url} invited={share.invited} onClose={() => setPosterOpen(false)} /> : null}
             {reporting ? <ReportDialog workId={work.id} onClose={() => setReporting(false)} /> : null}
             {managing ? <CollectionsDialog work={work} onClose={() => setManaging(false)} /> : null}
         </div>

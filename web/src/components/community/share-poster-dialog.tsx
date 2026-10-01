@@ -7,7 +7,7 @@ import { drawSharePoster } from "@/lib/share-poster";
 import { authorName, mainSiteAsset, type Work } from "@/services/api/community";
 
 /** Generates and shows the share poster of a work (download, or long-press to save on phones). */
-export function SharePosterDialog({ work, url, onClose }: { work: Work; url: string; onClose: () => void }) {
+export function SharePosterDialog({ work, url, invited, onClose }: { work: Work; url: string; invited?: boolean; onClose: () => void }) {
     const { t } = useTranslation();
     const { message } = App.useApp();
     const [poster, setPoster] = useState<{ blob: Blob; src: string } | null>(null);
@@ -57,13 +57,16 @@ export function SharePosterDialog({ work, url, onClose }: { work: Work; url: str
                 <div className="flex min-h-64 items-center justify-center overflow-hidden rounded-lg bg-stone-100 dark:bg-stone-900">
                     {poster ? <img src={poster.src} alt={t("community.poster.title")} className="max-h-[60vh] w-full object-contain" /> : error ? <span className="p-6 text-sm text-red-500">{error}</span> : <Spin />}
                 </div>
-                <p className="m-0 text-xs text-stone-500">{t("community.poster.hint")}</p>
+                <p className="m-0 text-xs text-stone-500">
+                    {t("community.poster.hint")}
+                    {invited ? ` ${t("community.inviteHint")}` : ""}
+                </p>
                 <div className="flex justify-end gap-2">
                     <Button
                         icon={<Copy className="size-4" />}
                         onClick={() => {
                             void navigator.clipboard?.writeText(url);
-                            message.success(t("community.copied"));
+                            message.success(t(invited ? "community.copiedWithInvite" : "community.copied"));
                         }}
                     >
                         {t("community.copyLink")}

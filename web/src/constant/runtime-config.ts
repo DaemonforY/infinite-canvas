@@ -1,3 +1,4 @@
+import { loadReferral } from "@/lib/referral";
 import { DEFAULT_SKIN, isSkinName, type SkinName } from "@/lib/skins";
 
 // Runtime configuration access layer.
@@ -42,11 +43,13 @@ export const MAIN_SITE_URL = read("MAIN_SITE_URL", import.meta.env.VITE_MAIN_SIT
 export const MAIN_SITE_NAME = read("MAIN_SITE_NAME", import.meta.env.VITE_MAIN_SITE_NAME, "HiveGPT");
 export const MAIN_SITE_API_BASE_URL = read("MAIN_SITE_API_BASE_URL", import.meta.env.VITE_MAIN_SITE_API_BASE_URL, MAIN_SITE_URL).replace(/\/+$/, "");
 
-/** Build a link into the main site with UTM tags so cross-site traffic is measurable. */
+/** Build a link into the main site with UTM tags so cross-site traffic is measurable; passes on a kept invite code. */
 export function mainSiteLink(path: string, medium: string): string {
     const url = new URL(path.startsWith("/") ? path : `/${path}`, `${MAIN_SITE_URL}/`);
     url.searchParams.set("utm_source", "canvas");
     url.searchParams.set("utm_medium", medium);
+    const aff = loadReferral();
+    if (aff) url.searchParams.set("aff", aff);
     return url.toString();
 }
 

@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { App, Button, Empty, Input, Modal, Segmented, Spin } from "antd";
-import { FolderPlus, Pencil, RefreshCw } from "lucide-react";
+import { FolderPlus, Pencil, RefreshCw, Share2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { AuthorAvatar } from "@/components/community/author-avatar";
 import { ProfileForm } from "@/components/community/profile-form";
+import { useShareLink } from "@/components/community/use-share-link";
 import { useWorksFeed } from "@/components/community/use-works-feed";
 import { WorkGrid } from "@/components/community/work-grid";
 import { useMainSiteSignIn } from "@/components/layout/use-main-site-sign-in";
@@ -26,6 +27,7 @@ export default function UserPage() {
     const [tab, setTab] = useState<Tab>("works");
     const [editing, setEditing] = useState(false);
     const [follows, setFollows] = useState<"followers" | "following" | null>(null);
+    const share = useShareLink(`/u/${encodeURIComponent(handle)}`);
 
     useEffect(() => {
         let cancelled = false;
@@ -105,15 +107,20 @@ export default function UserPage() {
                             </span>
                         </div>
                     </div>
-                    {profile.is_me ? (
-                        <Button icon={<Pencil className="size-4" />} onClick={() => setEditing(true)} data-testid="profile-edit">
-                            {t("community.profile.edit")}
+                    <div className="flex gap-2">
+                        <Button icon={<Share2 className="size-4" />} onClick={share.copy} data-testid="profile-share">
+                            {t("community.share")}
                         </Button>
-                    ) : (
-                        <Button type={profile.followed_by_me ? "default" : "primary"} onClick={() => void follow()} data-testid="profile-follow">
-                            {profile.followed_by_me ? t("community.following") : t("community.follow")}
-                        </Button>
-                    )}
+                        {profile.is_me ? (
+                            <Button icon={<Pencil className="size-4" />} onClick={() => setEditing(true)} data-testid="profile-edit">
+                                {t("community.profile.edit")}
+                            </Button>
+                        ) : (
+                            <Button type={profile.followed_by_me ? "default" : "primary"} onClick={() => void follow()} data-testid="profile-follow">
+                                {profile.followed_by_me ? t("community.following") : t("community.follow")}
+                            </Button>
+                        )}
+                    </div>
                 </div>
 
                 <div className="mt-6 border-b border-stone-200 pb-3 dark:border-stone-800">
