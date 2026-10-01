@@ -61,3 +61,54 @@ export function dataUrlToFile(image: ReferenceImage) {
     }
     return new File([bytes], image.name || "reference.png", { type: mimeType });
 }
+
+// The gateway (and OpenAI) reject image-edit requests over 20MB. Phone photos are often 5–10MB
+// each, so reference images are shrunk before upload when the request would get close to that.
+export const EDIT_REQUEST_BUDGET_BYTES = 16 * 1024 * 1024;
+const REFERENCE_SOFT_LIMIT_BYTES = 4 * 1024 * 1024;
+
+/** Which files to shrink: none when everything fits, else the large ones (biggest first) until it fits. */
+export function planReferenceShrink(sizes: number[], budget = EDIT_REQUEST_BUDGET_BYTES): number[] {
+    const total = sizes.reduce((sum, size) => sum + size, 0);
+    if (total <= budget) return [];
+    const order = sizes.map((size, index) => ({ size, index })).sort((a, b) => b.size - a.size);
+    const picked: number[] = [];
+    let remaining = total;
+    for (const { size, index } of order) {
+        if (remaining <= budget && size <= REFERENCE_SOFT_LIMIT_BYTES) break;
+        picked.push(index);
+        // A 2048px WebP is typically well under 1MB.
+        remaining -= Math.max(0, size - 1024 * 1024);
+    }
+    return picked.sort((a, b) => a - b);
+}
+
+async function shrinkImageFile(file: File, maxEdge: number, quality: number): Promise<File> {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    canvas.getContext("2d")?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", quality));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], (file.name || "reference").replace(/\.[^.]+$/, "") + ".webp", { type: "image/webp" });
+}
+
+/** Keeps an image-edit request under the upload limit by re-encoding the largest references. */
+export async function fitReferenceFiles(files: File[], budget = EDIT_REQUEST_BUDGET_BYTES): Promise<File[]> {
+    const picked = planReferenceShrink(files.map((file) => file.size), budget);
+    if (!picked.length) return files;
+    const out = [...files];
+    for (const index of picked) {
+        try {
+            let shrunk = await shrinkImageFile(out[index], 2048, 0.9);
+            if (shrunk.size > REFERENCE_SOFT_LIMIT_BYTES) shrunk = await shrinkImageFile(out[index], 1536, 0.82);
+            out[index] = shrunk;
+        } catch {
+            // Undecodable here: send as is and let the server explain.
+        }
+    }
+    return out;
+}
