@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { nanoid } from "nanoid";
 
 import { ProfileForm } from "@/components/community/profile-form";
+import { useShareLink } from "@/components/community/use-share-link";
 import { useMainSiteSignIn } from "@/components/layout/use-main-site-sign-in";
 import { MAIN_SITE_NAME } from "@/constant/runtime-config";
 import { fitForUpload } from "@/lib/image-tools";
@@ -51,6 +52,7 @@ export function PublishWorkDialog() {
     const [newCollection, setNewCollection] = useState("");
     const [publishing, setPublishing] = useState(false);
     const [published, setPublished] = useState<Work | null>(null);
+    const share = useShareLink(`/w/${published?.id ?? ""}`);
 
     const open = Boolean(payload);
 
@@ -156,13 +158,7 @@ export function PublishWorkDialog() {
                     title={pending ? t("community.publish.pending") : t("community.publish.done")}
                     subTitle={pending ? published.review_reason || t("community.publish.pendingHint") : t("community.publish.doneHint")}
                     extra={[
-                        <Button
-                            key="copy"
-                            onClick={() => {
-                                void navigator.clipboard?.writeText(`${window.location.origin}/w/${published.id}`);
-                                message.success(t("community.copied"));
-                            }}
-                        >
+                        <Button key="copy" onClick={share.copy}>
                             {t("community.copyLink")}
                         </Button>,
                         <Button
