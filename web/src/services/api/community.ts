@@ -91,7 +91,8 @@ export type CommunityNotification = {
 };
 
 export type Feed = "recommended" | "latest" | "following" | "favorites";
-export type WorksPage = { works: Work[]; next_offset: number; has_more: boolean };
+/** `at` (unix seconds) is sent back with later pages so the order holds while scrolling. */
+export type WorksPage = { works: Work[]; next_offset: number; has_more: boolean; at?: number };
 export type InteractionState = { like_count: number; favorite_count: number; liked_by_me: boolean; favorited_by_me: boolean };
 
 /** Scene tags offered as filters (works may carry others). */
@@ -140,13 +141,15 @@ export const isSignInRequired = (error: unknown) => error instanceof CommunityEr
 
 const json = (method: string, body?: unknown): RequestInit => ({ method, body: body === undefined ? undefined : JSON.stringify(body) });
 
-export function listWorks(params: { feed?: Feed; tag?: string; kind?: WorkKind | ""; user?: string; collection?: number; offset?: number; limit?: number }, signal?: AbortSignal) {
+export function listWorks(params: { feed?: Feed; tag?: string; kind?: WorkKind | ""; user?: string; collection?: number; offset?: number; limit?: number; at?: number }, signal?: AbortSignal) {
     const q = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== "" && value !== 0) q.set(key, String(value));
     return call<WorksPage>(`/works?${q}`, { signal });
 }
 
 export const getWork = (id: number, signal?: AbortSignal) => call<Work>(`/works/${id}`, { signal });
+/** Other authors' works like this one (shared tags, same model), for the work page. */
+export const getRelatedWorks = (id: number, limit = 12) => call<{ works: Work[] }>(`/works/${id}/related?limit=${limit}`).then((data) => data.works || []);
 export const getProfile = (handle: string, signal?: AbortSignal) => call<CommunityProfile>(`/users/${encodeURIComponent(handle)}`, { signal });
 export type CreatorCounts = { views: number; likes: number; favorites: number; remixes: number; followers: number };
 export type CreatorStats = {

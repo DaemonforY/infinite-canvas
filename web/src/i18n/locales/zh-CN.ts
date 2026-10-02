@@ -54,6 +54,7 @@ export default {
         remixes: "{{count}} 人做了同款",
         views: "{{count}} 次浏览",
         moreFrom: "{{name}} 的更多作品",
+        related: "相似作品",
         visibility: { public: "公开", unlisted: "仅链接可见", private: "仅自己可见" },
         status: { approved: "已公开", pending: "审核中", rejected: "未通过审核", hidden: "已被隐藏" },
         explore: {

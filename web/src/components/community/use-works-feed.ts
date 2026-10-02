@@ -11,6 +11,8 @@ export function useWorksFeed(params: FeedParams, enabled = true) {
     const [error, setError] = useState("");
     const [hasMore, setHasMore] = useState(false);
     const offsetRef = useRef(0);
+    // The first page's feed time, sent with later pages.
+    const atRef = useRef<number | undefined>(undefined);
     const tokenRef = useRef(0);
     const key = JSON.stringify(params);
 
@@ -20,9 +22,10 @@ export function useWorksFeed(params: FeedParams, enabled = true) {
             setLoading(true);
             setError("");
             try {
-                const page = await listWorks({ ...JSON.parse(key), offset: reset ? 0 : offsetRef.current, limit: 30 });
+                const page = await listWorks({ ...JSON.parse(key), offset: reset ? 0 : offsetRef.current, limit: 30, at: reset ? undefined : atRef.current });
                 if (token !== tokenRef.current) return;
                 offsetRef.current = page.next_offset;
+                if (reset) atRef.current = page.at;
                 setHasMore(page.has_more);
                 setWorks((current) => (reset ? page.works : [...current, ...page.works.filter((w) => !current.some((c) => c.id === w.id))]));
             } catch (err) {

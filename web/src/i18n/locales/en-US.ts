@@ -54,6 +54,7 @@ export default {
         remixes: "{{count}} remixes",
         views: "{{count}} views",
         moreFrom: "More from {{name}}",
+        related: "Similar works",
         visibility: { public: "Public", unlisted: "Link only", private: "Only me" },
         status: { approved: "Public", pending: "In review", rejected: "Rejected", hidden: "Hidden" },
         explore: {

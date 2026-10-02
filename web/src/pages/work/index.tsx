@@ -16,6 +16,7 @@ import {
     compactCount,
     countRemix,
     deleteWork,
+    getRelatedWorks,
     getWork,
     isSignInRequired,
     listCollections,
@@ -47,6 +48,7 @@ export default function WorkPage() {
     const [error, setError] = useState("");
     const [index, setIndex] = useState(0);
     const [more, setMore] = useState<Work[]>([]);
+    const [related, setRelated] = useState<Work[]>([]);
     const [editing, setEditing] = useState(false);
     const [reporting, setReporting] = useState(false);
     const [posterOpen, setPosterOpen] = useState(false);
@@ -61,6 +63,11 @@ export default function WorkPage() {
         setWork(null);
         setError("");
         setIndex(0);
+        setMore([]);
+        setRelated([]);
+        getRelatedWorks(id)
+            .then((works) => !cancelled && setRelated(works))
+            .catch(() => undefined);
         getWork(id)
             .then((w) => {
                 if (cancelled) return;
@@ -384,6 +391,13 @@ export default function WorkPage() {
                 <div className="mx-auto mt-10 max-w-7xl">
                     <h2 className="mb-3 text-base font-semibold">{t("community.moreFrom", { name: authorName(work.author) })}</h2>
                     <WorkGrid works={more} showAuthor={false} />
+                </div>
+            ) : null}
+
+            {related.length ? (
+                <div className="mx-auto mt-10 max-w-7xl" data-testid="work-related">
+                    <h2 className="mb-3 text-base font-semibold">{t("community.related")}</h2>
+                    <WorkGrid works={related} />
                 </div>
             ) : null}
 
