@@ -61,7 +61,8 @@ export function WorkComments({ work, onTotal }: { work: Work; onTotal?: (total: 
                 setClosed(page.closed);
                 setHasMore(page.has_more);
                 changeTotal(page.total);
-                setComments((current) => (reset ? page.comments : [...current, ...page.comments.filter((c) => !current.some((x) => x.id === c.id))]));
+                const items = page.comments || [];
+                setComments((current) => (reset ? items : [...current, ...items.filter((c) => !current.some((x) => x.id === c.id))]));
             } catch (err) {
                 setError((err as Error).message);
             } finally {
@@ -144,7 +145,7 @@ export function WorkComments({ work, onTotal }: { work: Work; onTotal?: (total: 
     const expand = async (parent: WorkComment) => {
         try {
             const page = await listReplies(parent.id, 0);
-            setComments((list) => list.map((c) => (c.id === parent.id ? { ...c, replies: page.replies } : c)));
+            setComments((list) => list.map((c) => (c.id === parent.id ? { ...c, replies: page.replies || [] } : c)));
         } catch (err) {
             message.error((err as Error).message);
         }
