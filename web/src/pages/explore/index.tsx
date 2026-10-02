@@ -8,7 +8,7 @@ import { useWorksFeed } from "@/components/community/use-works-feed";
 import { WorkGrid } from "@/components/community/work-grid";
 import { usePublishWorkStore } from "@/stores/use-publish-work-store";
 import { useMainAccountStore } from "@/stores/use-main-account-store";
-import { COMMUNITY_TAGS as TAGS, type Feed } from "@/services/api/community";
+import { COMMUNITY_TAGS as TAGS, type Feed, type WorkKind } from "@/services/api/community";
 
 /** 发现: recommended / latest / following works, filtered by tag. */
 export default function ExplorePage() {
@@ -16,9 +16,10 @@ export default function ExplorePage() {
     const [feed, setFeed] = useState<Feed>("recommended");
     const [searchParams] = useSearchParams();
     const [tag, setTag] = useState(() => searchParams.get("tag") || "");
+    const [kind, setKind] = useState<WorkKind | "">(() => (searchParams.get("kind") === "site" ? "site" : searchParams.get("kind") === "image" ? "image" : ""));
     const signedIn = useMainAccountStore((state) => state.status === "signedIn");
     const openPublish = usePublishWorkStore((state) => state.open);
-    const { works, loading, error, hasMore, loadMore, reload } = useWorksFeed({ feed, tag }, feed !== "following" || signedIn);
+    const { works, loading, error, hasMore, loadMore, reload } = useWorksFeed({ feed, tag, kind }, feed !== "following" || signedIn);
 
     return (
         <div className="h-full overflow-y-auto bg-background px-3 py-6 text-stone-900 sm:px-6 dark:text-stone-100">
@@ -41,6 +42,16 @@ export default function ExplorePage() {
                             { value: "latest", label: t("community.explore.latest") },
                             { value: "following", label: t("community.explore.following") },
                         ]}
+                    />
+                    <Segmented
+                        value={kind}
+                        onChange={(value) => setKind(value as WorkKind | "")}
+                        options={[
+                            { value: "", label: t("community.explore.allKinds") },
+                            { value: "image", label: t("community.explore.images") },
+                            { value: "site", label: t("community.explore.sites") },
+                        ]}
+                        data-testid="explore-kind"
                     />
                     <div className="hide-scrollbar flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
                         {["", ...TAGS, ...(tag && !TAGS.includes(tag) ? [tag] : [])].map((value) => (

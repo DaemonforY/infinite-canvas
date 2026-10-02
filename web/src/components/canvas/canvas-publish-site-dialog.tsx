@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { App, Button, Input, Modal, Result } from "antd";
-import { Globe } from "lucide-react";
+import { App, Button, Input, Modal, Result, Tooltip } from "antd";
+import { Globe, Share2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { MAIN_SITE_NAME } from "@/constant/runtime-config";
@@ -9,6 +9,7 @@ import { asHtmlDocument } from "@/lib/publish-html";
 import { findMainSiteApiKey } from "@/services/api/main-site-contests";
 import { MY_SITES_URL, publishSite, updateSite, type HostedSite } from "@/services/api/main-site-hosting";
 import { useConfigStore } from "@/stores/use-config-store";
+import { usePublishWorkStore } from "@/stores/use-publish-work-store";
 
 /** Publishes the HTML of a text node as a website (or a new version of the one published before). */
 export function CanvasPublishSiteDialog({ open, html, defaultTitle, siteId, onClose, onPublished }: { open: boolean; html: string; defaultTitle: string; siteId?: number; onClose: () => void; onPublished: (site: HostedSite) => void }) {
@@ -20,6 +21,7 @@ export function CanvasPublishSiteDialog({ open, html, defaultTitle, siteId, onCl
     const [name, setName] = useState("");
     const [busy, setBusy] = useState(false);
     const [site, setSite] = useState<HostedSite | null>(null);
+    const openPublishWork = usePublishWorkStore((state) => state.open);
 
     useEffect(() => {
         if (open) {
@@ -56,9 +58,23 @@ export function CanvasPublishSiteDialog({ open, html, defaultTitle, siteId, onCl
                         <Button key="copy" onClick={() => copyText(site.url, t("publishSite.copied"))}>
                             {t("publishSite.copy")}
                         </Button>,
-                        <Button key="open" type="primary" href={waiting && site.preview_url ? site.preview_url : site.url} target="_blank" rel="noopener">
+                        <Button key="open" href={waiting && site.preview_url ? site.preview_url : site.url} target="_blank" rel="noopener">
                             {waiting ? t("publishSite.preview") : t("publishSite.open")}
                         </Button>,
+                        <Tooltip key="community" title={waiting ? t("publishSite.toCommunityWaiting") : t("publishSite.toCommunityHint")}>
+                            <Button
+                                type="primary"
+                                icon={<Share2 className="size-4" />}
+                                disabled={Boolean(waiting)}
+                                onClick={() => {
+                                    onClose();
+                                    openPublishWork({ source: "site", site: { id: site.id, title: site.title || title, url: site.url }, html: asHtmlDocument(html, title.trim() || defaultTitle), title: site.title || title });
+                                }}
+                                data-testid="publish-site-to-community"
+                            >
+                                {t("publishSite.toCommunity")}
+                            </Button>
+                        </Tooltip>,
                     ]}
                 />
             ) : !apiKey ? (

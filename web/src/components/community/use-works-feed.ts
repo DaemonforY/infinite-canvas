@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { listWorks, type Feed, type Work } from "@/services/api/community";
+import { listWorks, type Feed, type Work, type WorkKind } from "@/services/api/community";
 
-type FeedParams = { feed?: Feed; tag?: string; user?: string; collection?: number };
+type FeedParams = { feed?: Feed; tag?: string; kind?: WorkKind | ""; user?: string; collection?: number };
 
 /** Pages through a works feed; `key` changes (feed, tag, user…) restart it. */
 export function useWorksFeed(params: FeedParams, enabled = true) {

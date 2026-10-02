@@ -52,8 +52,17 @@ export type Work = {
     media?: WorkMedia[];
     /** Contests the work is entered in (work page only). */
     contests?: WorkContest[];
+    /** image, or site: the work presents one of the author's hosted sites (images are screenshots). */
+    kind?: WorkKind;
+    site?: WorkSite;
     created_at: string;
 };
+
+export type WorkKind = "image" | "site";
+/** url is set while the site is live (always for its author). */
+export type WorkSite = { id: number; name: string; title: string; status: string; url?: string };
+/** One of the signed-in user's sites in the "publish a web page" picker. */
+export type MySite = { id: number; name: string; title: string; url: string; publishable: boolean; reason?: "not_live" | "password" | "published"; work_id?: number };
 
 export type WorkContest = { contest_id: number; title: string; entry_id: number; status: "approved" | "pending"; final_rank?: number };
 
@@ -131,7 +140,7 @@ export const isSignInRequired = (error: unknown) => error instanceof CommunityEr
 
 const json = (method: string, body?: unknown): RequestInit => ({ method, body: body === undefined ? undefined : JSON.stringify(body) });
 
-export function listWorks(params: { feed?: Feed; tag?: string; user?: string; collection?: number; offset?: number; limit?: number }, signal?: AbortSignal) {
+export function listWorks(params: { feed?: Feed; tag?: string; kind?: WorkKind | ""; user?: string; collection?: number; offset?: number; limit?: number }, signal?: AbortSignal) {
     const q = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== "" && value !== 0) q.set(key, String(value));
     return call<WorksPage>(`/works?${q}`, { signal });
@@ -152,6 +161,8 @@ export type CreatorStats = {
 };
 /** The signed-in author's numbers over the last 7, 30 or 90 days. */
 export const getCreatorStats = (days: number, signal?: AbortSignal) => call<CreatorStats>(`/me/stats?days=${days}`, { signal });
+/** The signed-in user's hosted sites, saying which can be published as a web-page work. */
+export const getMySites = () => call<{ sites: MySite[] }>("/me/sites").then((data) => data.sites || []);
 export const getMyCommunity = () => call<{ profile: CommunityProfile | null; unread_notifications: number }>("/me");
 export const listCollections = (handle: string) => call<Collection[]>(`/users/${encodeURIComponent(handle)}/collections`);
 export const getCollection = (id: number) => call<Collection>(`/collections/${id}`);
@@ -175,11 +186,13 @@ export type PublishInput = {
     showPrompt: boolean;
     model: string;
     params: Record<string, unknown>;
-    source: "canvas" | "image_workbench" | "tools";
+    source: "canvas" | "image_workbench" | "tools" | "site";
     tags: string[];
     visibility: WorkVisibility;
     collectionId?: number;
     remixOf?: number;
+    /** A web-page work presenting this site (images are its screenshots). */
+    siteId?: number;
 };
 
 export function publishWork(input: PublishInput) {
@@ -196,6 +209,7 @@ export function publishWork(input: PublishInput) {
     form.set("visibility", input.visibility);
     if (input.collectionId) form.set("collection_id", String(input.collectionId));
     if (input.remixOf) form.set("remix_of", String(input.remixOf));
+    if (input.siteId) form.set("site_id", String(input.siteId));
     return call<Work>("/works", { method: "POST", body: form });
 }
 

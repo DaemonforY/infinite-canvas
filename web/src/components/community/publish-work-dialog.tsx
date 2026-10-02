@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { App, Button, Input, Modal, Result, Segmented, Select, Spin, Switch } from "antd";
-import { ImagePlus, LogIn, Plus, Send, X } from "lucide-react";
+import { Globe, ImagePlus, LogIn, Plus, Send, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { nanoid } from "nanoid";
@@ -9,12 +9,13 @@ import { ProfileForm } from "@/components/community/profile-form";
 import { useShareLink } from "@/components/community/use-share-link";
 import { useMainSiteSignIn } from "@/components/layout/use-main-site-sign-in";
 import { MAIN_SITE_NAME } from "@/constant/runtime-config";
+import { snapshotPage } from "@/lib/html-snapshot";
 import { fitForUpload } from "@/lib/image-tools";
-import { createCollection, listCollections, publishWork, type Collection, type Work, type WorkVisibility } from "@/services/api/community";
+import { createCollection, getMySites, listCollections, publishWork, type Collection, type MySite, type Work, type WorkVisibility } from "@/services/api/community";
 import { loadImageBlob } from "@/services/api/main-site-contests";
 import { useCommunityMeStore } from "@/stores/use-community-me-store";
 import { useMainAccountStore } from "@/stores/use-main-account-store";
-import { usePublishWorkStore } from "@/stores/use-publish-work-store";
+import { usePublishWorkStore, type PublishSite } from "@/stores/use-publish-work-store";
 
 type Item = { id: string; src: string; blob?: Blob; owned?: boolean };
 
@@ -52,6 +53,11 @@ export function PublishWorkDialog() {
     const [newCollection, setNewCollection] = useState("");
     const [publishing, setPublishing] = useState(false);
     const [published, setPublished] = useState<Work | null>(null);
+    // Web-page works: the site presented, the user's sites to pick from, the cover being drawn.
+    const [kind, setKind] = useState<"image" | "site">("image");
+    const [site, setSite] = useState<PublishSite | null>(null);
+    const [mySites, setMySites] = useState<MySite[] | null>(null);
+    const [snapshotting, setSnapshotting] = useState(false);
     const share = useShareLink(`/w/${published?.id ?? ""}`);
 
     const open = Boolean(payload);
@@ -68,7 +74,29 @@ export function PublishWorkDialog() {
         setCollectionId(undefined);
         setNewCollection("");
         setPublished(null);
-    }, [payload]);
+        setKind(payload.site ? "site" : "image");
+        setSite(payload.site || null);
+        setMySites(null);
+        if (payload.site && payload.html && !payload.images?.length) {
+            // The cover is drawn from the page itself; the author can replace it.
+            let cancelled = false;
+            setSnapshotting(true);
+            snapshotPage(payload.html)
+                .then((blob) => !cancelled && setItems([{ id: nanoid(), src: URL.createObjectURL(blob), blob, owned: true }]))
+                .catch(() => !cancelled && message.info(t("community.publish.site.snapshotFailed")))
+                .finally(() => !cancelled && setSnapshotting(false));
+            return () => {
+                cancelled = true;
+            };
+        }
+    }, [payload, message, t]);
+
+    useEffect(() => {
+        if (kind !== "site" || payload?.site || mySites !== null || status !== "signedIn") return;
+        getMySites()
+            .then(setMySites)
+            .catch(() => setMySites([]));
+    }, [kind, mySites, payload?.site, status]);
 
     useEffect(() => {
         if (open && status === "signedIn" && profile === undefined) void refreshProfile();
@@ -134,11 +162,12 @@ export function PublishWorkDialog() {
                 showPrompt,
                 model: payload.model || "",
                 params: payload.params || {},
-                source: payload.source,
+                source: kind === "site" ? "site" : payload.source,
                 tags,
                 visibility,
                 collectionId,
                 remixOf: payload.remixOf,
+                siteId: kind === "site" ? site?.id : undefined,
             });
             setPublished(work);
             void refreshProfile();
@@ -202,6 +231,59 @@ export function PublishWorkDialog() {
         }
         return (
             <div className="grid gap-4" data-testid="publish-form">
+                {!payload?.site && !payload?.images?.length ? (
+                    <Segmented
+                        block
+                        value={kind}
+                        onChange={(v) => setKind(v as "image" | "site")}
+                        options={[
+                            { value: "image", label: t("community.publish.site.kindImage") },
+                            { value: "site", label: t("community.publish.site.kindSite") },
+                        ]}
+                        data-testid="publish-kind"
+                    />
+                ) : null}
+                {kind === "site" ? (
+                    payload?.site ? (
+                        <div className="flex items-center gap-3 rounded-lg border border-violet-200 bg-violet-50/60 p-3 dark:border-violet-900/60 dark:bg-violet-950/30" data-testid="publish-site">
+                            <Globe className="size-5 shrink-0 text-violet-500" />
+                            <div className="min-w-0">
+                                <div className="truncate text-sm font-medium">{payload.site.title}</div>
+                                <a href={payload.site.url} target="_blank" rel="noopener noreferrer" className="block truncate text-xs">
+                                    {payload.site.url}
+                                </a>
+                            </div>
+                        </div>
+                    ) : (
+                        <label className="grid gap-1 text-sm">
+                            <span className="font-medium">{t("community.publish.site.pick")}</span>
+                            <Select
+                                loading={mySites === null}
+                                value={site?.id}
+                                placeholder={t("community.publish.site.pickPlaceholder")}
+                                notFoundContent={t("community.publish.site.none")}
+                                onChange={(id) => {
+                                    const picked = mySites?.find((s) => s.id === id);
+                                    setSite(picked ? { id: picked.id, title: picked.title, url: picked.url } : null);
+                                    if (picked && !title) setTitle(picked.title);
+                                }}
+                                options={(mySites || []).map((s) => ({
+                                    value: s.id,
+                                    disabled: !s.publishable,
+                                    label: `${s.title || s.name}${s.reason ? `（${t(`community.publish.site.reasons.${s.reason}`)}）` : ""}`,
+                                }))}
+                                data-testid="publish-site-select"
+                            />
+                            <span className="text-xs text-stone-500">{t("community.publish.site.coverHint")}</span>
+                        </label>
+                    )
+                ) : null}
+                {snapshotting ? (
+                    <div className="flex items-center gap-2 text-xs text-stone-500">
+                        <Spin size="small" />
+                        {t("community.publish.site.snapshotting")}
+                    </div>
+                ) : null}
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
                     {items.map((item) => (
                         <div key={item.id} className="relative aspect-square overflow-hidden rounded-lg bg-stone-100 dark:bg-stone-900">
@@ -269,7 +351,7 @@ export function PublishWorkDialog() {
                     />
                 </div>
                 <p className="m-0 text-xs leading-5 text-stone-500">{t("community.publish.rules")}</p>
-                <Button type="primary" icon={<Send className="size-4" />} loading={publishing} disabled={!items.length} onClick={() => void publish()} data-testid="publish-submit">
+                <Button type="primary" icon={<Send className="size-4" />} loading={publishing} disabled={!items.length || (kind === "site" && !site)} onClick={() => void publish()} data-testid="publish-submit">
                     {t("community.publish.submit")}
                 </Button>
             </div>

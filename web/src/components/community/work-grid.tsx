@@ -1,4 +1,4 @@
-import { Heart, Images, Lock, Link2, Clock3, Sparkles } from "lucide-react";
+import { Clock3, Globe, Heart, Images, Link2, Lock, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
@@ -17,6 +17,7 @@ export function WorkCard({ work, showAuthor = true }: { work: Work; showAuthor?:
                     <img src={mainSiteAsset(work.cover_thumb_url)} alt={work.title} loading="lazy" className="size-full object-cover transition duration-300 group-hover:scale-[1.03]" />
                     <span className="absolute left-2 top-2 rounded bg-black/55 px-1.5 py-0.5 text-[11px] font-medium text-white">{t("community.aiLabel")}</span>
                     <span className="absolute right-2 top-2 flex gap-1">
+                        {work.kind === "site" ? <Badge icon={<Globe className="size-3" />} label={t("community.site.badge")} /> : null}
                         {work.featured ? <Badge icon={<Sparkles className="size-3" />} label={t("community.featured")} /> : null}
                         {work.image_count > 1 ? <Badge icon={<Images className="size-3" />} label={String(work.image_count)} /> : null}
                         {work.visibility === "private" ? <Badge icon={<Lock className="size-3" />} label={t("community.visibility.private")} /> : null}

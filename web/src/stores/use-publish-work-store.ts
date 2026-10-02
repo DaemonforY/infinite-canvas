@@ -7,9 +7,14 @@ export type PublishWorkPayload = {
     model?: string;
     params?: Record<string, unknown>;
     title?: string;
-    source: "canvas" | "image_workbench" | "tools";
+    source: "canvas" | "image_workbench" | "tools" | "site";
     remixOf?: number;
+    /** A web-page work: the site it presents; html (when known) draws the cover. */
+    site?: PublishSite;
+    html?: string;
 };
+
+export type PublishSite = { id: number; title: string; url: string };
 
 type PublishWorkStore = {
     payload: PublishWorkPayload | null;

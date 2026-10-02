@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { App, Button, Checkbox, Dropdown, Empty, Input, Modal, Popconfirm, Radio, Segmented, Select, Spin, Switch, Tag } from "antd";
-import { Copy, Eye, Flag, FolderPlus, Heart, Image as ImageIcon, Link2, Pencil, Share2, Sparkles, Star, Trash2, Trophy, Wand2 } from "lucide-react";
+import { Copy, ExternalLink, Eye, Flag, FolderPlus, Globe, Heart, Image as ImageIcon, Link2, Pencil, Share2, Sparkles, Star, Trash2, Trophy, Wand2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
@@ -53,6 +53,7 @@ export default function WorkPage() {
     const share = useShareLink(`/w/${id}`, { syncAddressBar: Boolean(work && work.visibility !== "private") });
     const [managing, setManaging] = useState(false);
     const [entering, setEntering] = useState(false);
+    const [siteView, setSiteView] = useState<"live" | "shots">("live");
 
     useEffect(() => {
         if (!id) return;
@@ -144,13 +145,54 @@ export default function WorkPage() {
         <div className="h-full overflow-y-auto bg-background px-3 py-6 text-stone-900 sm:px-6 dark:text-stone-100" data-testid="work-page">
             <div className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
                 <div className="min-w-0">
-                    <div className="relative flex items-center justify-center overflow-hidden rounded-2xl bg-stone-100 dark:bg-stone-900">
-                        <a href={mainSiteAsset(current.url)} target="_blank" rel="noopener noreferrer" className="block">
-                            <img src={mainSiteAsset(current.url)} alt={work.title} className="max-h-[75vh] w-auto max-w-full object-contain" />
-                        </a>
-                        <span className="absolute left-3 top-3 rounded bg-black/60 px-2 py-0.5 text-xs font-medium text-white">{t("community.aiLabel")}</span>
-                    </div>
-                    {media.length > 1 ? (
+                    {work.kind === "site" ? (
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2" data-testid="work-site">
+                            <span className="flex min-w-0 items-center gap-2 text-sm text-stone-500">
+                                <Globe className="size-4 shrink-0 text-violet-500" />
+                                {work.site?.url ? (
+                                    <a href={work.site.url} target="_blank" rel="noopener noreferrer" className="truncate">
+                                        {work.site.url.replace(/^https:\/\//, "")}
+                                    </a>
+                                ) : (
+                                    <span className="text-amber-600">{t("community.site.offline")}</span>
+                                )}
+                            </span>
+                            {work.site?.url ? (
+                                <Segmented
+                                    size="small"
+                                    value={siteView}
+                                    onChange={(v) => setSiteView(v as "live" | "shots")}
+                                    options={[
+                                        { value: "live", label: t("community.site.live") },
+                                        { value: "shots", label: t("community.site.shots") },
+                                    ]}
+                                />
+                            ) : null}
+                        </div>
+                    ) : null}
+                    {work.kind === "site" && work.site?.url && siteView === "live" ? (
+                        <div className="relative overflow-hidden rounded-2xl border border-stone-200 bg-white dark:border-stone-800">
+                            {/* No allow-same-origin: the page's scripts run in an opaque origin, away from this site's storage. */}
+                            <iframe
+                                src={work.site.url}
+                                title={work.site.title || work.title}
+                                sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
+                                referrerPolicy="no-referrer"
+                                loading="lazy"
+                                className="block h-[70vh] w-full"
+                                data-testid="work-site-frame"
+                            />
+                            <span className="absolute left-3 top-3 rounded bg-black/60 px-2 py-0.5 text-xs font-medium text-white">{t("community.aiLabel")}</span>
+                        </div>
+                    ) : (
+                        <div className="relative flex items-center justify-center overflow-hidden rounded-2xl bg-stone-100 dark:bg-stone-900">
+                            <a href={mainSiteAsset(current.url)} target="_blank" rel="noopener noreferrer" className="block">
+                                <img src={mainSiteAsset(current.url)} alt={work.title} className="max-h-[75vh] w-auto max-w-full object-contain" />
+                            </a>
+                            <span className="absolute left-3 top-3 rounded bg-black/60 px-2 py-0.5 text-xs font-medium text-white">{t("community.aiLabel")}</span>
+                        </div>
+                    )}
+                    {media.length > 1 && !(work.kind === "site" && work.site?.url && siteView === "live") ? (
                         <div className="mt-3 flex gap-2 overflow-x-auto">
                             {media.map((m, i) => (
                                 <button key={m.position} type="button" onClick={() => setIndex(i)} className={`size-16 shrink-0 overflow-hidden rounded-lg border-2 ${i === index ? "border-violet-500" : "border-transparent opacity-70 hover:opacity-100"}`}>
@@ -230,9 +272,11 @@ export default function WorkPage() {
                                     >
                                         {t("community.copy")}
                                     </Button>
-                                    <Button size="small" type="primary" icon={<Wand2 className="size-3.5" />} onClick={remix} data-testid="work-remix">
-                                        {t("community.remix")}
-                                    </Button>
+                                    {work.kind !== "site" ? (
+                                        <Button size="small" type="primary" icon={<Wand2 className="size-3.5" />} onClick={remix} data-testid="work-remix">
+                                            {t("community.remix")}
+                                        </Button>
+                                    ) : null}
                                 </div>
                             </>
                         ) : (
@@ -258,6 +302,12 @@ export default function WorkPage() {
                                 </Link>
                             ))}
                         </div>
+                    ) : null}
+
+                    {work.kind === "site" && work.site?.url ? (
+                        <Button type="primary" size="large" icon={<ExternalLink className="size-4" />} href={work.site.url} target="_blank" rel="noopener noreferrer" data-testid="work-open-site">
+                            {t("community.site.open")}
+                        </Button>
                     ) : null}
 
                     <div className="flex flex-wrap items-center gap-2">
