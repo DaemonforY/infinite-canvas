@@ -55,8 +55,29 @@ export type Work = {
     /** image, or site: the work presents one of the author's hosted sites (images are screenshots). */
     kind?: WorkKind;
     site?: WorkSite;
+    /** Approved comments and replies; the author may close comments. */
+    comment_count?: number;
+    comments_closed?: boolean;
     created_at: string;
 };
+
+/** status "removed": deleted or hidden, kept as a placeholder while it has replies (no body / author). */
+export type WorkComment = {
+    id: number;
+    work_id: number;
+    parent_id?: number;
+    author?: CommunityAuthor;
+    /** Set on replies answering another reply. */
+    reply_to?: CommunityAuthor;
+    body: string;
+    status: "approved" | "pending" | "removed";
+    reply_count: number;
+    replies?: WorkComment[];
+    is_mine: boolean;
+    can_delete: boolean;
+    created_at: string;
+};
+export type CommentPage = { comments: WorkComment[]; next_offset: number; has_more: boolean; total: number; enabled: boolean; closed: boolean };
 
 export type WorkKind = "image" | "site";
 /** url is set while the site is live (always for its author). */
@@ -216,7 +237,7 @@ export function publishWork(input: PublishInput) {
     return call<Work>("/works", { method: "POST", body: form });
 }
 
-export const updateWork = (id: number, input: { title: string; description: string; show_prompt: boolean; tags: string[]; visibility: WorkVisibility }) => call<Work>(`/works/${id}`, json("PUT", input));
+export const updateWork = (id: number, input: { title: string; description: string; show_prompt: boolean; tags: string[]; visibility: WorkVisibility; comments_closed?: boolean }) => call<Work>(`/works/${id}`, json("PUT", input));
 export const deleteWork = (id: number) => call<{ ok: boolean }>(`/works/${id}`, { method: "DELETE" });
 export const setLike = (id: number, on: boolean) => call<InteractionState>(`/works/${id}/like`, { method: on ? "PUT" : "DELETE" });
 export const setFavorite = (id: number, on: boolean) => call<InteractionState>(`/works/${id}/favorite`, { method: on ? "PUT" : "DELETE" });
@@ -226,6 +247,12 @@ export const enterContest = (workId: number, input: { contest_id: number; image_
     call<{ id: number; status: string }>(`/works/${workId}/contest-entries`, json("POST", input));
 export const countRemix = (id: number) => call<{ ok: boolean }>(`/works/${id}/remix`, { method: "POST" }).catch(() => undefined);
 export const reportWork = (id: number, reason: string, detail: string) => call<{ ok: boolean }>(`/works/${id}/report`, json("POST", { reason, detail }));
+export const listComments = (workId: number, offset = 0) => call<CommentPage>(`/works/${workId}/comments?offset=${offset}`);
+export const listReplies = (commentId: number, offset = 0) => call<{ replies: WorkComment[]; next_offset: number; has_more: boolean }>(`/comments/${commentId}/replies?offset=${offset}`);
+/** replyTo: the comment answered (a top-level comment or a reply). */
+export const addComment = (workId: number, body: string, replyTo = 0) => call<WorkComment>(`/works/${workId}/comments`, json("POST", { body, reply_to: replyTo }));
+export const deleteComment = (id: number) => call<{ ok: boolean }>(`/comments/${id}`, { method: "DELETE" });
+export const reportComment = (id: number, reason: string, detail: string) => call<{ ok: boolean }>(`/comments/${id}/report`, json("POST", { reason, detail }));
 export const createCollection = (input: { title: string; description: string; visibility: "public" | "private" }) => call<Collection>("/collections", json("POST", input));
 export const updateCollection = (id: number, input: { title: string; description: string; visibility: "public" | "private" }) => call<Collection>(`/collections/${id}`, json("PUT", input));
 export const deleteCollection = (id: number) => call<{ ok: boolean }>(`/collections/${id}`, { method: "DELETE" });

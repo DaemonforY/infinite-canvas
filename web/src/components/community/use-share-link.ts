@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { App } from "antd";
 import { useTranslation } from "react-i18next";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { canvasShareUrl, normalizeReferralCode } from "@/lib/referral";
 import { useMainAccountStore } from "@/stores/use-main-account-store";
@@ -16,7 +16,9 @@ export function useShareLink(path: string, { syncAddressBar = false } = {}) {
     const { message } = App.useApp();
     const signedIn = useMainAccountStore((state) => state.status === "signedIn");
     const code = useMainAccountStore((state) => (state.status === "signedIn" ? normalizeReferralCode(state.account?.aff_code) : ""));
-    const [params, setParams] = useSearchParams();
+    const [params] = useSearchParams();
+    const location = useLocation();
+    const navigate = useNavigate();
     const url = canvasShareUrl(path, code);
     const invited = Boolean(code);
 
@@ -24,8 +26,9 @@ export function useShareLink(path: string, { syncAddressBar = false } = {}) {
         if (!syncAddressBar || !code || params.get("aff") === code) return;
         const next = new URLSearchParams(params);
         next.set("aff", code);
-        setParams(next, { replace: true, preventScrollReset: true });
-    }, [code, params, setParams, syncAddressBar]);
+        // Keeps the #anchor (notification links open at #comments).
+        navigate({ pathname: location.pathname, search: `?${next}`, hash: location.hash }, { replace: true, preventScrollReset: true });
+    }, [code, location.hash, location.pathname, navigate, params, syncAddressBar]);
 
     const copy = () => {
         void navigator.clipboard?.writeText(url);

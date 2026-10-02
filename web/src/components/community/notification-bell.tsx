@@ -10,6 +10,7 @@ import { useCommunityMeStore } from "@/stores/use-community-me-store";
 import { useMainAccountStore } from "@/stores/use-main-account-store";
 
 const POLL_MS = 60_000;
+const COMMENT_KINDS = new Set(["comment", "reply", "comment_hidden"]);
 
 /** Bell with the unread count; opening it lists the latest notices and marks them read. */
 export function NotificationBell({ className, style }: { className?: string; style?: React.CSSProperties }) {
@@ -55,7 +56,7 @@ export function NotificationBell({ className, style }: { className?: string; sty
                     {list.map((n) => (
                         <Link
                             key={n.id}
-                            to={n.work_id ? `/w/${n.work_id}` : n.actor ? `/u/${n.actor.handle}` : "/explore"}
+                            to={n.work_id ? `/w/${n.work_id}${COMMENT_KINDS.has(n.kind) ? "#comments" : ""}` : n.actor ? `/u/${n.actor.handle}` : "/explore"}
                             onClick={() => setOpen(false)}
                             className={`flex items-center gap-2.5 rounded-lg p-2 text-sm !text-inherit hover:bg-stone-100 dark:hover:bg-stone-800 ${n.read ? "" : "bg-violet-50 dark:bg-violet-900/20"}`}
                         >

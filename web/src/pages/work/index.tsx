@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { App, Button, Checkbox, Dropdown, Empty, Input, Modal, Popconfirm, Radio, Segmented, Select, Spin, Switch, Tag } from "antd";
-import { Copy, ExternalLink, Eye, Flag, FolderPlus, Globe, Heart, Image as ImageIcon, Link2, Pencil, Share2, Sparkles, Star, Trash2, Trophy, Wand2 } from "lucide-react";
+import { Copy, ExternalLink, Eye, Flag, FolderPlus, Globe, Heart, Image as ImageIcon, Link2, MessageCircle, Pencil, Share2, Sparkles, Star, Trash2, Trophy, Wand2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { AuthorAvatar } from "@/components/community/author-avatar";
 import { WorkGrid } from "@/components/community/work-grid";
+import { ReportDialog } from "@/components/community/report-dialog";
+import { WorkComments } from "@/components/community/work-comments";
 import { SharePosterDialog } from "@/components/community/share-poster-dialog";
 import { useShareLink } from "@/components/community/use-share-link";
 import { WorkContestDialog } from "@/components/community/work-contest-dialog";
@@ -35,7 +37,6 @@ import {
 } from "@/services/api/community";
 import { useMainAccountStore } from "@/stores/use-main-account-store";
 
-const REPORT_REASONS = ["porn", "violence", "politics", "copyright", "fraud", "spam", "other"] as const;
 
 export default function WorkPage() {
     const { t } = useTranslation();
@@ -324,6 +325,9 @@ export default function WorkPage() {
                         <Button icon={<Star className="size-4" color={work.favorited_by_me ? "#f59e0b" : "currentColor"} fill={work.favorited_by_me ? "#f59e0b" : "none"} />} onClick={() => void toggle("favorite")} data-testid="work-favorite">
                             {compactCount(work.favorite_count)}
                         </Button>
+                        <Button icon={<MessageCircle className="size-4" />} onClick={() => document.getElementById("comments")?.scrollIntoView({ behavior: "smooth", block: "start" })} data-testid="work-comments-jump">
+                            {compactCount(work.comment_count || 0)}
+                        </Button>
                         <Dropdown
                             trigger={["click"]}
                             menu={{
@@ -387,6 +391,8 @@ export default function WorkPage() {
                 </aside>
             </div>
 
+            <WorkComments key={work.id} work={work} onTotal={(total) => setWork((current) => (current && current.comment_count !== total ? { ...current, comment_count: total } : current))} />
+
             {more.length ? (
                 <div className="mx-auto mt-10 max-w-7xl">
                     <h2 className="mb-3 text-base font-semibold">{t("community.moreFrom", { name: authorName(work.author) })}</h2>
@@ -403,7 +409,7 @@ export default function WorkPage() {
 
             {editing ? <EditWorkDialog work={work} onClose={() => setEditing(false)} onSaved={(w) => (setWork({ ...work, ...w }), setEditing(false))} /> : null}
             {posterOpen ? <SharePosterDialog work={work} url={share.url} invited={share.invited} onClose={() => setPosterOpen(false)} /> : null}
-            {reporting ? <ReportDialog workId={work.id} onClose={() => setReporting(false)} /> : null}
+            {reporting ? <ReportDialog onSubmit={(reason, detail) => reportWork(work.id, reason, detail)} onClose={() => setReporting(false)} /> : null}
             {managing ? <CollectionsDialog work={work} onClose={() => setManaging(false)} /> : null}
             {entering ? (
                 <WorkContestDialog
@@ -428,11 +434,12 @@ function EditWorkDialog({ work, onClose, onSaved }: { work: Work; onClose: () =>
     const [showPrompt, setShowPrompt] = useState(work.show_prompt);
     const [tags, setTags] = useState(work.tags);
     const [visibility, setVisibility] = useState<WorkVisibility>(work.visibility);
+    const [commentsOpen, setCommentsOpen] = useState(!work.comments_closed);
     const [saving, setSaving] = useState(false);
     const save = async () => {
         setSaving(true);
         try {
-            onSaved(await updateWork(work.id, { title, description, show_prompt: showPrompt, tags, visibility }));
+            onSaved(await updateWork(work.id, { title, description, show_prompt: showPrompt, tags, visibility, comments_closed: !commentsOpen }));
         } catch (err) {
             message.error((err as Error).message);
         } finally {
@@ -450,40 +457,11 @@ function EditWorkDialog({ work, onClose, onSaved }: { work: Work; onClose: () =>
                     <Switch size="small" checked={showPrompt} onChange={setShowPrompt} />
                     {t("community.publish.showPrompt")}
                 </span>
+                <span className="flex items-center gap-2">
+                    <Switch size="small" checked={commentsOpen} onChange={setCommentsOpen} data-testid="edit-comments-open" />
+                    {t("community.comments.allow")}
+                </span>
             </div>
-        </Modal>
-    );
-}
-
-function ReportDialog({ workId, onClose }: { workId: number; onClose: () => void }) {
-    const { t } = useTranslation();
-    const { message } = App.useApp();
-    const [reason, setReason] = useState<string>("");
-    const [detail, setDetail] = useState("");
-    const [sending, setSending] = useState(false);
-    const send = async () => {
-        if (!reason) return;
-        setSending(true);
-        try {
-            await reportWork(workId, reason, detail);
-            message.success(t("community.report.sent"));
-            onClose();
-        } catch (err) {
-            message.error((err as Error).message);
-        } finally {
-            setSending(false);
-        }
-    };
-    return (
-        <Modal open title={t("community.report.title")} onCancel={onClose} onOk={() => void send()} okText={t("community.report.submit")} cancelText={t("common.cancel")} okButtonProps={{ disabled: !reason }} confirmLoading={sending} destroyOnHidden>
-            <Radio.Group value={reason} onChange={(e) => setReason(e.target.value)} className="grid gap-1.5">
-                {REPORT_REASONS.map((r) => (
-                    <Radio key={r} value={r}>
-                        {t(`community.report.reasons.${r}`)}
-                    </Radio>
-                ))}
-            </Radio.Group>
-            <Input.TextArea className="mt-3" value={detail} maxLength={500} autoSize={{ minRows: 2, maxRows: 4 }} placeholder={t("community.report.detail")} onChange={(e) => setDetail(e.target.value)} />
         </Modal>
     );
 }
