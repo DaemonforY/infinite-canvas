@@ -824,6 +824,8 @@ export default {
         },
     },
     topNav: {
+        more: "更多",
+        whatsNew: "更新日志",
         openMenu: "打开导航菜单",
         menu: "导航菜单",
         navigation: "导航",

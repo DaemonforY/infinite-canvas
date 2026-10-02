@@ -11,7 +11,7 @@ type SkinPickerProps = {
     style?: CSSProperties;
 };
 
-function swatchStyle(name: SkinName): CSSProperties {
+export function swatchStyle(name: SkinName): CSSProperties {
     const skin = SKINS[name];
     return { background: `linear-gradient(135deg, ${skin.accentLight} 0%, ${skin.accent} 45%, ${skin.accent2} 100%)` };
 }

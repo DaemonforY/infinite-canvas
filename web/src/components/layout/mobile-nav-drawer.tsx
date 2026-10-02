@@ -64,7 +64,7 @@ export function MobileNavDrawer({ open, activeToolSlug, onClose }: MobileNavDraw
             </div>
             {/* Docs, language, skin, theme, version: collapsed out of the phone top bar. */}
             <div className="mt-4 border-t border-stone-200 px-2 pt-4 dark:border-stone-800" data-testid="mobile-nav-actions">
-                <UserStatusActions showConfig={false} />
+                <UserStatusActions showConfig={false} expanded />
             </div>
         </Drawer>
     );

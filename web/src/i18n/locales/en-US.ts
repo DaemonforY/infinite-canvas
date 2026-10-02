@@ -824,6 +824,8 @@ export default {
         },
     },
     topNav: {
+        more: "More",
+        whatsNew: "What’s new",
         openMenu: "Open navigation menu",
         menu: "Navigation menu",
         navigation: "Navigation",

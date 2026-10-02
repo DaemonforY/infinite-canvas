@@ -7,6 +7,7 @@ import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { AccountMenu } from "@/components/layout/account-menu";
 import { NotificationBell } from "@/components/community/notification-bell";
 import { MainSiteLink } from "@/components/layout/main-site-link";
+import { MoreActionsMenu } from "@/components/layout/more-actions-menu";
 import { SkinPicker } from "@/components/layout/skin-picker";
 import { VersionReleaseModal } from "@/components/layout/version-release-modal";
 import { DOCS_URL } from "@/constant/env";
@@ -19,19 +20,22 @@ import { useThemeStore } from "@/stores/use-theme-store";
 type UserStatusActionsProps = {
     showConfig?: boolean;
     variant?: "default" | "canvas";
-    /** Hide docs / language / skin / version / main-site icons below md (the menu drawer has them). */
+    /** Hide the 「更多」 menu below md (the menu drawer lists those actions). */
     collapseOnMobile?: boolean;
+    /** Every action as its own icon (the phone menu drawer); otherwise the rare ones sit in 「更多」. */
+    expanded?: boolean;
     onOpenShortcuts?: () => void;
     onOpenPlugins?: () => void;
 };
 
-export function UserStatusActions({ showConfig = true, variant = "default", collapseOnMobile = false, onOpenShortcuts, onOpenPlugins }: UserStatusActionsProps) {
+export function UserStatusActions({ showConfig = true, variant = "default", collapseOnMobile = false, expanded = false, onOpenShortcuts, onOpenPlugins }: UserStatusActionsProps) {
     const { i18n, t } = useTranslation();
     const theme = useThemeStore((state) => state.theme);
     const setTheme = useThemeStore((state) => state.setTheme);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const canvasTheme = useCanvasTheme();
-    const naturalIconClass = "inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-stone-600 transition-colors hover:bg-black/5 hover:text-stone-950 dark:text-stone-300 dark:hover:bg-white/10 dark:hover:text-white [&_svg]:size-4";
+    const naturalIconClass =
+        "inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-stone-600 transition-colors hover:bg-black/5 hover:text-stone-950 dark:text-stone-300 dark:hover:bg-white/10 dark:hover:text-white [&_svg]:size-4";
     const iconStyle: CSSProperties | undefined = variant === "canvas" ? { color: canvasTheme.node.text } : undefined;
     const versionStyle = iconStyle;
     const mainSiteClassName = "size-7";
@@ -41,6 +45,31 @@ export function UserStatusActions({ showConfig = true, variant = "default", coll
     const languageLabel = t("topNav.switchLanguage", { language: t(nextLocale === "zh-CN" ? "locale.zhCN" : "locale.enUS") });
     // On phones the top bar has no room for every icon; the secondary ones live in the menu drawer.
     const secondary = collapseOnMobile ? "hidden md:inline-flex" : "";
+
+    if (!expanded) {
+        return (
+            <div className="inline-flex shrink-0 items-center gap-1">
+                {showConfig ? (
+                    <button type="button" className={naturalIconClass} style={iconStyle} onClick={() => openConfigDialog(false, "channels", { advanced: true })} aria-label={t("navigation.config")} title={t("navigation.config")}>
+                        <Settings2 className="size-4" />
+                    </button>
+                ) : null}
+                <AnimatedThemeToggler
+                    theme={theme}
+                    onThemeChange={setTheme}
+                    className={naturalIconClass}
+                    style={iconStyle}
+                    aria-label={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")}
+                    title={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")}
+                />
+                <MoreActionsMenu className={cn(naturalIconClass, secondary)} style={iconStyle} medium={variant === "canvas" ? "canvas-nav" : "top-nav"} onOpenShortcuts={onOpenShortcuts} onOpenPlugins={onOpenPlugins} />
+                <NotificationBell className={naturalIconClass} style={iconStyle} />
+                <span className="ml-1 inline-flex">
+                    <AccountMenu />
+                </span>
+            </div>
+        );
+    }
 
     return (
         <div className="inline-flex shrink-0 items-center gap-1">
@@ -63,7 +92,14 @@ export function UserStatusActions({ showConfig = true, variant = "default", coll
                 </button>
             </Tooltip>
             <SkinPicker className={cn(naturalIconClass, secondary)} style={iconStyle} />
-            <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className={naturalIconClass} style={iconStyle} aria-label={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} title={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")} />
+            <AnimatedThemeToggler
+                theme={theme}
+                onThemeChange={setTheme}
+                className={naturalIconClass}
+                style={iconStyle}
+                aria-label={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")}
+                title={t(theme === "dark" ? "topNav.lightTheme" : "topNav.darkTheme")}
+            />
             {secondary ? (
                 <span className={secondary}>
                     <VersionReleaseModal style={versionStyle} />
