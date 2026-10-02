@@ -17,6 +17,7 @@ import ExplorePage from "@/pages/explore";
 import WorkPage from "@/pages/work";
 import UserPage from "@/pages/user";
 import CollectionPage from "@/pages/collection";
+import CreatorPage from "@/pages/creator";
 
 export const router = createBrowserRouter([
     {
@@ -41,6 +42,7 @@ export const router = createBrowserRouter([
             { path: "/w/:id", element: <WorkPage /> },
             { path: "/u/:handle", element: <UserPage /> },
             { path: "/c/:id", element: <CollectionPage /> },
+            { path: "/creator", element: <CreatorPage /> },
         ],
     },
     { path: "*", element: <NotFound /> },

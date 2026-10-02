@@ -139,6 +139,19 @@ export function listWorks(params: { feed?: Feed; tag?: string; user?: string; co
 
 export const getWork = (id: number, signal?: AbortSignal) => call<Work>(`/works/${id}`, { signal });
 export const getProfile = (handle: string, signal?: AbortSignal) => call<CommunityProfile>(`/users/${encodeURIComponent(handle)}`, { signal });
+export type CreatorCounts = { views: number; likes: number; favorites: number; remixes: number; followers: number };
+export type CreatorStats = {
+    days: number;
+    totals: CreatorCounts & { works: number; public_works: number };
+    period: CreatorCounts;
+    previous: CreatorCounts;
+    series: (CreatorCounts & { day: string })[];
+    top_works: { work: Work; period_views: number; period_likes: number; period_favorites: number; period_remixes: number }[];
+    /** First day views and remixes were counted per day ("" before any). */
+    tracked_since: string;
+};
+/** The signed-in author's numbers over the last 7, 30 or 90 days. */
+export const getCreatorStats = (days: number, signal?: AbortSignal) => call<CreatorStats>(`/me/stats?days=${days}`, { signal });
 export const getMyCommunity = () => call<{ profile: CommunityProfile | null; unread_notifications: number }>("/me");
 export const listCollections = (handle: string) => call<Collection[]>(`/users/${encodeURIComponent(handle)}/collections`);
 export const getCollection = (id: number) => call<Collection>(`/collections/${id}`);

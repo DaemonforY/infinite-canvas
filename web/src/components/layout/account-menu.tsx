@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { App, Button, Checkbox, Dropdown, Modal } from "antd";
-import { CreditCard, Globe, LogIn, LogOut, Settings, UserRound } from "lucide-react";
+import { BarChart3, CreditCard, Globe, LogIn, LogOut, Settings, UserRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
@@ -83,6 +83,7 @@ export function AccountMenu({ style }: { style?: CSSProperties }) {
             icon: <UserRound className="size-4" />,
             label: communityProfile ? <Link to={`/u/${communityProfile.handle}`}>{t("account.myPage")}</Link> : <Link to="/explore">{t("account.discover")}</Link>,
         },
+        ...(communityProfile ? [{ key: "creator", icon: <BarChart3 className="size-4" />, label: <Link to="/creator">{t("creator.title")}</Link> }] : []),
         {
             key: "topup",
             icon: <CreditCard className="size-4" />,

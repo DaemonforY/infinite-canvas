@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { App, Button, Empty, Input, Modal, Segmented, Spin } from "antd";
-import { FolderPlus, Pencil, RefreshCw, Share2 } from "lucide-react";
+import { BarChart3, FolderPlus, Pencil, RefreshCw, Share2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
@@ -111,6 +111,13 @@ export default function UserPage() {
                         <Button icon={<Share2 className="size-4" />} onClick={share.copy} data-testid="profile-share">
                             {t("community.share")}
                         </Button>
+                        {profile.is_me ? (
+                            <Link to="/creator">
+                                <Button icon={<BarChart3 className="size-4" />} data-testid="profile-creator">
+                                    {t("creator.title")}
+                                </Button>
+                            </Link>
+                        ) : null}
                         {profile.is_me ? (
                             <Button icon={<Pencil className="size-4" />} onClick={() => setEditing(true)} data-testid="profile-edit">
                                 {t("community.profile.edit")}
