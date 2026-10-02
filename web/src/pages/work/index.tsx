@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { App, Button, Checkbox, Dropdown, Empty, Input, Modal, Popconfirm, Radio, Segmented, Select, Spin, Switch, Tag } from "antd";
-import { Copy, Eye, Flag, FolderPlus, Heart, Image as ImageIcon, Link2, Pencil, Share2, Sparkles, Star, Trash2, Wand2 } from "lucide-react";
+import { Copy, Eye, Flag, FolderPlus, Heart, Image as ImageIcon, Link2, Pencil, Share2, Sparkles, Star, Trash2, Trophy, Wand2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
@@ -8,6 +8,8 @@ import { AuthorAvatar } from "@/components/community/author-avatar";
 import { WorkGrid } from "@/components/community/work-grid";
 import { SharePosterDialog } from "@/components/community/share-poster-dialog";
 import { useShareLink } from "@/components/community/use-share-link";
+import { WorkContestDialog } from "@/components/community/work-contest-dialog";
+import { mainSiteContestUrl } from "@/services/api/main-site-contests";
 import { useMainSiteSignIn } from "@/components/layout/use-main-site-sign-in";
 import {
     authorName,
@@ -50,6 +52,7 @@ export default function WorkPage() {
     const [posterOpen, setPosterOpen] = useState(false);
     const share = useShareLink(`/w/${id}`, { syncAddressBar: Boolean(work && work.visibility !== "private") });
     const [managing, setManaging] = useState(false);
+    const [entering, setEntering] = useState(false);
 
     useEffect(() => {
         if (!id) return;
@@ -192,6 +195,23 @@ export default function WorkPage() {
                                 </Tag>
                             ) : null}
                         </div>
+                        {work.contests?.length ? (
+                            <div className="mt-2 flex flex-wrap gap-1.5" data-testid="work-contests">
+                                {work.contests.map((c) => (
+                                    <a
+                                        key={c.entry_id}
+                                        href={mainSiteContestUrl(c.contest_id)}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs !text-amber-700 hover:bg-amber-100 dark:bg-amber-900/30 dark:!text-amber-300"
+                                    >
+                                        <Trophy className="size-3" />
+                                        {t("community.contest.badge", { title: c.title })}
+                                        {c.final_rank ? ` · ${t("community.contest.rank", { rank: c.final_rank })}` : c.status === "pending" ? ` · ${t("community.status.pending")}` : ""}
+                                    </a>
+                                ))}
+                            </div>
+                        ) : null}
                     </div>
 
                     <div className="rounded-xl border border-stone-200 p-3 dark:border-stone-800">
@@ -281,6 +301,11 @@ export default function WorkPage() {
                             <Button size="small" icon={<FolderPlus className="size-3.5" />} onClick={() => setManaging(true)}>
                                 {t("community.collections.manage")}
                             </Button>
+                            {work.status === "approved" && work.visibility !== "private" ? (
+                                <Button size="small" icon={<Trophy className="size-3.5" />} onClick={() => setEntering(true)} data-testid="work-enter-contest">
+                                    {t("community.contest.action")}
+                                </Button>
+                            ) : null}
                             <Popconfirm
                                 title={t("community.deleteConfirm")}
                                 okText={t("community.delete")}
@@ -316,6 +341,17 @@ export default function WorkPage() {
             {posterOpen ? <SharePosterDialog work={work} url={share.url} invited={share.invited} onClose={() => setPosterOpen(false)} /> : null}
             {reporting ? <ReportDialog workId={work.id} onClose={() => setReporting(false)} /> : null}
             {managing ? <CollectionsDialog work={work} onClose={() => setManaging(false)} /> : null}
+            {entering ? (
+                <WorkContestDialog
+                    work={work}
+                    onClose={() => setEntering(false)}
+                    onEntered={() =>
+                        void getWork(work.id)
+                            .then(setWork)
+                            .catch(() => undefined)
+                    }
+                />
+            ) : null}
         </div>
     );
 }

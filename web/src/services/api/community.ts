@@ -50,8 +50,12 @@ export type Work = {
     favorited_by_me: boolean;
     is_mine: boolean;
     media?: WorkMedia[];
+    /** Contests the work is entered in (work page only). */
+    contests?: WorkContest[];
     created_at: string;
 };
+
+export type WorkContest = { contest_id: number; title: string; entry_id: number; status: "approved" | "pending"; final_rank?: number };
 
 export type Collection = {
     id: number;
@@ -187,6 +191,9 @@ export const deleteWork = (id: number) => call<{ ok: boolean }>(`/works/${id}`, 
 export const setLike = (id: number, on: boolean) => call<InteractionState>(`/works/${id}/like`, { method: on ? "PUT" : "DELETE" });
 export const setFavorite = (id: number, on: boolean) => call<InteractionState>(`/works/${id}/favorite`, { method: on ? "PUT" : "DELETE" });
 export const setFollow = (handle: string, on: boolean) => call<CommunityProfile>(`/users/${encodeURIComponent(handle)}/follow`, { method: on ? "PUT" : "DELETE" });
+/** Enters one image of the signed-in user's work in a main-site contest (no API key needed). */
+export const enterContest = (workId: number, input: { contest_id: number; image_index: number; title: string; description: string }) =>
+    call<{ id: number; status: string }>(`/works/${workId}/contest-entries`, json("POST", input));
 export const countRemix = (id: number) => call<{ ok: boolean }>(`/works/${id}/remix`, { method: "POST" }).catch(() => undefined);
 export const reportWork = (id: number, reason: string, detail: string) => call<{ ok: boolean }>(`/works/${id}/report`, json("POST", { reason, detail }));
 export const createCollection = (input: { title: string; description: string; visibility: "public" | "private" }) => call<Collection>("/collections", json("POST", input));
