@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { App, Button, Checkbox, Dropdown, Modal } from "antd";
-import { BarChart3, CreditCard, Globe, LogIn, LogOut, Settings, UserRound } from "lucide-react";
+import { BarChart3, Cloud, CreditCard, Globe, LogIn, LogOut, Settings, UserRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
@@ -11,6 +11,7 @@ import { useCommunityMeStore } from "@/stores/use-community-me-store";
 import { findMainSiteApiKey } from "@/services/api/main-site-contests";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useMainAccountStore } from "@/stores/use-main-account-store";
+import { useCloudSyncEnabled, useCloudSyncStore } from "@/stores/use-cloud-sync-store";
 
 /** Top-bar account entry: "登录" when signed out, the avatar with balance / subscription / links when signed in. */
 export function AccountMenu({ style }: { style?: CSSProperties }) {
@@ -25,6 +26,11 @@ export function AccountMenu({ style }: { style?: CSSProperties }) {
     const { signIn, waiting } = useMainSiteSignIn();
     const communityProfile = useCommunityMeStore((state) => state.profile);
     const [confirmOut, setConfirmOut] = useState(false);
+    const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
+    const cloudEnabled = useCloudSyncEnabled();
+    const cloudSyncing = useCloudSyncStore((state) => state.syncing);
+    const cloudError = useCloudSyncStore((state) => Boolean(state.error));
+    const cloudStatus = cloudSyncing ? "syncing" : cloudError ? "failed" : cloudEnabled ? "on" : "off";
     const [removeKey, setRemoveKey] = useState(true);
     const site = MAIN_SITE_NAME;
     const hasKey = Boolean(findMainSiteApiKey(config));
@@ -84,6 +90,17 @@ export function AccountMenu({ style }: { style?: CSSProperties }) {
             label: communityProfile ? <Link to={`/u/${communityProfile.handle}`}>{t("account.myPage")}</Link> : <Link to="/explore">{t("account.discover")}</Link>,
         },
         ...(communityProfile ? [{ key: "creator", icon: <BarChart3 className="size-4" />, label: <Link to="/creator">{t("creator.title")}</Link> }] : []),
+        {
+            key: "cloud",
+            icon: <Cloud className="size-4" />,
+            label: (
+                <span className="flex items-center justify-between gap-4">
+                    {t("account.cloudSync")}
+                    <span className={`text-xs ${cloudStatus === "failed" ? "text-red-500" : "text-stone-400"}`}>{t(`account.cloudStatus.${cloudStatus}`)}</span>
+                </span>
+            ),
+            onClick: () => openConfigDialog(false, "webdav"),
+        },
         {
             key: "topup",
             icon: <CreditCard className="size-4" />,

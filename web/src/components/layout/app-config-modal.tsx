@@ -1,6 +1,6 @@
-import { App, Button, Form, Input, Modal, Progress, Select, Tabs } from "antd";
+import { App, Button, Form, Input, Modal, Progress, Select, Switch, Tabs } from "antd";
 import type { TFunction } from "i18next";
-import { Cloud, Download, Pencil, Plus, RefreshCw, Trash2, Upload, Wifi } from "lucide-react";
+import { Cloud, Download, LogIn, Pencil, Plus, RefreshCw, Trash2, Upload, Wifi } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -10,11 +10,14 @@ import { MAIN_SITE_NAME, PARTNER_SITES, isOfficialBaseUrl, mainSiteLink, partner
 import { ConfigLocalProxy } from "@/components/layout/config-local-proxy";
 import { ConfigPromptSources } from "@/components/layout/config-prompt-sources";
 import { ConfigLocalStorage } from "@/components/layout/config-local-storage";
+import { useMainSiteSignIn } from "@/components/layout/use-main-site-sign-in";
 import type { AppLocale } from "@/i18n";
 import { exportAppConfig, importAppConfig } from "@/services/config-file";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
+import { useCloudSyncEnabled, useCloudSyncStore } from "@/stores/use-cloud-sync-store";
+import { useMainAccountStore } from "@/stores/use-main-account-store";
 import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 
 type ModelGroup = {
@@ -299,9 +302,10 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                     },
                     {
                         key: "webdav",
-                        label: "WebDAV",
+                        label: t("config.tabs.sync"),
                         children: (
                             <Form layout="vertical" requiredMark={false}>
+                                <CloudSyncSection />
                                 <section className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
                                     <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                                         <div>
@@ -418,6 +422,91 @@ function apiFormatLabel(apiFormat: ApiCallFormat) {
     return "OpenAI";
 }
 
+/** HiveGPT cloud sync: on/off for this account on this device, sync now, progress and space used. */
+function CloudSyncSection() {
+    const { t, i18n } = useTranslation();
+    const { message, modal } = App.useApp();
+    const locale = i18n.resolvedLanguage as AppLocale;
+    const account = useMainAccountStore((state) => (state.status === "signedIn" ? state.account : null));
+    const { signIn } = useMainSiteSignIn();
+    const enabled = useCloudSyncEnabled();
+    const { syncing, stage, error, progress, usage, lastSyncedAt, lastUserId, setEnabled, sync, refreshUsage } = useCloudSyncStore();
+    const userId = account?.user_id || 0;
+    const last = userId ? lastSyncedAt[userId] : "";
+
+    useEffect(() => {
+        if (userId) void refreshUsage();
+    }, [refreshUsage, userId]);
+
+    const runSync = async () => {
+        try {
+            const result = await sync();
+            if (result) message.success(t("config.cloud.done", { projects: result.projects, assets: result.assets, files: result.uploadedFiles, bytes: formatBytes(result.uploadedBytes) }));
+        } catch (err) {
+            message.error((err as Error).message || t("config.cloud.failed"));
+        }
+    };
+
+    const toggle = (on: boolean) => {
+        if (!userId) return;
+        const apply = () => {
+            setEnabled(userId, on);
+            if (on) void runSync();
+        };
+        // This device's canvases were synced with another account: merging them into this one needs a yes.
+        if (on && lastUserId && lastUserId !== userId) {
+            modal.confirm({ title: t("config.cloud.otherAccountTitle"), content: t("config.cloud.otherAccount"), okText: t("config.cloud.enable"), cancelText: t("common.cancel"), onOk: apply });
+            return;
+        }
+        apply();
+    };
+
+    const percent = usage && usage.quota_bytes > 0 ? Math.min(100, Math.round((usage.used_bytes / usage.quota_bytes) * 100)) : 0;
+    const fullProgress = { ...createWebdavDomainProgress(), ...progress } as Record<AppSyncDomainKey, WebdavDomainProgress>;
+
+    return (
+        <section className="mb-4 rounded-lg border border-violet-200 bg-violet-50/40 p-3 dark:border-violet-900/60 dark:bg-violet-950/20" data-testid="cloud-sync">
+            <div className="mb-2 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <div className="flex items-center gap-2 text-sm font-semibold">
+                        <Cloud className="size-4 text-violet-500" />
+                        {t("config.cloud.title", { site: MAIN_SITE_NAME })}
+                    </div>
+                    <div className="mt-1 text-xs text-stone-500">{t("config.cloud.description")}</div>
+                </div>
+                {account ? <div className="text-xs text-stone-500">{last ? t("config.webdav.lastSynced", { time: formatWebdavTime(last, locale) }) : t("config.webdav.neverSynced")}</div> : null}
+            </div>
+            {!account ? (
+                <Button type="primary" icon={<LogIn className="size-4" />} onClick={signIn}>
+                    {t("config.cloud.signIn", { site: MAIN_SITE_NAME })}
+                </Button>
+            ) : (
+                <>
+                    <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+                        <label className="flex items-center gap-2 text-sm">
+                            <Switch checked={enabled} onChange={toggle} data-testid="cloud-sync-toggle" />
+                            {t("config.cloud.auto")}
+                        </label>
+                        <Button icon={<RefreshCw className="size-4" />} loading={syncing} onClick={() => void runSync()} data-testid="cloud-sync-now">
+                            {t(syncing ? "config.webdav.syncing" : "config.webdav.syncNow")}
+                        </Button>
+                        {usage ? (
+                            <div className="min-w-56 flex-1 text-xs text-stone-500">
+                                <Progress percent={percent} size="small" showInfo={false} strokeColor={percent >= 90 ? "#ef4444" : "#7c3aed"} />
+                                {t("config.cloud.usage", { used: formatBytes(usage.used_bytes), quota: formatBytes(usage.quota_bytes) })}
+                                {usage.subscribed ? "" : ` · ${t("config.cloud.moreForSubscribers")}`}
+                            </div>
+                        ) : null}
+                    </div>
+                    <p className="mb-0 mt-2 text-xs text-stone-500">{t("config.cloud.autoHint")}</p>
+                    {error ? <p className="mb-0 mt-2 text-xs text-red-500">{error}</p> : stage && syncing ? <p className="mb-0 mt-2 text-xs text-stone-500">{syncStageLabel(stage, t)}</p> : null}
+                    {syncing ? <WebdavProgressGrid progress={fullProgress} t={t} /> : null}
+                </>
+            )}
+        </section>
+    );
+}
+
 function formatWebdavTime(value: string, locale: AppLocale) {
     return new Date(value).toLocaleString(locale, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
@@ -454,6 +543,7 @@ function domainTranslationKey(domain: AppSyncDomainKey) {
 function syncStageLabel(stage: string, t: TFunction) {
     if (stage === "等待本地数据加载") return t("config.webdav.stages.localWaiting");
     if (stage === "同步完成") return t("config.webdav.stages.syncComplete");
+    if (stage === "清理云端不再使用的文件") return t("config.cloud.prune");
     if (stage === "等待同步") return t("config.webdav.stages.waiting");
     if (stage === "读取远端清单") return t("config.webdav.stages.remoteManifest");
     if (stage === "读取本地数据") return t("config.webdav.stages.localData");
