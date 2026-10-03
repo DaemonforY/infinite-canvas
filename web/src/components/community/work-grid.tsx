@@ -1,8 +1,9 @@
-import { Clock3, Globe, Heart, Images, Link2, Lock, Sparkles } from "lucide-react";
+import { Clock3, Globe, Heart, Images, Link2, Lock, Play, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
 import { AuthorAvatar } from "@/components/community/author-avatar";
+import { formatClipDuration } from "@/lib/site-videos";
 import { authorName, cardHeight, compactCount, mainSiteAsset, type Work } from "@/services/api/community";
 
 const COLUMN_WIDTH = 240;
@@ -18,6 +19,7 @@ export function WorkCard({ work, showAuthor = true }: { work: Work; showAuthor?:
                     <span className="absolute left-2 top-2 rounded bg-black/55 px-1.5 py-0.5 text-[11px] font-medium text-white">{t("community.aiLabel")}</span>
                     <span className="absolute right-2 top-2 flex gap-1">
                         {work.kind === "site" ? <Badge icon={<Globe className="size-3" />} label={t("community.site.badge")} /> : null}
+                        {work.kind === "video" ? <Badge icon={<Play className="size-3" fill="currentColor" />} label={work.video?.duration_ms ? formatClipDuration(work.video.duration_ms) : t("community.video.badge")} /> : null}
                         {work.featured ? <Badge icon={<Sparkles className="size-3" />} label={t("community.featured")} /> : null}
                         {work.image_count > 1 ? <Badge icon={<Images className="size-3" />} label={String(work.image_count)} /> : null}
                         {work.visibility === "private" ? <Badge icon={<Lock className="size-3" />} label={t("community.visibility.private")} /> : null}

@@ -16,7 +16,10 @@ export default function ExplorePage() {
     const [feed, setFeed] = useState<Feed>("recommended");
     const [searchParams] = useSearchParams();
     const [tag, setTag] = useState(() => searchParams.get("tag") || "");
-    const [kind, setKind] = useState<WorkKind | "">(() => (searchParams.get("kind") === "site" ? "site" : searchParams.get("kind") === "image" ? "image" : ""));
+    const [kind, setKind] = useState<WorkKind | "">(() => {
+        const value = searchParams.get("kind");
+        return value === "site" || value === "image" || value === "video" ? value : "";
+    });
     const signedIn = useMainAccountStore((state) => state.status === "signedIn");
     const openPublish = usePublishWorkStore((state) => state.open);
     const { works, loading, error, hasMore, loadMore, reload } = useWorksFeed({ feed, tag, kind }, feed !== "following" || signedIn);
@@ -49,6 +52,7 @@ export default function ExplorePage() {
                         options={[
                             { value: "", label: t("community.explore.allKinds") },
                             { value: "image", label: t("community.explore.images") },
+                            { value: "video", label: t("community.explore.videos") },
                             { value: "site", label: t("community.explore.sites") },
                         ]}
                         data-testid="explore-kind"

@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, BookmarkPlus, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Plus, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookmarkPlus, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, LoaderCircle, Plus, Send, SlidersHorizontal, Sparkles, Trash2, Upload, VideoIcon } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Input, Modal, Popconfirm, Tag, Tooltip, Typography } from "antd";
 import localforage from "localforage";
@@ -26,9 +26,11 @@ import { restoreDraftReferences, useWorkbenchDraft } from "@/hooks/use-workbench
 import { isEmptyDraft, NEW_SESSION_KEY } from "@/lib/workbench-drafts";
 import { DraftSessionCard } from "@/components/workbench/draft-session-card";
 import { AccountSyncBadge } from "@/components/layout/account-sync-badge";
-import { boolConfig, modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { boolConfig, modelOptionLabel, modelOptionName, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { usePublishWorkStore } from "@/stores/use-publish-work-store";
 import type { ReferenceImage } from "@/types/image";
 import i18n from "@/i18n";
+import { readInitialPromptParam } from "@/lib/prompt-param";
 
 type GeneratedVideo = {
     id: string;
@@ -88,7 +90,7 @@ export default function VideoPage() {
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const addAsset = useAssetStore((state) => state.addAsset);
     // Restores the prompt the user left in the new-session draft (see use-workbench-draft).
-    const [prompt, setPrompt] = useState(() => readWorkbenchDraft("video")?.prompt || "");
+    const [prompt, setPrompt] = useState(() => readInitialPromptParam() || readWorkbenchDraft("video")?.prompt || "");
     const openMyPromptEditor = useMyPromptEditorStore((state) => state.open);
     const [references, setReferences] = useState<ReferenceImage[]>([]);
     const referenceTool = useReferenceImageTool(setReferences);
@@ -520,7 +522,21 @@ export default function VideoPage() {
                         </div>
                         {results.length ? (
                             <div className="grid gap-4">
-                                {results.map((result) => (result.status === "success" && result.video ? <ResultVideoCard key={result.id} video={result.video} onDownload={downloadVideo} onSaveAsset={saveResultToAssets} /> : result.status === "failed" ? <FailedVideoCard key={result.id} error={result.error || t("workbench.generationFailed")} onRetry={retryResult} /> : <PendingVideoCard key={result.id} />))}
+                                {results.map((result) => (result.status === "success" && result.video ? <ResultVideoCard
+                                            key={result.id}
+                                            video={result.video}
+                                            onDownload={downloadVideo}
+                                            onSaveAsset={saveResultToAssets}
+                                            onPublish={(video) =>
+                                                usePublishWorkStore.getState().open({
+                                                    video: { src: video.url, durationMs: video.durationMs },
+                                                    prompt,
+                                                    model: modelOptionName(model || ""),
+                                                    params: { ...(effectiveConfig.size ? { size: effectiveConfig.size } : {}), ...(effectiveConfig.videoSeconds ? { seconds: effectiveConfig.videoSeconds } : {}) },
+                                                    source: "video_workbench",
+                                                })
+                                            }
+                                        /> : result.status === "failed" ? <FailedVideoCard key={result.id} error={result.error || t("workbench.generationFailed")} onRetry={retryResult} /> : <PendingVideoCard key={result.id} />))}
                             </div>
                         ) : (
                             <div className="flex min-h-[320px] flex-col items-center justify-center rounded-lg border border-dashed border-stone-300 text-center dark:border-stone-700 lg:min-h-[560px]">
@@ -577,7 +593,7 @@ function GenerationSettings({ config, model, updateConfig, openConfigDialog }: {
     );
 }
 
-function ResultVideoCard({ video, onDownload, onSaveAsset }: { video: GeneratedVideo; onDownload: (video: GeneratedVideo) => void; onSaveAsset: (video: GeneratedVideo) => void }) {
+function ResultVideoCard({ video, onDownload, onSaveAsset, onPublish }: { video: GeneratedVideo; onDownload: (video: GeneratedVideo) => void; onSaveAsset: (video: GeneratedVideo) => void; onPublish: (video: GeneratedVideo) => void }) {
     const { t } = useTranslation();
     return (
         <div className="overflow-hidden rounded-lg border border-stone-200 bg-background dark:border-stone-800">
@@ -596,6 +612,9 @@ function ResultVideoCard({ video, onDownload, onSaveAsset }: { video: GeneratedV
                     </Button>
                     <Button size="small" icon={<Download className="size-3.5" />} onClick={() => onDownload(video)}>
                         {t("common.download")}
+                    </Button>
+                    <Button size="small" type="primary" icon={<Send className="size-3.5" />} onClick={() => onPublish(video)} data-testid="video-result-publish">
+                        {t("community.publish.short")}
                     </Button>
                 </div>
             </div>

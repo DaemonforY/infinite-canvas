@@ -1,19 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { App, Button, Input, Modal, Result, Segmented, Select, Spin, Switch } from "antd";
-import { Globe, ImagePlus, Images, LogIn, Plus, Send, X } from "lucide-react";
+import { Film, Globe, ImagePlus, Images, LogIn, Plus, Send, Upload, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { nanoid } from "nanoid";
 
 import { ProfileForm } from "@/components/community/profile-form";
 import { SiteImagePicker } from "@/components/community/site-image-picker";
+import { SiteVideoPicker } from "@/components/community/site-video-picker";
 import type { SiteImage } from "@/lib/site-images";
+import { captureVideoFrame, loadVideoBlob, type SiteVideo } from "@/lib/site-videos";
 import { useShareLink } from "@/components/community/use-share-link";
 import { useMainSiteSignIn } from "@/components/layout/use-main-site-sign-in";
 import { MAIN_SITE_NAME } from "@/constant/runtime-config";
 import { snapshotPage } from "@/lib/html-snapshot";
 import { fitForUpload } from "@/lib/image-tools";
-import { CommunityError, createCollection, getMySites, listCollections, publishWork, type Collection, type MySite, type Work, type WorkVisibility } from "@/services/api/community";
+import { COMMUNITY_VIDEO_MAX_BYTES, CommunityError, createCollection, getMySites, listCollections, publishWork, type Collection, type MySite, type Work, type WorkVisibility } from "@/services/api/community";
 import { loadImageBlob } from "@/services/api/main-site-contests";
 import { useCommunityMeStore } from "@/stores/use-community-me-store";
 import { useMainAccountStore } from "@/stores/use-main-account-store";
@@ -22,6 +24,10 @@ import { usePublishWorkStore, type PublishSite } from "@/stores/use-publish-work
 /** An image to publish; picked site images keep the prompt / model they were made with. */
 type Item = { id: string; src: string; blob?: Blob; owned?: boolean; prompt?: string; model?: string; params?: Record<string, unknown>; source?: SiteImage["source"] };
 type BatchResult = { works: Work[]; failed: number; error: string };
+/** The clip of a video work (the cover is the one item); url is an object URL of blob. */
+type Clip = { url: string; blob: Blob; durationMs: number; prompt?: string; model?: string; params?: Record<string, unknown>; source?: SiteVideo["source"] };
+type ClipInput = { src?: string; blob?: Blob; storageKey?: string; durationMs?: number; prompt?: string; model?: string; params?: Record<string, unknown>; source?: SiteVideo["source"] };
+type Kind = "image" | "site" | "video";
 
 const MAX_IMAGES = 9;
 // "每张单独发布": one work per image, at most this many in one go (the daily limit still applies).
@@ -33,7 +39,7 @@ function defaultTitle(prompt?: string, title?: string) {
     return text.length > 30 ? `${text.slice(0, 30)}…` : text;
 }
 
-/** Shared "发布作品" dialog: sign in, create the public profile if needed, then publish 1–9 images. */
+/** Shared "发布作品" dialog: sign in, create the public profile if needed, then publish 1–9 images, a web page or a video. */
 export function PublishWorkDialog() {
     const { t } = useTranslation();
     const { message } = App.useApp();
@@ -46,6 +52,8 @@ export function PublishWorkDialog() {
     const refreshProfile = useCommunityMeStore((state) => state.refresh);
     const { signIn, waiting } = useMainSiteSignIn();
     const fileRef = useRef<HTMLInputElement>(null);
+    const videoFileRef = useRef<HTMLInputElement>(null);
+    const coverFileRef = useRef<HTMLInputElement>(null);
 
     const [items, setItems] = useState<Item[]>([]);
     const [title, setTitle] = useState("");
@@ -64,10 +72,14 @@ export function PublishWorkDialog() {
     const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
     const [batchResult, setBatchResult] = useState<BatchResult | null>(null);
     // Web-page works: the site presented, the user's sites to pick from, the cover being drawn.
-    const [kind, setKind] = useState<"image" | "site">("image");
+    const [kind, setKind] = useState<Kind>("image");
     const [site, setSite] = useState<PublishSite | null>(null);
     const [mySites, setMySites] = useState<MySite[] | null>(null);
     const [snapshotting, setSnapshotting] = useState(false);
+    // Video works: the clip, its picker, and whether it is being read / its cover drawn.
+    const [clip, setClip] = useState<Clip | null>(null);
+    const [videoPickerOpen, setVideoPickerOpen] = useState(false);
+    const [preparingVideo, setPreparingVideo] = useState(false);
     const share = useShareLink(`/w/${published?.id ?? ""}`);
 
     const open = Boolean(payload);
@@ -87,9 +99,11 @@ export function PublishWorkDialog() {
         setBatch(false);
         setProgress(null);
         setBatchResult(null);
-        setKind(payload.site ? "site" : "image");
+        setKind(payload.site ? "site" : payload.video ? "video" : "image");
         setSite(payload.site || null);
         setMySites(null);
+        setClip(null);
+        if (payload.video) void prepareClip({ src: payload.video.src, durationMs: payload.video.durationMs });
         if (payload.site && payload.html && !payload.images?.length) {
             // The cover is drawn from the page itself; the author can replace it.
             let cancelled = false;
@@ -125,10 +139,68 @@ export function PublishWorkDialog() {
     // Object URLs of picked files are released when they leave the list or the dialog closes.
     const itemsRef = useRef(items);
     itemsRef.current = items;
+    const clipRef = useRef(clip);
+    clipRef.current = clip;
     useEffect(() => {
         if (open) return;
         itemsRef.current.forEach((item) => item.owned && URL.revokeObjectURL(item.src));
+        if (clipRef.current) URL.revokeObjectURL(clipRef.current.url);
     }, [open]);
+
+    const replaceItems = (next: Item[]) =>
+        setItems((current) => {
+            current.forEach((item) => item.owned && !next.includes(item) && URL.revokeObjectURL(item.src));
+            return next;
+        });
+
+    const clearClip = () => {
+        setClip((current) => {
+            if (current) URL.revokeObjectURL(current.url);
+            return null;
+        });
+        replaceItems([]);
+    };
+
+    // Reads the clip into this page and draws its cover from a frame (the author may replace it).
+    const prepareClip = async (input: ClipInput) => {
+        setPreparingVideo(true);
+        try {
+            const blob = input.blob || (await loadVideoBlob(input.src || "", input.storageKey));
+            if (blob.size > COMMUNITY_VIDEO_MAX_BYTES) {
+                message.error(t("community.publish.video.tooLarge"));
+                return;
+            }
+            const frame = await captureVideoFrame(blob);
+            setClip((current) => {
+                if (current) URL.revokeObjectURL(current.url);
+                return { url: URL.createObjectURL(blob), blob, durationMs: frame.durationMs || input.durationMs || 0, prompt: input.prompt, model: input.model, params: input.params, source: input.source };
+            });
+            replaceItems([{ id: nanoid(), src: URL.createObjectURL(frame.cover), blob: frame.cover, owned: true }]);
+            if (input.prompt) {
+                setPrompt((current) => current || input.prompt || "");
+                setTitle((current) => current || defaultTitle(input.prompt));
+            }
+        } catch {
+            message.error(t("community.publish.video.failed"));
+        } finally {
+            setPreparingVideo(false);
+        }
+    };
+
+    const pickVideoFile = (files: FileList | null) => {
+        const file = Array.from(files || []).find((f) => f.type.startsWith("video/"));
+        if (file) void prepareClip({ blob: file });
+    };
+
+    const replaceCover = (files: FileList | null) => {
+        const file = Array.from(files || []).find((f) => f.type.startsWith("image/"));
+        if (file) replaceItems([{ id: nanoid(), src: URL.createObjectURL(file), blob: file, owned: true }]);
+    };
+
+    const changeKind = (next: Kind) => {
+        if (next === "video" || kind === "video") clearClip();
+        setKind(next);
+    };
 
     const maxItems = batch ? MAX_BATCH : MAX_IMAGES;
 
@@ -214,8 +286,39 @@ export function PublishWorkDialog() {
         if (works.length) void refreshProfile();
     };
 
+    const publishVideo = async () => {
+        if (!payload || !clip || !items[0]) return;
+        setPublishing(true);
+        try {
+            const cover = items[0].blob || (await loadImageBlob(items[0].src));
+            const work = await publishWork({
+                images: [await fitForUpload(cover, "cover", 2048, 4 * 1024 * 1024)],
+                video: clip.blob,
+                videoDurationMs: clip.durationMs,
+                title,
+                description,
+                prompt,
+                showPrompt,
+                model: payload.model || clip.model || "",
+                params: payload.params || clip.params || {},
+                source: payload.source === "canvas" && clip.source === "video_workbench" ? "video_workbench" : payload.source,
+                tags,
+                visibility,
+                collectionId,
+                remixOf: payload.remixOf,
+            });
+            setPublished(work);
+            void refreshProfile();
+        } catch (error) {
+            message.error((error as Error).message || t("community.publish.failed"));
+        } finally {
+            setPublishing(false);
+        }
+    };
+
     const publish = async () => {
         if (!payload || !items.length) return;
+        if (kind === "video") return publishVideo();
         if (batch) return publishBatch();
         setPublishing(true);
         try {
@@ -331,13 +434,14 @@ export function PublishWorkDialog() {
         }
         return (
             <div className="grid gap-4" data-testid="publish-form">
-                {!payload?.site && !payload?.images?.length ? (
+                {!payload?.site && !payload?.images?.length && !payload?.video ? (
                     <Segmented
                         block
                         value={kind}
-                        onChange={(v) => setKind(v as "image" | "site")}
+                        onChange={(v) => changeKind(v as Kind)}
                         options={[
                             { value: "image", label: t("community.publish.site.kindImage") },
+                            { value: "video", label: t("community.publish.video.kind") },
                             { value: "site", label: t("community.publish.site.kindSite") },
                         ]}
                         data-testid="publish-kind"
@@ -384,7 +488,43 @@ export function PublishWorkDialog() {
                         {t("community.publish.site.snapshotting")}
                     </div>
                 ) : null}
-                <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                {kind === "video" ? (
+                    <div className="grid gap-2" data-testid="publish-video">
+                        {clip ? (
+                            <div className="grid gap-3 sm:grid-cols-[1fr_140px]">
+                                <video src={clip.url} controls muted playsInline className="max-h-64 w-full rounded-lg bg-black" data-testid="publish-video-preview" />
+                                <div className="grid content-start gap-2 text-xs text-stone-500">
+                                    <span>{t("community.publish.video.cover")}</span>
+                                    {items[0] ? <img src={items[0].src} alt="" className="aspect-video w-full rounded-md bg-stone-100 object-cover dark:bg-stone-900" data-testid="publish-video-cover" /> : null}
+                                    <Button size="small" icon={<ImagePlus className="size-3.5" />} onClick={() => coverFileRef.current?.click()}>
+                                        {t("community.publish.video.changeCover")}
+                                    </Button>
+                                    <Button size="small" type="text" onClick={clearClip}>
+                                        {t("community.publish.video.change")}
+                                    </Button>
+                                </div>
+                            </div>
+                        ) : preparingVideo ? (
+                            <div className="flex items-center gap-2 py-6 text-xs text-stone-500">
+                                <Spin size="small" />
+                                {t("community.publish.video.preparing")}
+                            </div>
+                        ) : (
+                            <div className="flex flex-wrap gap-2">
+                                <Button icon={<Film className="size-4" />} onClick={() => setVideoPickerOpen(true)} data-testid="publish-pick-video">
+                                    {t("community.publish.video.pick")}
+                                </Button>
+                                <Button icon={<Upload className="size-4" />} onClick={() => videoFileRef.current?.click()} data-testid="publish-upload-video">
+                                    {t("community.publish.video.upload")}
+                                </Button>
+                            </div>
+                        )}
+                        <span className="text-xs text-stone-500">{t("community.publish.video.hint")}</span>
+                        <input ref={videoFileRef} type="file" accept="video/mp4,video/webm,video/quicktime" hidden onChange={(e) => (pickVideoFile(e.target.files), (e.target.value = ""))} data-testid="publish-video-file" />
+                        <input ref={coverFileRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => (replaceCover(e.target.files), (e.target.value = ""))} />
+                    </div>
+                ) : null}
+                <div className={`grid grid-cols-3 gap-2 sm:grid-cols-5 ${kind === "video" ? "hidden" : ""}`}>
                     {items.map((item) => (
                         <div key={item.id} className="relative aspect-square overflow-hidden rounded-lg bg-stone-100 dark:bg-stone-900">
                             <img src={item.src} alt="" className="size-full object-cover" />
@@ -479,7 +619,7 @@ export function PublishWorkDialog() {
                     </div>
                 </div>
                 <p className="m-0 text-xs leading-5 text-stone-500">{t("community.publish.rules")}</p>
-                <Button type="primary" icon={<Send className="size-4" />} loading={publishing} disabled={!items.length || (kind === "site" && !site)} onClick={() => void publish()} data-testid="publish-submit">
+                <Button type="primary" icon={<Send className="size-4" />} loading={publishing} disabled={!items.length || (kind === "site" && !site) || (kind === "video" && (!clip || preparingVideo))} onClick={() => void publish()} data-testid="publish-submit">
                     {progress
                         ? t("community.publish.batch.progress", { done: progress.done, total: progress.total })
                         : batch
@@ -494,6 +634,14 @@ export function PublishWorkDialog() {
         <Modal open={open} title={t("community.publish.dialogTitle")} onCancel={close} footer={null} width={600} destroyOnHidden>
             {renderBody()}
             <SiteImagePicker open={pickerOpen} max={Math.max(maxItems - items.length, 0)} onPick={addSiteImages} onClose={() => setPickerOpen(false)} />
+            <SiteVideoPicker
+                open={videoPickerOpen}
+                onPick={(video) => {
+                    setVideoPickerOpen(false);
+                    void prepareClip(video);
+                }}
+                onClose={() => setVideoPickerOpen(false)}
+            />
         </Modal>
     );
 }

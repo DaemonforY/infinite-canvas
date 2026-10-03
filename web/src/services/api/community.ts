@@ -52,9 +52,10 @@ export type Work = {
     media?: WorkMedia[];
     /** Contests the work is entered in (work page only). */
     contests?: WorkContest[];
-    /** image, or site: the work presents one of the author's hosted sites (images are screenshots). */
+    /** image; site: the work presents one of the author's hosted sites (images are screenshots); video: a clip, its cover the first image. */
     kind?: WorkKind;
     site?: WorkSite;
+    video?: WorkVideo;
     /** Approved comments and replies; the author may close comments. */
     comment_count?: number;
     comments_closed?: boolean;
@@ -79,7 +80,9 @@ export type WorkComment = {
 };
 export type CommentPage = { comments: WorkComment[]; next_offset: number; has_more: boolean; total: number; enabled: boolean; closed: boolean };
 
-export type WorkKind = "image" | "site";
+export type WorkKind = "image" | "site" | "video";
+/** The clip of a video work (url is a main-site path, see mainSiteAsset). */
+export type WorkVideo = { url: string; mime_type: string; size_bytes: number; duration_ms: number };
 /** url is set while the site is live (always for its author). */
 export type WorkSite = { id: number; name: string; title: string; status: string; url?: string };
 /** One of the signed-in user's sites in the "publish a web page" picker. */
@@ -210,14 +213,21 @@ export type PublishInput = {
     showPrompt: boolean;
     model: string;
     params: Record<string, unknown>;
-    source: "canvas" | "image_workbench" | "tools" | "site";
+    source: PublishSource;
     tags: string[];
     visibility: WorkVisibility;
     collectionId?: number;
     remixOf?: number;
     /** A web-page work presenting this site (images are its screenshots). */
     siteId?: number;
+    /** A video work: the clip (MP4 / WebM), images holding just its cover. */
+    video?: Blob;
+    videoDurationMs?: number;
 };
+
+export type PublishSource = "canvas" | "image_workbench" | "video_workbench" | "tools" | "site";
+/** Largest clip the main site accepts. */
+export const COMMUNITY_VIDEO_MAX_BYTES = 60 * 1024 * 1024;
 
 export function publishWork(input: PublishInput) {
     const form = new FormData();
@@ -234,6 +244,10 @@ export function publishWork(input: PublishInput) {
     if (input.collectionId) form.set("collection_id", String(input.collectionId));
     if (input.remixOf) form.set("remix_of", String(input.remixOf));
     if (input.siteId) form.set("site_id", String(input.siteId));
+    if (input.video) {
+        form.append("video", input.video, input.video.type === "video/webm" ? "video.webm" : "video.mp4");
+        if (input.videoDurationMs) form.set("video_duration_ms", String(Math.round(input.videoDurationMs)));
+    }
     return call<Work>("/works", { method: "POST", body: form });
 }
 

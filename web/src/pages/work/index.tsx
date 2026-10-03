@@ -124,7 +124,7 @@ export default function WorkPage() {
     const remix = () => {
         if (!work) return;
         void countRemix(work.id);
-        navigate(`/image?prompt=${encodeURIComponent(work.prompt.slice(0, 4000))}`);
+        navigate(`/${work.kind === "video" ? "video" : "image"}?prompt=${encodeURIComponent(work.prompt.slice(0, 4000))}`);
     };
 
     if (error) {
@@ -190,6 +190,22 @@ export default function WorkPage() {
                                 loading="lazy"
                                 className="block h-[70vh] w-full"
                                 data-testid="work-site-frame"
+                            />
+                            <span className="absolute left-3 top-3 rounded bg-black/60 px-2 py-0.5 text-xs font-medium text-white">{t("community.aiLabel")}</span>
+                        </div>
+                    ) : work.kind === "video" && work.video ? (
+                        <div className="relative flex items-center justify-center overflow-hidden rounded-2xl bg-black">
+                            <video
+                                src={mainSiteAsset(work.video.url)}
+                                poster={mainSiteAsset(work.cover_url)}
+                                controls
+                                loop
+                                playsInline
+                                preload="metadata"
+                                // Sized from the cover (same frame size), not the poster's pixels.
+                                style={{ aspectRatio: work.cover_width && work.cover_height ? `${work.cover_width} / ${work.cover_height}` : "16 / 9" }}
+                                className="block max-h-[75vh] w-full object-contain"
+                                data-testid="work-video"
                             />
                             <span className="absolute left-3 top-3 rounded bg-black/60 px-2 py-0.5 text-xs font-medium text-white">{t("community.aiLabel")}</span>
                         </div>
