@@ -1,25 +1,31 @@
 import { useEffect, useRef, useState } from "react";
 import { App, Button, Input, Modal, Result, Segmented, Select, Spin, Switch } from "antd";
-import { Globe, ImagePlus, LogIn, Plus, Send, X } from "lucide-react";
+import { Globe, ImagePlus, Images, LogIn, Plus, Send, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { nanoid } from "nanoid";
 
 import { ProfileForm } from "@/components/community/profile-form";
+import { SiteImagePicker } from "@/components/community/site-image-picker";
+import type { SiteImage } from "@/lib/site-images";
 import { useShareLink } from "@/components/community/use-share-link";
 import { useMainSiteSignIn } from "@/components/layout/use-main-site-sign-in";
 import { MAIN_SITE_NAME } from "@/constant/runtime-config";
 import { snapshotPage } from "@/lib/html-snapshot";
 import { fitForUpload } from "@/lib/image-tools";
-import { createCollection, getMySites, listCollections, publishWork, type Collection, type MySite, type Work, type WorkVisibility } from "@/services/api/community";
+import { CommunityError, createCollection, getMySites, listCollections, publishWork, type Collection, type MySite, type Work, type WorkVisibility } from "@/services/api/community";
 import { loadImageBlob } from "@/services/api/main-site-contests";
 import { useCommunityMeStore } from "@/stores/use-community-me-store";
 import { useMainAccountStore } from "@/stores/use-main-account-store";
 import { usePublishWorkStore, type PublishSite } from "@/stores/use-publish-work-store";
 
-type Item = { id: string; src: string; blob?: Blob; owned?: boolean };
+/** An image to publish; picked site images keep the prompt / model they were made with. */
+type Item = { id: string; src: string; blob?: Blob; owned?: boolean; prompt?: string; model?: string; params?: Record<string, unknown>; source?: SiteImage["source"] };
+type BatchResult = { works: Work[]; failed: number; error: string };
 
 const MAX_IMAGES = 9;
+// "每张单独发布": one work per image, at most this many in one go (the daily limit still applies).
+const MAX_BATCH = 20;
 const TAG_SUGGESTIONS = ["人像", "插画", "国风", "海报", "电商", "风景", "动漫", "建筑", "美食", "Logo", "3D", "摄影"];
 
 function defaultTitle(prompt?: string, title?: string) {
@@ -53,6 +59,10 @@ export function PublishWorkDialog() {
     const [newCollection, setNewCollection] = useState("");
     const [publishing, setPublishing] = useState(false);
     const [published, setPublished] = useState<Work | null>(null);
+    const [batch, setBatch] = useState(false);
+    const [pickerOpen, setPickerOpen] = useState(false);
+    const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+    const [batchResult, setBatchResult] = useState<BatchResult | null>(null);
     // Web-page works: the site presented, the user's sites to pick from, the cover being drawn.
     const [kind, setKind] = useState<"image" | "site">("image");
     const [site, setSite] = useState<PublishSite | null>(null);
@@ -74,6 +84,9 @@ export function PublishWorkDialog() {
         setCollectionId(undefined);
         setNewCollection("");
         setPublished(null);
+        setBatch(false);
+        setProgress(null);
+        setBatchResult(null);
         setKind(payload.site ? "site" : "image");
         setSite(payload.site || null);
         setMySites(null);
@@ -117,9 +130,24 @@ export function PublishWorkDialog() {
         itemsRef.current.forEach((item) => item.owned && URL.revokeObjectURL(item.src));
     }, [open]);
 
+    const maxItems = batch ? MAX_BATCH : MAX_IMAGES;
+
     const addFiles = (files: FileList | null) => {
         const picked = Array.from(files || []).filter((file) => file.type.startsWith("image/"));
-        setItems((current) => [...current, ...picked.slice(0, MAX_IMAGES - current.length).map((file) => ({ id: nanoid(), src: URL.createObjectURL(file), blob: file, owned: true }))]);
+        setItems((current) => [...current, ...picked.slice(0, maxItems - current.length).map((file) => ({ id: nanoid(), src: URL.createObjectURL(file), blob: file, owned: true }))]);
+    };
+
+    // Images picked from the site's generation history / assets.
+    const addSiteImages = (images: SiteImage[]) => {
+        setPickerOpen(false);
+        const room = maxItems - items.length;
+        const added = images.slice(0, room).map((image) => ({ id: nanoid(), src: image.src, prompt: image.prompt, model: image.model, params: image.params, source: image.source }));
+        if (!added.length) return;
+        setItems((current) => [...current, ...added]);
+        const firstPrompt = added.find((item) => item.prompt)?.prompt || "";
+        if (!prompt && firstPrompt) setPrompt(firstPrompt);
+        if (!title && firstPrompt) setTitle(defaultTitle(firstPrompt));
+        if (images.length > room) message.info(t("community.publish.picker.trimmed", { count: room }));
     };
 
     const remove = (id: string) =>
@@ -143,8 +171,52 @@ export function PublishWorkDialog() {
         }
     };
 
+    // One work per image: its own prompt / model when it has them, the shared settings otherwise.
+    const publishBatch = async () => {
+        if (!payload) return;
+        setPublishing(true);
+        const works: Work[] = [];
+        let failed = 0;
+        let error = "";
+        setProgress({ done: 0, total: items.length });
+        for (const [i, item] of items.entries()) {
+            try {
+                const blob = item.blob || (await loadImageBlob(item.src));
+                const ownPrompt = item.prompt || prompt;
+                const work = await publishWork({
+                    images: [await fitForUpload(blob, `image-${i + 1}`, 4096, 8 * 1024 * 1024)],
+                    title: item.prompt ? defaultTitle(item.prompt) : title ? `${title} ${i + 1}` : "",
+                    description,
+                    prompt: ownPrompt,
+                    showPrompt,
+                    model: item.model || payload.model || "",
+                    params: item.params || payload.params || {},
+                    source: item.source === "image_workbench" ? "image_workbench" : payload.source,
+                    tags,
+                    visibility,
+                    collectionId,
+                });
+                works.push(work);
+            } catch (err) {
+                failed += 1;
+                error = (err as Error).message || t("community.publish.failed");
+                // Over the daily limit: the rest would fail the same way.
+                if (err instanceof CommunityError && err.reason === "COMMUNITY_TOO_MANY") {
+                    failed += items.length - i - 1;
+                    break;
+                }
+            }
+            setProgress({ done: i + 1, total: items.length });
+        }
+        setPublishing(false);
+        setProgress(null);
+        setBatchResult({ works, failed, error });
+        if (works.length) void refreshProfile();
+    };
+
     const publish = async () => {
         if (!payload || !items.length) return;
+        if (batch) return publishBatch();
         setPublishing(true);
         try {
             const images = await Promise.all(
@@ -160,9 +232,9 @@ export function PublishWorkDialog() {
                 description,
                 prompt,
                 showPrompt,
-                model: payload.model || "",
-                params: payload.params || {},
-                source: kind === "site" ? "site" : payload.source,
+                model: payload.model || items.find((item) => item.model)?.model || "",
+                params: payload.params || items.find((item) => item.params)?.params || {},
+                source: kind === "site" ? "site" : payload.source === "canvas" && items.length && items.every((item) => item.source === "image_workbench") ? "image_workbench" : payload.source,
                 tags,
                 visibility,
                 collectionId,
@@ -179,6 +251,34 @@ export function PublishWorkDialog() {
     };
 
     const renderBody = () => {
+        if (batchResult) {
+            const pending = batchResult.works.filter((w) => w.status === "pending").length;
+            return (
+                <Result
+                    status={batchResult.works.length ? (batchResult.failed ? "warning" : "success") : "error"}
+                    title={t("community.publish.batch.done", { count: batchResult.works.length })}
+                    subTitle={
+                        <span className="grid gap-1">
+                            {pending ? <span>{t("community.publish.batch.pending", { count: pending })}</span> : null}
+                            {batchResult.failed ? <span>{t("community.publish.batch.failed", { count: batchResult.failed, error: batchResult.error })}</span> : null}
+                        </span>
+                    }
+                    extra={
+                        profile ? (
+                            <Button
+                                type="primary"
+                                onClick={() => {
+                                    close();
+                                    navigate(`/u/${profile.handle}`);
+                                }}
+                            >
+                                {t("community.publish.batch.view")}
+                            </Button>
+                        ) : null
+                    }
+                />
+            );
+        }
         if (published) {
             const pending = published.status === "pending";
             return (
@@ -293,7 +393,7 @@ export function PublishWorkDialog() {
                             </button>
                         </div>
                     ))}
-                    {items.length < MAX_IMAGES ? (
+                    {items.length < maxItems ? (
                         <button
                             type="button"
                             className="flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-stone-300 text-xs text-stone-500 hover:border-stone-500 dark:border-stone-700"
@@ -305,6 +405,29 @@ export function PublishWorkDialog() {
                     ) : null}
                 </div>
                 <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden onChange={(e) => (addFiles(e.target.files), (e.target.value = ""))} />
+                {kind === "image" ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Button icon={<Images className="size-4" />} disabled={items.length >= maxItems} onClick={() => setPickerOpen(true)} data-testid="publish-pick-site">
+                            {t("community.publish.picker.open")}
+                        </Button>
+                        <span className="text-xs text-stone-500">{t("community.publish.picker.hint")}</span>
+                    </div>
+                ) : null}
+                {kind === "image" && !payload?.remixOf && items.length > 1 ? (
+                    <div className="grid gap-1 text-sm">
+                        <Segmented
+                            block
+                            value={batch ? "batch" : "one"}
+                            onChange={(value) => setBatch(value === "batch")}
+                            options={[
+                                { value: "one", label: t("community.publish.batch.one"), disabled: items.length > MAX_IMAGES },
+                                { value: "batch", label: t("community.publish.batch.each", { count: items.length }) },
+                            ]}
+                            data-testid="publish-batch"
+                        />
+                        <span className="text-xs text-stone-500">{batch ? t("community.publish.batch.eachHint") : t("community.publish.batch.oneHint")}</span>
+                    </div>
+                ) : null}
                 <label className="grid gap-1 text-sm">
                     <span className="font-medium">{t("community.publish.title")}</span>
                     <Input value={title} maxLength={80} onChange={(e) => setTitle(e.target.value)} data-testid="publish-title" />
@@ -333,26 +456,35 @@ export function PublishWorkDialog() {
                 </div>
                 <div className="grid gap-1 text-sm">
                     <span className="font-medium">{t("community.publish.collection")}</span>
-                    <Select
-                        allowClear
-                        value={collectionId}
-                        onChange={setCollectionId}
-                        placeholder={t("community.publish.noCollection")}
-                        options={collections.map((c) => ({ value: c.id, label: c.title }))}
-                        popupRender={(menu) => (
-                            <>
-                                {menu}
-                                <div className="flex gap-1 border-t border-stone-200 p-2 dark:border-stone-700">
-                                    <Input size="small" value={newCollection} maxLength={60} placeholder={t("community.publish.newCollection")} onChange={(e) => setNewCollection(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
-                                    <Button size="small" icon={<Plus className="size-3.5" />} onClick={() => void addCollection()} />
-                                </div>
-                            </>
-                        )}
-                    />
+                    <div className="flex gap-2">
+                        <Select
+                            allowClear
+                            className="min-w-0 flex-1"
+                            value={collectionId}
+                            onChange={setCollectionId}
+                            placeholder={t("community.publish.noCollection")}
+                            options={collections.map((c) => ({ value: c.id, label: c.title }))}
+                            data-testid="publish-collection"
+                        />
+                        <Input
+                            className="!w-40"
+                            value={newCollection}
+                            maxLength={60}
+                            placeholder={t("community.publish.newCollection")}
+                            onChange={(e) => setNewCollection(e.target.value)}
+                            onPressEnter={() => void addCollection()}
+                            data-testid="publish-collection-new-name"
+                        />
+                        <Button icon={<Plus className="size-4" />} disabled={!newCollection.trim()} onClick={() => void addCollection()} aria-label={t("community.collections.new")} data-testid="publish-collection-new" />
+                    </div>
                 </div>
                 <p className="m-0 text-xs leading-5 text-stone-500">{t("community.publish.rules")}</p>
                 <Button type="primary" icon={<Send className="size-4" />} loading={publishing} disabled={!items.length || (kind === "site" && !site)} onClick={() => void publish()} data-testid="publish-submit">
-                    {t("community.publish.submit")}
+                    {progress
+                        ? t("community.publish.batch.progress", { done: progress.done, total: progress.total })
+                        : batch
+                          ? t("community.publish.batch.submit", { count: items.length })
+                          : t("community.publish.submit")}
                 </Button>
             </div>
         );
@@ -361,6 +493,7 @@ export function PublishWorkDialog() {
     return (
         <Modal open={open} title={t("community.publish.dialogTitle")} onCancel={close} footer={null} width={600} destroyOnHidden>
             {renderBody()}
+            <SiteImagePicker open={pickerOpen} max={Math.max(maxItems - items.length, 0)} onPick={addSiteImages} onClose={() => setPickerOpen(false)} />
         </Modal>
     );
 }

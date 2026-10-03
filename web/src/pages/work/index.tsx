@@ -17,6 +17,7 @@ import {
     authorName,
     compactCount,
     countRemix,
+    createCollection,
     deleteWork,
     getRelatedWorks,
     getWork,
@@ -265,7 +266,15 @@ export default function WorkPage() {
                     </div>
 
                     <div className="rounded-xl border border-stone-200 p-3 dark:border-stone-800">
-                        <div className="mb-1.5 text-xs font-medium text-stone-500">{t("community.prompt")}</div>
+                        <div className="mb-1.5 flex items-center justify-between gap-2 text-xs font-medium text-stone-500">
+                            {t("community.prompt")}
+                            {work.is_mine && !work.show_prompt ? (
+                                <Tag color="orange" className="!m-0" data-testid="work-prompt-private">
+                                    {t("community.promptPrivate")}
+                                </Tag>
+                            ) : null}
+                        </div>
+                        {work.is_mine && !work.show_prompt ? <p className="m-0 mb-2 text-xs text-stone-500">{t("community.promptPrivateHint")}</p> : null}
                         {work.prompt ? (
                             <>
                                 <p className="m-0 max-h-48 overflow-y-auto whitespace-pre-wrap text-sm leading-6">{work.prompt}</p>
@@ -471,6 +480,8 @@ function CollectionsDialog({ work, onClose }: { work: Work; onClose: () => void 
     const { message } = App.useApp();
     const [collections, setCollections] = useState<Collection[] | null>(null);
     const [selected, setSelected] = useState<Set<number>>(new Set());
+    const [name, setName] = useState("");
+    const [creating, setCreating] = useState(false);
     useEffect(() => {
         Promise.all([listCollections(work.author.handle), workCollections(work.id)])
             .then(([list, ids]) => {
@@ -492,12 +503,28 @@ function CollectionsDialog({ work, onClose }: { work: Work; onClose: () => void 
             message.error((err as Error).message);
         }
     };
+    const create = async () => {
+        const title = name.trim();
+        if (!title || creating) return;
+        setCreating(true);
+        try {
+            const created = await createCollection({ title, description: "", visibility: "public" });
+            await setCollectionItem(created.id, work.id, true);
+            setCollections((current) => [{ ...created, works_count: created.works_count + 1 }, ...(current || [])]);
+            setSelected((current) => new Set(current).add(created.id));
+            setName("");
+        } catch (err) {
+            message.error((err as Error).message);
+        } finally {
+            setCreating(false);
+        }
+    };
     return (
         <Modal open title={t("community.collections.manage")} onCancel={onClose} footer={null} destroyOnHidden>
             {collections === null ? (
                 <Spin />
             ) : collections.length ? (
-                <div className="grid gap-2">
+                <div className="grid max-h-72 gap-2 overflow-y-auto">
                     {collections.map((c) => (
                         <Checkbox key={c.id} checked={selected.has(c.id)} onChange={(e) => void toggle(c.id, e.target.checked)}>
                             {c.title} <span className="text-xs text-stone-500">({c.works_count})</span>
@@ -505,8 +532,14 @@ function CollectionsDialog({ work, onClose }: { work: Work; onClose: () => void 
                     ))}
                 </div>
             ) : (
-                <Empty description={t("community.collections.emptyMine")} />
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("community.collections.emptyMine")} />
             )}
+            <div className="mt-4 flex gap-2 border-t border-stone-200 pt-3 dark:border-stone-800">
+                <Input value={name} maxLength={60} placeholder={t("community.collections.namePlaceholder")} onChange={(e) => setName(e.target.value)} onPressEnter={() => void create()} data-testid="collection-new-name" />
+                <Button type="primary" icon={<FolderPlus className="size-4" />} loading={creating} disabled={!name.trim()} onClick={() => void create()} data-testid="collection-new">
+                    {t("community.collections.new")}
+                </Button>
+            </div>
         </Modal>
     );
 }
