@@ -4,6 +4,7 @@ import { AccountSync } from "@/components/layout/account-sync";
 import { CloudAutoSync } from "@/components/layout/cloud-auto-sync";
 import { AnalyticsTracker } from "@/components/layout/analytics-tracker";
 import UserLayout from "@/layouts/user-layout";
+import AnimationPage from "@/pages/animation";
 import AssetsPage from "@/pages/assets";
 import CanvasPage from "@/pages/canvas";
 import CanvasProjectPage from "@/pages/canvas/project";
@@ -34,6 +35,7 @@ export const router = createBrowserRouter([
             { path: "/", element: <HomePage /> },
             { path: "/image", element: <ImagePage /> },
             { path: "/video", element: <VideoPage /> },
+            { path: "/animation", element: <AnimationPage /> },
             { path: "/assets", element: <AssetsPage /> },
             { path: "/prompts", element: <PromptsPage /> },
             { path: "/tools", element: <ToolsPage /> },

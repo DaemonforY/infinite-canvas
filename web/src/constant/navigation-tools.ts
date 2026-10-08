@@ -1,4 +1,4 @@
-import { Compass, FileText, ImageDown, ImagePlus, Images, Maximize2, Settings2, Video } from "lucide-react";
+import { Compass, FileText, ImageDown, ImagePlus, Images, Maximize2, Settings2, Video, WandSparkles } from "lucide-react";
 
 export const navigationTools = [
     {
@@ -16,6 +16,10 @@ export const navigationTools = [
     {
         slug: "video",
         icon: Video,
+    },
+    {
+        slug: "animation",
+        icon: WandSparkles,
     },
     {
         slug: "prompts",
