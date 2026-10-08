@@ -1,36 +1,20 @@
-import { ChevronLeft, ChevronRight, Code2, Download, Globe, History, LoaderCircle, Plus, RotateCcw, Send, Sparkles, Square, Trash2, WandSparkles } from "lucide-react";
+import { AlertCircle, ChevronLeft, ChevronRight, Code2, Download, Globe, History, LoaderCircle, Plus, RotateCcw, Send, Sparkles, Square, Trash2, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { App, Button, Drawer, Empty, Input, Modal, Popconfirm, Tag, Tooltip } from "antd";
-import localforage from "localforage";
-import { nanoid } from "nanoid";
 import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
+import { useSearchParams } from "react-router-dom";
 
 import { CanvasPublishSiteDialog } from "@/components/canvas/canvas-publish-site-dialog";
 import { ModelPicker } from "@/components/model-picker";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { animationRatios, animationScenarios, animationStyles, findRatio } from "@/lib/animation/presets";
-import { animationTitle, buildAnimationMessages, sanitizeSvg, svgBackground, svgPage, svgSize, type AnimationBrief } from "@/lib/animation/svg";
+import { buildAnimationMessages, svgBackground, svgPage, svgSize, type AnimationBrief } from "@/lib/animation/svg";
 import { formatDuration } from "@/lib/image-utils";
 import { readInitialPromptParam } from "@/lib/prompt-param";
-import { requestImageQuestion } from "@/services/api/image";
+import { useAnimationStore, type AnimationLog } from "@/stores/use-animation-store";
 import { modelOptionLabel, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 
-type AnimationVersion = { id: string; svg: string; instruction: string; createdAt: number };
-
-type AnimationLog = {
-    id: string;
-    createdAt: number;
-    title: string;
-    brief: AnimationBrief;
-    model: string;
-    versions: AnimationVersion[];
-    siteId?: number;
-};
-
-const logStore = localforage.createInstance({ name: "infinite-canvas", storeName: "animation_logs" });
-const LOGS_KEY = "logs";
-const MAX_LOGS = 60;
 const BRIEF_KEY = "infinite-canvas:animation_brief";
 
 function readSavedBrief(): Omit<AnimationBrief, "prompt"> {
@@ -56,58 +40,87 @@ export default function AnimationPage() {
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const model = effectiveConfig.textModel;
+    const logs = useAnimationStore((state) => state.logs);
+    const startGeneration = useAnimationStore((state) => state.start);
+    const cancelGeneration = useAnimationStore((state) => state.cancel);
+    const updateLog = useAnimationStore((state) => state.update);
+    const removeLog = useAnimationStore((state) => state.remove);
+    const [searchParams, setSearchParams] = useSearchParams();
 
     const saved = useMemo(readSavedBrief, []);
     const [prompt, setPrompt] = useState(() => readInitialPromptParam() || "");
     const [scenario, setScenario] = useState(() => initialScenario(saved.scenario));
     const [style, setStyle] = useState(saved.style);
     const [ratio, setRatio] = useState(saved.ratio);
-    const [logs, setLogs] = useState<AnimationLog[]>([]);
     const [activeId, setActiveId] = useState<string | null>(null);
-    const [versionIndex, setVersionIndex] = useState(0);
+    const [openFromUrl, setOpenFromUrl] = useState<string | null>(() => searchParams.get("log"));
+    /** -1 follows the newest version. */
+    const [versionIndex, setVersionIndex] = useState(-1);
     const [instruction, setInstruction] = useState("");
-    const [running, setRunning] = useState<"create" | "revise" | null>(null);
-    const [streamedChars, setStreamedChars] = useState(0);
-    const [startedAt, setStartedAt] = useState(0);
-    const [elapsedMs, setElapsedMs] = useState(0);
-    const [error, setError] = useState("");
+    const [starting, setStarting] = useState(false);
+    const [now, setNow] = useState(() => Date.now());
     const [replayToken, setReplayToken] = useState(0);
     const [codeOpen, setCodeOpen] = useState(false);
     const [publishOpen, setPublishOpen] = useState(false);
     const [logsOpen, setLogsOpen] = useState(false);
-    const abortRef = useRef<AbortController | null>(null);
     const previewRef = useRef<HTMLDivElement>(null);
 
     const active = logs.find((log) => log.id === activeId) || null;
-    const version = active ? active.versions[Math.min(versionIndex, active.versions.length - 1)] : null;
+    const versionCount = active?.versions.length || 0;
+    const shownIndex = versionIndex < 0 || versionIndex >= versionCount ? versionCount - 1 : versionIndex;
+    const version = active && shownIndex >= 0 ? active.versions[shownIndex] : null;
+    const pending = active?.pending;
+    const running = pending?.mode || null;
+    const error = active?.error || "";
+    const streamedChars = pending?.chars || 0;
+    const elapsedMs = pending ? Math.max(0, now - pending.startedAt) : 0;
     const size = version ? svgSize(version.svg) : null;
     const pageHtml = useMemo(() => (version && active ? svgPage(version.svg, active.title, svgBackground(version.svg)) : ""), [active, version]);
     const exampleKeys = t(`animation.examples.${scenario}`, { returnObjects: true }) as unknown;
     const examples = Array.isArray(exampleKeys) ? (exampleKeys as string[]) : [];
 
     useEffect(() => {
-        void logStore.getItem<AnimationLog[]>(LOGS_KEY).then((stored) => {
-            if (stored?.length) setLogs(stored);
-        });
+        void useAnimationStore.getState().load();
     }, []);
+
+    // Opened from a "finished" notification (?log=…): show that record once the history has it.
+    useEffect(() => {
+        const fromUrl = searchParams.get("log");
+        if (!fromUrl) return;
+        setOpenFromUrl(fromUrl);
+        setSearchParams(
+            (params) => {
+                params.delete("log");
+                return params;
+            },
+            { replace: true },
+        );
+    }, [searchParams, setSearchParams]);
+
+    useEffect(() => {
+        const log = openFromUrl ? logs.find((item) => item.id === openFromUrl) : undefined;
+        if (!log) return;
+        openLog(log);
+        setOpenFromUrl(null);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [openFromUrl, logs]);
 
     useEffect(() => {
         localStorage.setItem(BRIEF_KEY, JSON.stringify({ scenario, style, ratio }));
     }, [scenario, style, ratio]);
 
     useEffect(() => {
-        if (!running) return;
-        const timer = window.setInterval(() => setElapsedMs(Date.now() - startedAt), 500);
+        if (!pending) return;
+        const timer = window.setInterval(() => setNow(Date.now()), 1000);
         return () => window.clearInterval(timer);
-    }, [running, startedAt]);
+    }, [pending]);
 
-    useEffect(() => () => abortRef.current?.abort(), []);
-
-    const persist = (next: AnimationLog[]) => {
-        const trimmed = next.slice(0, MAX_LOGS);
-        setLogs(trimmed);
-        void logStore.setItem(LOGS_KEY, trimmed).catch(() => message.error(t("animation.saveFailed")));
-    };
+    // A new version arrived for the record on screen: show it from the start.
+    useEffect(() => {
+        if (!versionCount) return;
+        setVersionIndex(-1);
+        setReplayToken((value) => value + 1);
+    }, [versionCount, activeId]);
 
     const ensureReady = () => {
         if (!isAiConfigReady(effectiveConfig, model)) {
@@ -118,93 +131,59 @@ export default function AnimationPage() {
         return true;
     };
 
-    // Streams the model's answer and turns it into a clean SVG; null when the answer is unusable.
-    const run = async (mode: "create" | "revise", messages: ReturnType<typeof buildAnimationMessages>) => {
-        const controller = new AbortController();
-        abortRef.current = controller;
-        setRunning(mode);
-        setError("");
-        setStreamedChars(0);
-        setStartedAt(Date.now());
-        setElapsedMs(0);
-        try {
-            // onDelta receives the whole answer so far, not just the new piece.
-            const answer = await requestImageQuestion({ ...effectiveConfig, model, systemPrompt: "" }, messages, (text) => setStreamedChars(text.length), { signal: controller.signal });
-            const result = sanitizeSvg(answer);
-            if ("error" in result) {
-                setError(t(`animation.errors.${result.error}`));
-                return null;
-            }
-            return result.svg;
-        } catch (caught) {
-            if (controller.signal.aborted) {
-                message.info(t("common.requestCanceled"));
-                return null;
-            }
-            setError((caught as Error)?.message || t("workbench.generationFailed"));
-            return null;
-        } finally {
-            if (abortRef.current === controller) abortRef.current = null;
-            setRunning(null);
-        }
-    };
-
     const generate = async () => {
-        if (running) return;
+        if (starting) return;
         if (!prompt.trim()) {
             message.error(t("animation.promptRequired"));
             return;
         }
         if (!ensureReady()) return;
         const brief: AnimationBrief = { prompt: prompt.trim(), scenario, style, ratio };
-        const svg = await run("create", buildAnimationMessages(brief));
-        if (!svg) return;
-        const log: AnimationLog = {
-            id: nanoid(),
-            createdAt: Date.now(),
-            title: animationTitle(brief.prompt) || t("workbench.untitled"),
-            brief,
-            model,
-            versions: [{ id: nanoid(), svg, instruction: "", createdAt: Date.now() }],
-        };
-        persist([log, ...logs]);
-        setActiveId(log.id);
-        setVersionIndex(0);
-        setReplayToken((value) => value + 1);
+        setStarting(true);
+        try {
+            const id = await startGeneration({ brief, model, instruction: "", messages: buildAnimationMessages(brief), config: effectiveConfig });
+            setActiveId(id);
+            setVersionIndex(-1);
+            setNow(Date.now());
+        } catch (error) {
+            message.error((error as Error)?.message || t("workbench.generationFailed"));
+            return;
+        } finally {
+            setStarting(false);
+        }
         // On narrow screens the preview sits below the form.
         if (window.innerWidth < 1280) window.setTimeout(() => previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
     };
 
     const revise = async () => {
-        if (running || !active || !version) return;
+        if (starting || !active || !version || active.pending) return;
         const text = instruction.trim();
         if (!text) return;
         if (!ensureReady()) return;
-        const index = active.versions.indexOf(version);
-        const history = active.versions.slice(1, index + 1).map((item) => item.instruction);
-        const svg = await run("revise", buildAnimationMessages(active.brief, { currentSvg: version.svg, instruction: text, history }));
-        if (!svg) return;
-        // Revising an older version branches from it: later versions are kept, the new one goes last.
-        const next: AnimationLog = { ...active, versions: [...active.versions, { id: nanoid(), svg, instruction: text, createdAt: Date.now() }] };
-        persist(logs.map((log) => (log.id === active.id ? next : log)));
-        setVersionIndex(next.versions.length - 1);
-        setInstruction("");
-        setReplayToken((value) => value + 1);
+        const history = active.versions.slice(1, shownIndex + 1).map((item) => item.instruction);
+        setStarting(true);
+        try {
+            // Revising an older version branches from it: later versions are kept, the new one goes last.
+            await startGeneration({ logId: active.id, brief: active.brief, model, instruction: text, messages: buildAnimationMessages(active.brief, { currentSvg: version.svg, instruction: text, history }), config: effectiveConfig });
+            setInstruction("");
+            setNow(Date.now());
+        } finally {
+            setStarting(false);
+        }
     };
 
     const openLog = (log: AnimationLog) => {
         setActiveId(log.id);
-        setVersionIndex(log.versions.length - 1);
+        setVersionIndex(-1);
         setPrompt(log.brief.prompt);
         setScenario(log.brief.scenario);
         setStyle(log.brief.style);
         setRatio(log.brief.ratio);
-        setError("");
         setLogsOpen(false);
     };
 
     const deleteLog = (id: string) => {
-        persist(logs.filter((log) => log.id !== id));
+        removeLog(id);
         if (activeId === id) setActiveId(null);
     };
 
@@ -212,7 +191,6 @@ export default function AnimationPage() {
         setActiveId(null);
         setPrompt("");
         setInstruction("");
-        setError("");
         setLogsOpen(false);
     };
 
@@ -322,15 +300,9 @@ export default function AnimationPage() {
                         </div>
 
                         <div className="mt-auto pt-6">
-                            {running === "create" ? (
-                                <Button size="large" block danger icon={<Square className="size-4" />} onClick={() => abortRef.current?.abort()}>
-                                    {t("animation.stop")}
-                                </Button>
-                            ) : (
-                                <Button type="primary" size="large" block icon={<Sparkles className="size-4" />} disabled={Boolean(running) || !prompt.trim()} onClick={() => void generate()} data-testid="animation-generate">
-                                    {active ? t("animation.generateNew") : t("animation.generate")}
-                                </Button>
-                            )}
+                            <Button type="primary" size="large" block icon={<Sparkles className="size-4" />} loading={starting} disabled={!prompt.trim()} onClick={() => void generate()} data-testid="animation-generate">
+                                {active ? t("animation.generateNew") : t("animation.generate")}
+                            </Button>
                         </div>
                     </div>
 
@@ -344,21 +316,21 @@ export default function AnimationPage() {
                                             size="small"
                                             type="text"
                                             icon={<ChevronLeft className="size-4" />}
-                                            disabled={versionIndex <= 0}
+                                            disabled={shownIndex <= 0}
                                             onClick={() => {
-                                                setVersionIndex(versionIndex - 1);
+                                                setVersionIndex(shownIndex - 1);
                                                 setReplayToken((value) => value + 1);
                                             }}
                                             aria-label={t("animation.prevVersion")}
                                         />
-                                        <span data-testid="animation-version">{t("animation.version", { index: versionIndex + 1, total: active.versions.length })}</span>
+                                        <span data-testid="animation-version">{t("animation.version", { index: shownIndex + 1, total: active.versions.length })}</span>
                                         <Button
                                             size="small"
                                             type="text"
                                             icon={<ChevronRight className="size-4" />}
-                                            disabled={versionIndex >= active.versions.length - 1}
+                                            disabled={shownIndex >= active.versions.length - 1}
                                             onClick={() => {
-                                                setVersionIndex(versionIndex + 1);
+                                                setVersionIndex(shownIndex + 1);
                                                 setReplayToken((value) => value + 1);
                                             }}
                                             aria-label={t("animation.nextVersion")}
@@ -419,10 +391,17 @@ export default function AnimationPage() {
                                 </div>
                             </div>
                         ) : running ? (
-                            <div className="flex min-h-[320px] flex-1 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-stone-300 text-sm text-stone-500 dark:border-stone-700">
+                            <div
+                                className="flex min-h-[320px] flex-1 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-stone-300 px-4 text-center text-sm text-stone-500 dark:border-stone-700"
+                                data-testid="animation-pending"
+                            >
                                 <LoaderCircle className="size-7 animate-spin" />
-                                <span>{t("animation.writing", { chars: streamedChars })}</span>
+                                <span>{streamedChars ? t("animation.writing", { chars: streamedChars }) : t("animation.thinking")}</span>
                                 <span className="text-xs">{t("animation.writingHint")}</span>
+                                <span className="text-xs">{pending?.local ? t("animation.localHint") : t("animation.backgroundHint")}</span>
+                                <Button size="small" danger icon={<Square className="size-3.5" />} onClick={() => active && void cancelGeneration(active.id)}>
+                                    {t("animation.stop")}
+                                </Button>
                             </div>
                         ) : (
                             <div className="flex min-h-[320px] flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-stone-300 text-center dark:border-stone-700">
@@ -447,11 +426,11 @@ export default function AnimationPage() {
                                         data-testid="animation-revise-input"
                                     />
                                     {running === "revise" ? (
-                                        <Button danger icon={<Square className="size-4" />} onClick={() => abortRef.current?.abort()}>
+                                        <Button danger icon={<Square className="size-4" />} onClick={() => void cancelGeneration(active.id)}>
                                             {t("animation.stop")}
                                         </Button>
                                     ) : (
-                                        <Button type="primary" icon={<Send className="size-4" />} disabled={!instruction.trim() || Boolean(running)} onClick={() => void revise()} data-testid="animation-revise">
+                                        <Button type="primary" icon={<Send className="size-4" />} disabled={!instruction.trim() || Boolean(running) || starting} onClick={() => void revise()} data-testid="animation-revise">
                                             {t("animation.revise")}
                                         </Button>
                                     )}
@@ -470,14 +449,7 @@ export default function AnimationPage() {
                 <pre className="thin-scrollbar max-h-[60vh] overflow-auto whitespace-pre-wrap break-all rounded bg-stone-100 p-3 text-xs dark:bg-stone-900">{version?.svg}</pre>
             </Modal>
             {active && version ? (
-                <CanvasPublishSiteDialog
-                    open={publishOpen}
-                    html={pageHtml}
-                    defaultTitle={active.title}
-                    siteId={active.siteId}
-                    onClose={() => setPublishOpen(false)}
-                    onPublished={(site) => persist(logs.map((log) => (log.id === active.id ? { ...log, siteId: site.id } : log)))}
-                />
+                <CanvasPublishSiteDialog open={publishOpen} html={pageHtml} defaultTitle={active.title} siteId={active.siteId} onClose={() => setPublishOpen(false)} onPublished={(site) => updateLog(active.id, { siteId: site.id })} />
             ) : null}
         </div>
     );
@@ -498,16 +470,24 @@ function LogList({ logs, activeId, onOpen, onDelete, onNew }: { logs: AnimationL
                 <div className="grid gap-2">
                     {logs.map((log) => {
                         const latest = log.versions[log.versions.length - 1];
+                        const status = log.pending ? t("animation.generatingShort") : log.error && !latest ? t("animation.failedShort") : "";
                         return (
                             <div key={log.id} className={`group relative overflow-hidden rounded-lg border transition ${log.id === activeId ? "border-primary" : "border-stone-200 hover:border-stone-400 dark:border-stone-800"}`}>
                                 <button type="button" className="block w-full text-left" onClick={() => onOpen(log)}>
                                     {/* A data: URL in <img> renders the SVG without running anything, animation included. */}
-                                    <img src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(latest.svg)}`} alt="" className="aspect-video w-full bg-stone-100 object-contain dark:bg-stone-900" loading="lazy" />
+                                    {latest ? (
+                                        <img src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(latest.svg)}`} alt="" className="aspect-video w-full bg-stone-100 object-contain dark:bg-stone-900" loading="lazy" />
+                                    ) : (
+                                        <div className="flex aspect-video w-full items-center justify-center bg-stone-100 text-stone-400 dark:bg-stone-900">
+                                            {log.pending ? <LoaderCircle className="size-6 animate-spin" /> : <AlertCircle className="size-6" />}
+                                        </div>
+                                    )}
                                     <div className="px-2 py-1.5">
                                         <div className="truncate text-sm font-medium">{log.title}</div>
                                         <div className="text-xs text-stone-500">
                                             {new Date(log.createdAt).toLocaleString()} · {t(`animation.scenarios.${log.brief.scenario}`)}
                                             {log.versions.length > 1 ? ` · ${t("animation.versions", { count: log.versions.length })}` : ""}
+                                            {status ? <span className={log.pending ? "text-primary" : "text-red-500"}> · {status}</span> : null}
                                         </div>
                                     </div>
                                 </button>

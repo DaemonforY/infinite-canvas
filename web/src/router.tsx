@@ -1,6 +1,7 @@
 import { createBrowserRouter, Outlet } from "react-router-dom";
 
 import { AccountSync } from "@/components/layout/account-sync";
+import { AnimationJobWatcher } from "@/components/layout/animation-job-watcher";
 import { CloudAutoSync } from "@/components/layout/cloud-auto-sync";
 import { AnalyticsTracker } from "@/components/layout/analytics-tracker";
 import UserLayout from "@/layouts/user-layout";
@@ -28,6 +29,7 @@ export const router = createBrowserRouter([
                 <AnalyticsTracker />
                 <AccountSync />
                 <CloudAutoSync />
+                <AnimationJobWatcher />
                 <Outlet />
             </UserLayout>
         ),
