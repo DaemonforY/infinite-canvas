@@ -45,6 +45,51 @@ export function openConnectPopup(state: string): Window | null {
     return window.open(connectUrl(state), "hivegpt-canvas-connect", `popup=yes,width=${width},height=${height},left=${left},top=${top}`);
 }
 
+// Full-page sign-in (phones and the WeChat in-app browser, where the popup cannot answer): the
+// canvas goes to the main site's login with the connect page as the target and comes back to the
+// same path with #hivegpt_connect=<state>; the picked key is then taken once over the session cookie.
+const REDIRECT_STATE_KEY = "hivegpt:connect-redirect-state";
+const RETURN_HASH = "hivegpt_connect";
+
+export function isWeChatBrowser() {
+    return typeof navigator !== "undefined" && /MicroMessenger/i.test(navigator.userAgent);
+}
+
+/** Phones and WeChat sign in by redirect; desktops keep the popup (the page stays as it is). */
+export function prefersRedirectSignIn() {
+    if (typeof window === "undefined") return false;
+    return isWeChatBrowser() || (window.matchMedia?.("(pointer: coarse)").matches && window.innerWidth < 768);
+}
+
+export function startConnectRedirect() {
+    const state = createConnectState();
+    sessionStorage.setItem(REDIRECT_STATE_KEY, state);
+    const back = `${window.location.pathname}${window.location.search}`;
+    const url = new URL(mainSiteLink("/login", "connect-redirect"));
+    url.searchParams.set("redirect", `/canvas-connect?state=${state}&return=${encodeURIComponent(back)}`);
+    if (isWeChatBrowser()) url.searchParams.set("auto_wechat", "1");
+    window.location.href = url.toString();
+}
+
+/** True when this page load is the return from a full-page sign-in (and consumes the marker). */
+export function takeConnectRedirectReturn(): boolean {
+    const match = window.location.hash.match(new RegExp(`${RETURN_HASH}=([A-Za-z0-9_-]{16,128})`));
+    if (!match) return false;
+    const expected = sessionStorage.getItem(REDIRECT_STATE_KEY);
+    sessionStorage.removeItem(REDIRECT_STATE_KEY);
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}`);
+    // A different state is someone else's link; a missing one is a browser that dropped sessionStorage.
+    return !expected || expected === match[1];
+}
+
+/** The key picked on the connect page, handed over once ("" when none). */
+export async function fetchConnectKey(signal?: AbortSignal): Promise<string> {
+    const res = await fetch(`${MAIN_SITE_URL}/api/v1/canvas/connect-key`, { credentials: "include", headers: { "X-HiveGPT-Canvas": "1" }, signal });
+    const body = (await res.json().catch(() => null)) as { code?: number; data?: { api_key?: string } } | null;
+    const key = body?.code === 0 ? (body.data?.api_key || "").trim() : "";
+    return key && key.length <= 256 && !/\s/.test(key) ? key : "";
+}
+
 /** Validates a postMessage event from the connect popup; returns the key or null. */
 export function parseConnectMessage(event: MessageEvent, expectedState: string): ConnectedKey | null {
     const origin = mainSiteOrigin();

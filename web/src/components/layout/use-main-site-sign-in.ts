@@ -3,7 +3,7 @@ import { App } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { MAIN_SITE_NAME } from "@/constant/runtime-config";
-import { createConnectState, openConnectPopup, parseConnectMessage } from "@/services/api/main-site-connect";
+import { createConnectState, openConnectPopup, parseConnectMessage, prefersRedirectSignIn, startConnectRedirect } from "@/services/api/main-site-connect";
 import { useCommunityMeStore } from "@/stores/use-community-me-store";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useMainAccountStore } from "@/stores/use-main-account-store";
@@ -37,12 +37,11 @@ export function useMainSiteSignIn() {
     }, [importChannelCredentials, message, refresh, site, t, waiting]);
 
     const signIn = () => {
+        // Phones and WeChat (and a blocked popup): sign in by full-page redirect instead.
+        if (prefersRedirectSignIn()) return startConnectRedirect();
         stateRef.current = createConnectState();
         const popup = openConnectPopup(stateRef.current);
-        if (!popup) {
-            message.warning(t("quickStart.popupBlocked"));
-            return;
-        }
+        if (!popup) return startConnectRedirect();
         setWaiting(true);
     };
 

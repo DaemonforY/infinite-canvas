@@ -4,7 +4,7 @@ import { KeyRound, Link2, Settings2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { MAIN_SITE_API_BASE_URL, MAIN_SITE_NAME, mainSiteLink } from "@/constant/runtime-config";
-import { createConnectState, openConnectPopup, parseConnectMessage, testApiKey } from "@/services/api/main-site-connect";
+import { createConnectState, openConnectPopup, parseConnectMessage, prefersRedirectSignIn, startConnectRedirect, testApiKey } from "@/services/api/main-site-connect";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useMainAccountStore } from "@/stores/use-main-account-store";
 
@@ -75,6 +75,8 @@ export function QuickStartDialog() {
     }, [open]);
 
     const connect = () => {
+        // Phones and WeChat: the whole page goes to the main site and comes back signed in.
+        if (prefersRedirectSignIn()) return startConnectRedirect();
         stateRef.current = createConnectState();
         const popup = openConnectPopup(stateRef.current);
         setPopupBlocked(!popup);
@@ -113,7 +115,7 @@ export function QuickStartDialog() {
                     <Button type="primary" size="large" block icon={<Link2 className="size-4" />} onClick={connect} data-testid="quick-start-connect">
                         {t("quickStart.connect", { site })}
                     </Button>
-                    <p className="mt-2 text-xs leading-5 text-stone-500 dark:text-stone-400">{t("quickStart.connectHint")}</p>
+                    <p className="mt-2 text-xs leading-5 text-stone-500 dark:text-stone-400">{t("quickStart.connectHint", { site })}</p>
                     {waiting ? (
                         <div className="mt-3 flex items-center gap-2 text-sm text-stone-600 dark:text-stone-300">
                             <Spin size="small" />

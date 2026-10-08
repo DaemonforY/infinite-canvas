@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate, Outlet, useLocation } from "react-router-dom";
 
 import { AccountSync } from "@/components/layout/account-sync";
+import { ConnectRedirectReturn } from "@/components/layout/connect-redirect-return";
 import { AnimationJobWatcher } from "@/components/layout/animation-job-watcher";
 import { CloudAutoSync } from "@/components/layout/cloud-auto-sync";
 import { AnalyticsTracker } from "@/components/layout/analytics-tracker";
@@ -33,6 +34,7 @@ export const router = createBrowserRouter([
         element: (
             <UserLayout>
                 <AnalyticsTracker />
+                <ConnectRedirectReturn />
                 <AccountSync />
                 <CloudAutoSync />
                 <AnimationJobWatcher />

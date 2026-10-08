@@ -1043,7 +1043,7 @@ export default {
         title: "Connect {{site}} to start drawing",
         description: "The canvas is free; generating images needs a {{site}} API key. Authorize with your {{site}} account below to set it up in one step.",
         connect: "Connect with {{site}}",
-        connectHint: "A small window opens: sign in (or sign up) → pick or create an image-capable key → click Authorize. The key is filled in for you.",
+        connectHint: "On a computer a small window opens; on phones and in WeChat the page goes to {{site}}: sign in (or sign up; one tap in WeChat) → Authorize. A drawing key is created and filled in for you.",
         waiting: "Finish the authorization in the popup…",
         reopen: "No window? Open again",
         popupBlocked: "The browser blocked the popup. Allow popups and retry, or copy a key from the keys page and paste it below.",

@@ -53,7 +53,23 @@ function ListAction({ icon, label, onClick }: { icon: ReactNode; label: string; 
     );
 }
 
-export function ImageDetailViewer({ batch, index, onIndexChange, onClose, watermark, actions }: { batch: FeedBatch; index: number; onIndexChange: (index: number) => void; onClose: () => void; watermark: boolean; actions: DetailActions }) {
+export function ImageDetailViewer({
+    batch,
+    index,
+    onIndexChange,
+    onClose,
+    watermark,
+    canRemoveWatermark,
+    actions,
+}: {
+    batch: FeedBatch;
+    index: number;
+    onIndexChange: (index: number) => void;
+    onClose: () => void;
+    watermark: boolean;
+    canRemoveWatermark: boolean;
+    actions: DetailActions;
+}) {
     const { t } = useTranslation();
     useSyncExternalStore(subscribeImagePreviews, getImagePreviewRevision);
     const images = batch.cells.filter((cell) => cell.status === "success" && cell.image).map((cell) => cell.image as GeneratedImage);
@@ -160,7 +176,7 @@ export function ImageDetailViewer({ batch, index, onIndexChange, onClose, waterm
                     </div>
                 </div>
 
-                {watermark ? (
+                {watermark && canRemoveWatermark ? (
                     <div
                         className="order-3 flex items-center gap-3 rounded-xl border border-amber-300/50 bg-amber-50 px-3 py-2.5 text-xs leading-relaxed text-stone-600 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-stone-300"
                         data-testid="watermark-notice"

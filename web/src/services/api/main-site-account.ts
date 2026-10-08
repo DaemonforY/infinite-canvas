@@ -21,6 +21,8 @@ export type MainSiteAccount = {
     aff_code?: string;
     /** 创作会员: images are saved without the watermark until this time (RFC 3339); absent = not a member. */
     no_watermark_until?: string;
+    /** 创作会员 can be bought now (去水印 is offered only then). */
+    membership_on_sale?: boolean;
 };
 
 const CANVAS_HEADER = { "X-HiveGPT-Canvas": "1" };
@@ -53,4 +55,14 @@ export function latestSubscription(account: Pick<MainSiteAccount, "subscriptions
 export function isWatermarkFree(account: Pick<MainSiteAccount, "no_watermark_until"> | null | undefined, now = Date.now()): boolean {
     const until = account?.no_watermark_until ? Date.parse(account.no_watermark_until) : NaN;
     return Number.isFinite(until) && until > now;
+}
+
+/** Logs a member's unwatermarked save on the main site; false when the membership has ended. */
+export async function logUnmarkedSave(width: number, height: number): Promise<boolean> {
+    try {
+        const res = await fetch(`${base()}/unmarked-saves`, { method: "POST", credentials: "include", headers: { ...CANVAS_HEADER, "Content-Type": "application/json" }, body: JSON.stringify({ width, height }) });
+        return res.ok;
+    } catch {
+        return false;
+    }
 }

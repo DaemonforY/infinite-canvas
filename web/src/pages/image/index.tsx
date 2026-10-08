@@ -62,7 +62,7 @@ export default function ImagePage() {
     const openMyPromptEditor = useMyPromptEditorStore((state) => state.open);
     const promptActions = usePromptActions();
     const copyText = useCopyText();
-    const { save, free, overlay: saveOverlay } = useSaveImage();
+    const { save, free, onSale, overlay: saveOverlay } = useSaveImage();
     const { apiKey: toolsApiKey } = useImageToolsQuota();
 
     const textareaRef = useRef<TextAreaRef>(null);
@@ -595,6 +595,7 @@ export default function ImagePage() {
                     onIndexChange={(index) => setDetail({ batchId: detailBatch.id, index })}
                     onClose={() => setDetail(null)}
                     watermark={!free}
+                    canRemoveWatermark={onSale}
                     actions={{
                         onSay: (image) => void editThis(image),
                         onMask: setMaskTarget,

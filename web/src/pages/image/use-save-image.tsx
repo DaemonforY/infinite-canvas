@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 
 import { mainSiteLink } from "@/constant/runtime-config";
 import { watermarkImage } from "@/lib/watermark";
-import { isWatermarkFree } from "@/services/api/main-site-account";
+import { isWatermarkFree, logUnmarkedSave } from "@/services/api/main-site-account";
 import { useMainAccountStore } from "@/stores/use-main-account-store";
 
 /** WeChat's in-app browser ignores downloads; the only way to keep an image there is a long press. */
@@ -19,17 +19,23 @@ export function useWatermarkFree() {
     return isWatermarkFree(account);
 }
 
+/** 去水印 is offered only while 创作会员 is on sale (and only to signed-in users, who can buy it). */
+export function useMembershipOnSale() {
+    return useMainAccountStore((state) => state.account?.membership_on_sale === true);
+}
+
 export function membershipLink(medium: string) {
     return mainSiteLink("/purchase?tab=membership", medium);
 }
 
-type Saveable = { dataUrl: string; mimeType?: string };
+type Saveable = { dataUrl: string; mimeType?: string; width?: number; height?: number };
 
 /** Saves workbench images: watermarked unless the account has 创作会员; in WeChat shows the image for a long press. */
 export function useSaveImage() {
     const { message } = App.useApp();
     const { t } = useTranslation();
     const free = useWatermarkFree();
+    const onSale = useMembershipOnSale();
     const [longPressUrl, setLongPressUrl] = useState("");
 
     useEffect(() => {
@@ -37,8 +43,11 @@ export function useSaveImage() {
         return () => URL.revokeObjectURL(longPressUrl);
     }, [longPressUrl]);
 
+    // Members get the original; each such save is logged on the main site (labelling rules, 第九条).
+    // If the membership ended meanwhile, the save falls back to the watermarked image.
     const imageBlob = async (image: Saveable) => {
-        if (free) return fetch(image.dataUrl).then((res) => res.blob());
+        if (free && (await logUnmarkedSave(image.width || 0, image.height || 0))) return fetch(image.dataUrl).then((res) => res.blob());
+        if (free) void useMainAccountStore.getState().refresh();
         return watermarkImage(image.dataUrl, image.mimeType);
     };
 
@@ -60,7 +69,7 @@ export function useSaveImage() {
             </button>
             <img src={longPressUrl} alt="" className="max-h-[72vh] max-w-full rounded-lg object-contain" onClick={(event) => event.stopPropagation()} />
             <div className="text-sm text-stone-200">{t("studio.save.longPress")}</div>
-            {!free ? (
+            {!free && onSale ? (
                 <a href={membershipLink("wechat-save")} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-xs text-amber-300" onClick={(event) => event.stopPropagation()}>
                     <Crown className="size-3.5" />
                     {t("studio.watermark.removeHint")}
@@ -69,5 +78,5 @@ export function useSaveImage() {
         </div>
     ) : null;
 
-    return { save, free, overlay };
+    return { save, free, onSale, overlay };
 }
