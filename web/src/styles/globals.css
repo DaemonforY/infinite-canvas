@@ -607,3 +607,10 @@
     border-radius: 0.6rem;
     font-size: 0.75rem;
 }
+
+/* Image workbench: placeholder sweep while an image is generating. */
+@keyframes shimmer {
+    to {
+        background-position: -200% 0;
+    }
+}

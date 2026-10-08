@@ -1,5 +1,5 @@
-import { Bot, Menu } from "lucide-react";
-import { Button, Tooltip } from "antd";
+import { Bot, ChevronDown, Menu } from "lucide-react";
+import { Button, Dropdown, Tooltip } from "antd";
 import { Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
@@ -30,6 +30,7 @@ export function AppTopNav() {
     const hideHeader = /^\/canvas\/[^/]+/.test(pathname);
     const slug = pathname.split("/").filter(Boolean)[0];
     const activeToolSlug = navigationTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
+    const moreActive = navigationTools.some((tool) => !tool.primary && tool.slug === activeToolSlug);
 
     useEffect(() => {
         if (autoConnectRef.current || agentEnabled || agentConnected || !agentToken.trim()) return;
@@ -65,25 +66,35 @@ export function AppTopNav() {
                             </button>
 
                             <nav className="hide-scrollbar ml-8 hidden h-14 min-w-0 items-center gap-7 overflow-x-auto md:flex">
-                                {navigationTools.map((tool) => {
-                                    const Icon = tool.icon;
-                                    const active = tool.slug === activeToolSlug;
-                                    return (
-                                        <Link
-                                            key={tool.slug}
-                                            to={`/${tool.slug}`}
-                                            className={cn(
-                                                "relative flex h-14 shrink-0 items-center gap-2 text-sm leading-6 transition after:absolute after:inset-x-0 after:bottom-0 after:h-px",
-                                                active
-                                                    ? "font-medium text-stone-950 after:bg-stone-950 dark:text-stone-100 dark:after:bg-stone-100"
-                                                    : "text-stone-500 after:bg-transparent hover:text-stone-950 dark:text-stone-400 dark:hover:text-stone-100",
-                                            )}
-                                        >
-                                            <Icon className="size-4" />
-                                            <span className="truncate">{t(`navigation.${tool.slug}`)}</span>
-                                        </Link>
-                                    );
-                                })}
+                                {navigationTools
+                                    .filter((tool) => tool.primary)
+                                    .map((tool) => {
+                                        const Icon = tool.icon;
+                                        const active = tool.slug === activeToolSlug;
+                                        return (
+                                            <Link key={tool.slug} to={`/${tool.slug}`} className={navItemClass(active)}>
+                                                <Icon className="size-4" />
+                                                <span className="truncate">{t(`navigation.${tool.slug}`)}</span>
+                                            </Link>
+                                        );
+                                    })}
+                                <Dropdown
+                                    trigger={["click", "hover"]}
+                                    menu={{
+                                        selectedKeys: activeToolSlug ? [activeToolSlug] : [],
+                                        items: navigationTools
+                                            .filter((tool) => !tool.primary)
+                                            .map((tool) => {
+                                                const Icon = tool.icon;
+                                                return { key: tool.slug, icon: <Icon className="size-4" />, label: <Link to={`/${tool.slug}`}>{t(`navigation.${tool.slug}`)}</Link> };
+                                            }),
+                                    }}
+                                >
+                                    <button type="button" className={navItemClass(moreActive)} data-testid="nav-more">
+                                        <span>{t("topNav.more")}</span>
+                                        <ChevronDown className="size-3.5" />
+                                    </button>
+                                </Dropdown>
                             </nav>
                         </div>
 
@@ -105,5 +116,12 @@ export function AppTopNav() {
             <MyPromptDialog />
             <QuickStartDialog />
         </>
+    );
+}
+
+function navItemClass(active: boolean) {
+    return cn(
+        "relative flex h-14 shrink-0 items-center gap-2 text-sm leading-6 transition after:absolute after:inset-x-0 after:bottom-0 after:h-px",
+        active ? "font-medium text-stone-950 after:bg-stone-950 dark:text-stone-100 dark:after:bg-stone-100" : "text-stone-500 after:bg-transparent hover:text-stone-950 dark:text-stone-400 dark:hover:text-stone-100",
     );
 }

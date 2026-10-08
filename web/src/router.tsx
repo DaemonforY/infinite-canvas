@@ -1,4 +1,4 @@
-import { createBrowserRouter, Outlet } from "react-router-dom";
+import { createBrowserRouter, Navigate, Outlet, useLocation } from "react-router-dom";
 
 import { AccountSync } from "@/components/layout/account-sync";
 import { AnimationJobWatcher } from "@/components/layout/animation-job-watcher";
@@ -22,6 +22,12 @@ import UserPage from "@/pages/user";
 import CollectionPage from "@/pages/collection";
 import CreatorPage from "@/pages/creator";
 
+/** The site opens on the image workbench; query strings (?prompt=, ?aff=, utm) go along. */
+function RootRedirect() {
+    const { search, hash } = useLocation();
+    return <Navigate to={{ pathname: "/image", search, hash }} replace />;
+}
+
 export const router = createBrowserRouter([
     {
         element: (
@@ -34,7 +40,8 @@ export const router = createBrowserRouter([
             </UserLayout>
         ),
         children: [
-            { path: "/", element: <HomePage /> },
+            { path: "/", element: <RootRedirect /> },
+            { path: "/home", element: <HomePage /> },
             { path: "/image", element: <ImagePage /> },
             { path: "/video", element: <VideoPage /> },
             { path: "/animation", element: <AnimationPage /> },

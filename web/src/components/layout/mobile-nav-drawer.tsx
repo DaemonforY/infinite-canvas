@@ -20,9 +20,10 @@ export function MobileNavDrawer({ open, activeToolSlug, onClose }: MobileNavDraw
     return (
         <Drawer title={t("topNav.navigation")} placement="left" size={280} open={open} onClose={onClose} className="md:hidden">
             <div className="space-y-1">
-                {navigationTools.map((tool) => {
+                {navigationTools.map((tool, index) => {
                     const Icon = tool.icon;
                     const active = tool.slug === activeToolSlug;
+                    const firstMore = !tool.primary && navigationTools[index - 1]?.primary;
                     return (
                         <Link
                             key={tool.slug}
@@ -30,6 +31,7 @@ export function MobileNavDrawer({ open, activeToolSlug, onClose }: MobileNavDraw
                             onClick={onClose}
                             className={cn(
                                 "flex items-center gap-3 rounded-lg px-3 py-3 text-base transition",
+                                firstMore && "mt-2 border-t border-stone-200 pt-4 dark:border-stone-800",
                                 active ? "bg-stone-100 font-medium text-stone-950 dark:bg-stone-800 dark:text-stone-100" : "text-stone-600 hover:bg-stone-100 hover:text-stone-950 dark:text-stone-300 dark:hover:bg-stone-800 dark:hover:text-stone-100",
                             )}
                         >

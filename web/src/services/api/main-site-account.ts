@@ -19,6 +19,8 @@ export type MainSiteAccount = {
     subscriptions: MainSiteSubscription[];
     /** Invite code, when the main site has invites enabled; shared links carry it. */
     aff_code?: string;
+    /** 创作会员: images are saved without the watermark until this time (RFC 3339); absent = not a member. */
+    no_watermark_until?: string;
 };
 
 const CANVAS_HEADER = { "X-HiveGPT-Canvas": "1" };
@@ -45,4 +47,10 @@ export function accountDisplayName(account: Pick<MainSiteAccount, "username" | "
 /** The subscription ending last, if any. */
 export function latestSubscription(account: Pick<MainSiteAccount, "subscriptions">): MainSiteSubscription | null {
     return [...account.subscriptions].sort((a, b) => Date.parse(b.expires_at) - Date.parse(a.expires_at))[0] || null;
+}
+
+/** Whether the account currently has 创作会员 (no watermark on saved images). */
+export function isWatermarkFree(account: Pick<MainSiteAccount, "no_watermark_until"> | null | undefined, now = Date.now()): boolean {
+    const until = account?.no_watermark_until ? Date.parse(account.no_watermark_until) : NaN;
+    return Number.isFinite(until) && until > now;
 }
