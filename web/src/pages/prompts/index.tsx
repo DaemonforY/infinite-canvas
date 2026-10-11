@@ -76,7 +76,7 @@ export default function PromptsPage() {
                         </div>
                     </div>
 
-                    <div className="-mx-4 mt-5 bg-background/95 px-4 pb-3 pt-1 backdrop-blur sm:sticky sm:top-0 sm:z-10 sm:-mx-6 sm:px-6">
+                    <div className="-mx-4 mt-3 bg-background/95 px-4 pb-3 pt-3 backdrop-blur sm:sticky sm:-top-6 sm:z-10 lg:-top-8 sm:-mx-6 sm:px-6">
                         <PromptFilters state={state} onChange={update} sources={list.sources} sceneCounts={list.sceneCounts} favoriteCount={list.favoriteCount} recentCount={list.recentCount} />
                     </div>
 
