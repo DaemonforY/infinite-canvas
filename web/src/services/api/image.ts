@@ -10,6 +10,7 @@ import { imageSizePresets, inferMediaScale } from "@/lib/media-size";
 import type { ReferenceImage } from "@/types/image";
 
 import { apiText, humanizeApiPayload, humanizeErrorMessage, readAxiosError, readFetchError } from "./errors";
+import { runImageTask } from "./image-task";
 
 export type AiTextMessage = {
     role: "system" | "user" | "assistant";
@@ -695,26 +696,26 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
     const background = normalizeBackground(config.background);
+    const body = {
+        model: requestConfig.model,
+        prompt: withSystemPrompt(requestConfig, prompt),
+        n,
+        ...(quality ? { quality } : {}),
+        ...(requestSize ? { size: requestSize } : {}),
+        ...(background ? { background } : {}),
+        // gpt-image models reject response_format; they always return b64.
+        ...(/gpt-image/.test(requestConfig.model) ? {} : { response_format: "b64_json" }),
+        output_format: IMAGE_OUTPUT_FORMAT,
+    };
     try {
-        const response = await axios.post<ImageApiResponse>(
-            aiApiUrl(requestConfig, "/images/generations"),
-            {
-                model: requestConfig.model,
-                prompt: withSystemPrompt(requestConfig, prompt),
-                n,
-                ...(quality ? { quality } : {}),
-                ...(requestSize ? { size: requestSize } : {}),
-                ...(background ? { background } : {}),
-                // gpt-image models reject response_format; they always return b64.
-                ...(/gpt-image/.test(requestConfig.model) ? {} : { response_format: "b64_json" }),
-                output_format: IMAGE_OUTPUT_FORMAT,
-            },
-            {
-                headers: aiHeaders(requestConfig, "application/json"),
-                signal: options?.signal,
-                timeout: IMAGE_REQUEST_TIMEOUT_MS,
-            },
-        );
+        // The main site runs it as a task that survives a dropped connection; elsewhere, synchronously.
+        const taskResult = await runImageTask(requestConfig, "/images/generations", body, options);
+        if (taskResult) return parseImagePayload(taskResult as ImageApiResponse);
+        const response = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/generations"), body, {
+            headers: aiHeaders(requestConfig, "application/json"),
+            signal: options?.signal,
+            timeout: IMAGE_REQUEST_TIMEOUT_MS,
+        });
         const images = await parseImagePayload(response.data);
         return images;
     } catch (error) {
@@ -781,6 +782,8 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     files.forEach((file) => formData.append(imageField, file));
 
     try {
+        const taskResult = await runImageTask(requestConfig, "/images/edits", formData, options);
+        if (taskResult) return parseImagePayload(taskResult as ImageApiResponse);
         const response = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/edits"), formData, { headers: aiHeaders(requestConfig), signal: options?.signal, timeout: IMAGE_REQUEST_TIMEOUT_MS });
         const images = await parseImagePayload(response.data);
         return images;
