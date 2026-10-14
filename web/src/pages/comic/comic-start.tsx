@@ -9,14 +9,8 @@ import { ComicImageView } from "./comic-lettering";
 
 const GENRE_ICONS: Record<ComicGenre, string> = { funny: "😹", work: "💼", romance: "💕", science: "🔬", brand: "🏷️" };
 const GENRE_BG: Record<ComicGenre, string> = { funny: "bg-amber-100", work: "bg-sky-100", romance: "bg-pink-100", science: "bg-emerald-100", brand: "bg-violet-100" };
-const STYLE_SWATCH: Record<string, string> = {
-    "manga-cute": "linear-gradient(160deg,#fde7c7,#f6b26b)",
-    guoman: "linear-gradient(160deg,#f3d9b1,#b5653b)",
-    american: "linear-gradient(160deg,#fde047,#dc2626)",
-    chibi: "linear-gradient(160deg,#fbcfe8,#a5b4fc)",
-    screentone: "radial-gradient(circle,#444 1.3px,transparent 1.5px) 0 0/7px 7px,#fff",
-    "picture-book": "linear-gradient(160deg,#cffafe,#a7f3d0,#fde68a)",
-};
+// A sample of each built-in style (the same cat drawn in each), in web/public/comic-styles.
+const styleSample = (id: string) => `/comic-styles/${id}.webp`;
 
 export type ComicStartInput = { idea: string; genre: ComicGenre; panelCount: number; style: ComicStyleChoice };
 
@@ -154,7 +148,7 @@ export function ComicStart({
                                 onClick={() => setStyle(item)}
                                 className={`overflow-hidden rounded-xl border-2 bg-white text-left dark:bg-stone-900 ${style.id === item.id ? "border-(--skin-accent)" : "border-transparent"}`}
                             >
-                                <span className="block h-16" style={{ background: STYLE_SWATCH[item.id] }} />
+                                <img src={styleSample(item.id)} alt="" loading="lazy" className="block h-24 w-full object-cover object-[50%_25%]" />
                                 <span className="block px-2 py-1.5 text-xs font-medium text-stone-800 dark:text-stone-200">{item.name}</span>
                             </button>
                         ))}
@@ -164,9 +158,12 @@ export function ComicStart({
                             className={`overflow-hidden rounded-xl border-2 bg-white text-left dark:bg-stone-900 ${!builtIn && style.id.startsWith("handraw:") ? "border-(--skin-accent)" : "border-transparent"}`}
                         >
                             {!builtIn && style.cover ? (
-                                <img src={style.cover} alt="" className="block h-16 w-full object-cover" />
+                                <img src={style.cover} alt="" className="block h-24 w-full object-cover" />
                             ) : (
-                                <span className="flex h-16 items-center justify-center bg-stone-100 text-stone-500 dark:bg-stone-800">{t("comic.start.handrawCount")}</span>
+                                <span className="relative block h-24">
+                                    <img src={styleSample("handraw")} alt="" loading="lazy" className="size-full object-cover object-[50%_25%]" />
+                                    <span className="absolute bottom-1 right-1 rounded-md bg-black/60 px-1.5 py-0.5 text-[11px] text-white">{t("comic.start.handrawCount")}</span>
+                                </span>
                             )}
                             <span className="block truncate px-2 py-1.5 text-xs font-medium text-stone-800 dark:text-stone-200">{!builtIn && style.id.startsWith("handraw:") ? style.name : t("comic.start.handraw")}</span>
                         </button>
@@ -175,7 +172,7 @@ export function ComicStart({
                             onClick={() => setCustomOpen(true)}
                             className={`overflow-hidden rounded-xl border-2 bg-white text-left dark:bg-stone-900 ${style.id === "custom" ? "border-(--skin-accent)" : "border-dashed border-stone-300 dark:border-stone-700"}`}
                         >
-                            <span className="flex h-16 items-center justify-center text-stone-400">✎</span>
+                            <span className="flex h-24 items-center justify-center text-stone-400">✎</span>
                             <span className="block truncate px-2 py-1.5 text-xs font-medium text-stone-800 dark:text-stone-200">{style.id === "custom" ? style.name : t("comic.start.customStyle")}</span>
                         </button>
                     </div>
