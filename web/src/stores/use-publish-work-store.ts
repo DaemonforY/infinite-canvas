@@ -16,6 +16,8 @@ export type PublishWorkPayload = {
     html?: string;
     /** A video work: the clip to publish (its cover is drawn from a frame). */
     video?: PublishVideo;
+    /** A collection to put the work in (selected if it exists, else offered and created on publish). */
+    collectionTitle?: string;
 };
 
 export type PublishVideo = { src: string; durationMs?: number };

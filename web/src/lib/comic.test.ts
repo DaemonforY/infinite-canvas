@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { beatsFor, COMIC_STYLES, findBubbles, fitText, pagePrompt, panelRects, panelSegments, parseStory, placeBubbles, type ComicCharacter, type ComicPanel } from "./comic";
+import { beatsFor, COMIC_STYLES, episodeSummary, keysToDelete, storyRequest, type ComicProject, findBubbles, fitText, pagePrompt, panelRects, panelSegments, parseStory, placeBubbles, type ComicCharacter, type ComicPanel } from "./comic";
 
 const cat: ComicCharacter = { id: "c1", name: "阿橘", role: "主角", look: "胖乎乎的橘猫，穿藏青西装、红领带", sheets: [{ url: "blob:1", width: 1536, height: 1024 }], sheet: 0 };
 const boss: ComicCharacter = { id: "c2", name: "柴主管", role: "配角", look: "直立的柴犬，戴小方框眼镜，灰马甲", sheets: [], sheet: -1 };
@@ -150,5 +150,31 @@ describe("bubbles", () => {
     test("lines break at punctuation when the phrase fits", () => {
         const measure = (text: string, size: number) => Array.from(text).length * size;
         expect(fitText("阿橘，周报呢？", 80, 60, measure, 20).lines).toEqual(["阿橘，", "周报呢？"]);
+    });
+});
+
+describe("series and library", () => {
+    test("a next-episode request carries the 前情提要 and the fixed cast", () => {
+        const request = storyRequest({ idea: "", genre: "funny", panelCount: 4, episode: 3, previously: ["第 1 话《上班》：阿橘到公司", "第 2 话《周报》：阿橘交了爪印"], cast: [{ name: "阿橘", role: "主角", look: "橘猫" }] });
+        expect(request).toContain("第 3 话");
+        expect(request).toContain("- 第 2 话《周报》");
+        expect(request).toContain("顺着前面的故事");
+        expect(request).toContain("阿橘（主角）：橘猫");
+        expect(storyRequest({ idea: "猫", genre: "funny", panelCount: 4 })).not.toContain("前情提要");
+    });
+
+    test("an episode summary has its number, title, actions and lines", () => {
+        const summary = episodeSummary({ title: "上班", series: { id: "s", title: "阿橘", episode: 2 }, panels: [panel([{ speaker: "阿橘", text: "冲！", kind: "shout" }])] });
+        expect(summary).toBe("第 2 话《上班》：站在写字楼门口握拳（阿橘：「冲！」）");
+    });
+
+    test("deleting an episode keeps images other episodes or 我的角色 still use", () => {
+        const image = (key: string) => ({ url: "", storageKey: key, width: 1, height: 1 });
+        const project = (id: string, sheet: string, page: string) => ({ id, characters: [{ ...cat, sheets: [image(sheet)] }], pages: [{ id: "p", image: image(page), bubbles: [], createdAt: 0, prompt: "" }] }) as unknown as ComicProject;
+        const one = project("1", "sheet-a", "page-1");
+        const two = project("2", "sheet-a", "page-2");
+        expect(keysToDelete(one, [two], [])).toEqual(["page-1"]);
+        expect(keysToDelete(one, [], [image("sheet-a")])).toEqual(["page-1"]);
+        expect(keysToDelete(one, [], []).sort()).toEqual(["page-1", "sheet-a"]);
     });
 });

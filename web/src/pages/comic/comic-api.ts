@@ -16,12 +16,12 @@ import {
     storyRequest,
     type ComicCellVersion,
     type ComicCharacter,
-    type ComicGenre,
     type ComicImage,
     type ComicPage,
     type ComicProject,
     type ComicStory,
     type ComicStyleChoice,
+    type StoryInput,
 } from "@/lib/comic";
 import { layoutPage, placeCellBubbles, ratioFor } from "@/lib/comic-layout";
 import { imageSizePresets } from "@/lib/media-size";
@@ -33,7 +33,7 @@ import type { ComicSceneSource } from "./comic-lettering";
 
 // The model calls of 画漫画, all on the user's own channel (text model for the story, image model for the rest).
 
-export async function writeStory(config: AiConfig, input: { idea: string; genre: ComicGenre; panelCount: number; previous?: ComicStory; change?: string }, onDelta: (text: string) => void, signal?: AbortSignal) {
+export async function writeStory(config: AiConfig, input: StoryInput, onDelta: (text: string) => void, signal?: AbortSignal) {
     const answer = await requestImageQuestion(
         promptAssistConfig(config),
         [

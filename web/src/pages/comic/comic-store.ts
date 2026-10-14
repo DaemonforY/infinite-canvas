@@ -1,7 +1,8 @@
 import localforage from "localforage";
 
 import { deleteStoredImages } from "@/services/image-storage";
-import type { ComicImage, ComicProject } from "@/lib/comic";
+import { keysToDelete, type ComicProject } from "@/lib/comic";
+import { listLibrary } from "./comic-library";
 
 // Comic projects live in IndexedDB like the image workbench logs; images are stored once (image_files)
 // and referenced by storageKey.
@@ -24,19 +25,15 @@ export async function saveComic(project: ComicProject) {
     await store.setItem(project.id, project);
 }
 
-export function comicImages(project: ComicProject): ComicImage[] {
-    return [
-        ...project.characters.flatMap((character) => [...character.sheets, ...(character.photo ? [character.photo] : [])]),
-        ...project.pages.map((page) => page.image),
-        ...Object.values(project.cells || {}).flatMap((cell) => cell.versions.map((version) => version.image)),
-    ];
+export async function deleteComic(project: ComicProject) {
+    const others = (await listComics()).filter((item) => item.id !== project.id);
+    const library = (await listLibrary()).map((entry) => entry.sheet);
+    await deleteStoredImages(keysToDelete(project, others, library));
+    await store.removeItem(project.id);
 }
 
-export async function deleteComic(project: ComicProject) {
-    await deleteStoredImages(
-        comicImages(project)
-            .map((image) => image.storageKey)
-            .filter((key): key is string => Boolean(key)),
-    );
-    await store.removeItem(project.id);
+/** All episodes of the series a project belongs to (a project without a series is its own episode 1). */
+export function seriesEpisodes(project: ComicProject, all: ComicProject[]) {
+    const seriesId = project.series?.id || project.id;
+    return all.filter((item) => (item.series?.id || item.id) === seriesId).sort((a, b) => (a.series?.episode || 1) - (b.series?.episode || 1));
 }

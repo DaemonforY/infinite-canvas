@@ -37,6 +37,8 @@ export type ComicCharacter = {
     sheet: number;
     /** A photo the design sheet is drawn from (pets, oneself). */
     photo?: ComicImage;
+    /** Set when the character came from, or was saved to, 我的角色. */
+    libraryId?: string;
 };
 
 export type ComicBubbleKind = ComicLineKind | "sfx";
@@ -94,11 +96,15 @@ export type ComicProject = {
     /** 逐格: drawn panels by panel id, and their lettering (cell-relative bubbles). */
     cells?: Record<string, ComicCell>;
     cellBubbles?: ComicBubble[];
+    /** 连载: episodes of one series share an id; `title` is the series name. */
+    series?: ComicSeries;
     createdAt: number;
     updatedAt: number;
 };
 
 export type ComicStyleChoice = { id: string; name: string; prompt: string; cover?: string };
+
+export type ComicSeries = { id: string; title: string; episode: number };
 
 export const COMIC_PANEL_COUNTS = [4, 6] as const;
 
@@ -161,15 +167,42 @@ export const STORY_INSTRUCTION = [
     "5. 用户写出的名字、品牌和具体内容原样使用，不要编造产品功效、数据和日期。",
 ].join("\n");
 
-export function storyRequest(input: { idea: string; genre: ComicGenre; panelCount: number; previous?: ComicStory; change?: string }) {
+export type StoryInput = {
+    idea: string;
+    genre: ComicGenre;
+    panelCount: number;
+    previous?: ComicStory;
+    change?: string;
+    /** Characters to use as they are (我的角色, or the cast of a series). */
+    cast?: Array<{ name: string; role?: string; look: string }>;
+    /** 连载: the episode number and what happened in the episodes before. */
+    episode?: number;
+    previously?: string[];
+};
+
+export function storyRequest(input: StoryInput) {
     const genre = COMIC_GENRES.find((item) => item.id === input.genre) || COMIC_GENRES[0];
     const beats = beatsFor(genre.id, input.panelCount);
-    const lines = [`点子：${input.idea.trim()}`, `类型：${GENRE_BRIEF[genre.id]}`, `一共 ${input.panelCount} 格，每格的 beat 依次是：${beats.join("、")}。`];
+    const lines: string[] = [];
+    if (input.previously?.length) {
+        lines.push(`这是一部连载漫画的第 ${input.episode || input.previously.length + 1} 话。前情提要：`, ...input.previously.map((item) => `- ${item}`));
+        lines.push("接着往下讲一个新的小故事：和前面连贯（人物关系、发生过的事都算数），但这一话本身也要完整、有自己的笑点或结局，不要重复前面的梗。");
+    }
+    lines.push(`点子：${input.idea.trim() || (input.previously?.length ? "你来决定，顺着前面的故事自然发展" : "你来决定")}`);
+    if (input.cast?.length) lines.push(`固定角色（名字和外貌原样使用，可以只用其中几个，需要时也可以加新角色）：${input.cast.map((item) => `${item.name}${item.role ? `（${item.role}）` : ""}：${item.look}`).join("；")}`);
+    lines.push(`类型：${GENRE_BRIEF[genre.id]}`, `一共 ${input.panelCount} 格，每格的 beat 依次是：${beats.join("、")}。`);
     if (input.previous) {
         lines.push(`上一版分镜：${JSON.stringify(input.previous)}`);
         lines.push(`这次的修改要求：${input.change?.trim() || "换一种写法"}。没有要求改动的地方尽量保留，角色外貌不要变；输出完整的新 JSON。`);
     }
     return lines.join("\n");
+}
+
+/** One line about an episode for the next one's 前情提要: its title, what happens and what is said. */
+export function episodeSummary(project: Pick<ComicProject, "title" | "panels" | "series">) {
+    const text = project.panels.map((panel) => `${panel.action}${panel.lines.length ? `（${panel.lines.map((line) => `${line.speaker}：「${line.text}」`).join(" ")}）` : ""}`).join("；");
+    const head = project.series ? `第 ${project.series.episode} 话《${project.title}》` : `《${project.title}》`;
+    return `${head}：${text}`.slice(0, 360);
 }
 
 /** Beats for n panels: the genre's four, with the middle ones repeated for six. */
@@ -490,6 +523,21 @@ function wrap(text: string, width: number, size: number, measure: Measure) {
     }
     if (current) lines.push(current);
     return lines;
+}
+
+/** Every stored image a project refers to. */
+export function comicImages(project: ComicProject): ComicImage[] {
+    return [
+        ...project.characters.flatMap((character) => [...character.sheets, ...(character.photo ? [character.photo] : [])]),
+        ...project.pages.map((page) => page.image),
+        ...Object.values(project.cells || {}).flatMap((cell) => cell.versions.map((version) => version.image)),
+    ];
+}
+
+/** Image keys of a project that nothing else uses: episodes of a series and 我的角色 share design sheets. */
+export function keysToDelete(project: ComicProject, others: ComicProject[], libraryImages: ComicImage[]) {
+    const keep = new Set([...others.flatMap(comicImages), ...libraryImages].map((image) => image.storageKey).filter(Boolean));
+    return [...new Set(comicImages(project).map((image) => image.storageKey))].filter((key): key is string => Boolean(key) && !keep.has(key));
 }
 
 /** Short Chinese title for a project without one. */

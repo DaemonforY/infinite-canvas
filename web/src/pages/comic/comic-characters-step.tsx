@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { Button, Input, Popconfirm, Tag } from "antd";
-import { ImageUp, Lightbulb, LoaderCircle, Lock, Plus, RefreshCw, Sparkles, Trash2, X } from "lucide-react";
+import { Bookmark, BookmarkCheck, ImageUp, Lightbulb, LoaderCircle, Lock, Plus, RefreshCw, Sparkles, Trash2, UserRound, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { isImageFile } from "@/lib/image-tools";
@@ -16,6 +16,8 @@ export function ComicCharactersStep({
     onPhoto,
     onAdd,
     onRemove,
+    onOpenLibrary,
+    onKeep,
 }: {
     project: ComicProject;
     drawing: Record<string, true>;
@@ -24,6 +26,8 @@ export function ComicCharactersStep({
     onPhoto: (character: ComicCharacter, file: File) => void;
     onAdd: () => void;
     onRemove: (character: ComicCharacter) => void;
+    onOpenLibrary: () => void;
+    onKeep: (character: ComicCharacter) => void;
 }) {
     const { t } = useTranslation();
     const fileRef = useRef<HTMLInputElement>(null);
@@ -36,7 +40,10 @@ export function ComicCharactersStep({
                     <h2 className="text-lg font-semibold text-stone-950 dark:text-stone-50">{t("comic.cast.title")}</h2>
                     <p className="mt-1 text-sm text-stone-500">{t("comic.cast.subtitle")}</p>
                 </div>
-                <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-stone-200 px-3 py-1 text-xs text-stone-600 dark:border-stone-700 dark:text-stone-300">
+                <Button className="ml-auto" icon={<UserRound className="size-4" />} onClick={onOpenLibrary} data-testid="comic-open-library">
+                    {t("comic.library.pick")}
+                </Button>
+                <span className="inline-flex items-center gap-1 rounded-full border border-stone-200 px-3 py-1 text-xs text-stone-600 dark:border-stone-700 dark:text-stone-300">
                     {t("comic.cast.style", { name: project.style.name })}
                     <Lock className="size-3" />
                 </span>
@@ -122,6 +129,11 @@ export function ComicCharactersStep({
                                     >
                                         {t("comic.cast.photo")}
                                     </Button>
+                                    {sheet ? (
+                                        <Button size="small" icon={character.libraryId ? <BookmarkCheck className="size-3.5" /> : <Bookmark className="size-3.5" />} disabled={busy} onClick={() => onKeep(character)} data-testid="comic-keep-character">
+                                            {character.libraryId ? t("comic.library.update") : t("comic.library.keep")}
+                                        </Button>
+                                    ) : null}
                                     {sheet ? (
                                         <Button size="small" type="text" disabled={busy} onClick={() => onChange({ ...character, sheet: -1 })}>
                                             {t("comic.cast.unlock")}

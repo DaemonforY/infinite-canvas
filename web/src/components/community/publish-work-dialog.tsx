@@ -132,7 +132,15 @@ export function PublishWorkDialog() {
     useEffect(() => {
         if (!open || !profile) return;
         listCollections(profile.handle)
-            .then(setCollections)
+            .then((list) => {
+                setCollections(list);
+                // A suggested collection (画漫画 series): pick it when it exists, else offer its name.
+                const title = usePublishWorkStore.getState().payload?.collectionTitle;
+                if (!title) return;
+                const match = list.find((item) => item.title === title);
+                if (match) setCollectionId(match.id);
+                else setNewCollection(title);
+            })
             .catch(() => setCollections([]));
     }, [open, profile]);
 
@@ -243,10 +251,25 @@ export function PublishWorkDialog() {
         }
     };
 
+    /** A collection the caller suggested (画漫画 series) is created on publish if the author kept its name. */
+    const ensureCollection = async () => {
+        if (collectionId || !payload?.collectionTitle || newCollection.trim() !== payload.collectionTitle) return collectionId;
+        try {
+            const created = await createCollection({ title: payload.collectionTitle, description: "", visibility: "public" });
+            setCollections((current) => [created, ...current]);
+            setCollectionId(created.id);
+            setNewCollection("");
+            return created.id;
+        } catch {
+            return undefined;
+        }
+    };
+
     // One work per image: its own prompt / model when it has them, the shared settings otherwise.
     const publishBatch = async () => {
         if (!payload) return;
         setPublishing(true);
+        const targetCollection = await ensureCollection();
         const works: Work[] = [];
         let failed = 0;
         let error = "";
@@ -266,7 +289,7 @@ export function PublishWorkDialog() {
                     source: item.source === "image_workbench" ? "image_workbench" : payload.source,
                     tags,
                     visibility,
-                    collectionId,
+                    collectionId: targetCollection,
                 });
                 works.push(work);
             } catch (err) {
@@ -289,6 +312,7 @@ export function PublishWorkDialog() {
     const publishVideo = async () => {
         if (!payload || !clip || !items[0]) return;
         setPublishing(true);
+        const targetCollection = await ensureCollection();
         try {
             const cover = items[0].blob || (await loadImageBlob(items[0].src));
             const work = await publishWork({
@@ -304,7 +328,7 @@ export function PublishWorkDialog() {
                 source: payload.source === "canvas" && clip.source === "video_workbench" ? "video_workbench" : payload.source,
                 tags,
                 visibility,
-                collectionId,
+                collectionId: targetCollection,
                 remixOf: payload.remixOf,
             });
             setPublished(work);
@@ -321,6 +345,7 @@ export function PublishWorkDialog() {
         if (kind === "video") return publishVideo();
         if (batch) return publishBatch();
         setPublishing(true);
+        const targetCollection = await ensureCollection();
         try {
             const images = await Promise.all(
                 items.map(async (item, i) => {
@@ -340,7 +365,7 @@ export function PublishWorkDialog() {
                 source: kind === "site" ? "site" : payload.source === "canvas" && items.length && items.every((item) => item.source === "image_workbench") ? "image_workbench" : payload.source,
                 tags,
                 visibility,
-                collectionId,
+                collectionId: targetCollection,
                 remixOf: payload.remixOf,
                 siteId: kind === "site" ? site?.id : undefined,
             });
@@ -619,12 +644,15 @@ export function PublishWorkDialog() {
                     </div>
                 </div>
                 <p className="m-0 text-xs leading-5 text-stone-500">{t("community.publish.rules")}</p>
-                <Button type="primary" icon={<Send className="size-4" />} loading={publishing} disabled={!items.length || (kind === "site" && !site) || (kind === "video" && (!clip || preparingVideo))} onClick={() => void publish()} data-testid="publish-submit">
-                    {progress
-                        ? t("community.publish.batch.progress", { done: progress.done, total: progress.total })
-                        : batch
-                          ? t("community.publish.batch.submit", { count: items.length })
-                          : t("community.publish.submit")}
+                <Button
+                    type="primary"
+                    icon={<Send className="size-4" />}
+                    loading={publishing}
+                    disabled={!items.length || (kind === "site" && !site) || (kind === "video" && (!clip || preparingVideo))}
+                    onClick={() => void publish()}
+                    data-testid="publish-submit"
+                >
+                    {progress ? t("community.publish.batch.progress", { done: progress.done, total: progress.total }) : batch ? t("community.publish.batch.submit", { count: items.length }) : t("community.publish.submit")}
                 </Button>
             </div>
         );

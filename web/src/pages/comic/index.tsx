@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { useCopyText } from "@/hooks/use-copy-text";
-import { cellPrompt, fallbackTitle, pagePrompt, type ComicBubble, type ComicCellVersion, type ComicCharacter, type ComicLayoutId, type ComicMode, type ComicPanel, type ComicProject, type ComicStep, type ComicStory } from "@/lib/comic";
+import { cellPrompt, episodeSummary, fallbackTitle, pagePrompt, type ComicBubble, type ComicCellVersion, type ComicCharacter, type ComicLayoutId, type ComicMode, type ComicPanel, type ComicProject, type ComicStep, type ComicStory } from "@/lib/comic";
 import { placeCellBubbles, renderScene } from "@/lib/comic-layout";
 import { promptAssistConfig } from "@/lib/prompt-assist";
 import { uploadImage } from "@/services/image-storage";
@@ -20,7 +20,9 @@ import { ComicCharactersStep } from "./comic-characters-step";
 import { ComicLetterStep } from "./comic-letter-step";
 import { ComicPageStep } from "./comic-page-step";
 import { ComicStart, type ComicStartInput } from "./comic-start";
-import { deleteComic, listComics, readComic, saveComic } from "./comic-store";
+import { deleteComic, listComics, readComic, saveComic, seriesEpisodes } from "./comic-store";
+import { fromLibrary, mergeCast, saveToLibrary, type LibraryCharacter } from "./comic-library";
+import { LibraryPicker, NextEpisodeModal } from "./comic-series";
 import { ComicStoryStep } from "./comic-story-step";
 
 const STEPS: ComicStep[] = ["story", "characters", "page", "letter"];
@@ -62,55 +64,125 @@ function errorText(error: unknown, fallback: string) {
     return error instanceof Error && error.message ? error.message : fallback;
 }
 
-function ComicHome() {
+/** Writing a story starts a project: a new comic from the start page, or the next episode of a series. */
+function useStoryStarter() {
     const { t } = useTranslation();
     const { message } = App.useApp();
     const navigate = useNavigate();
     const { effectiveConfig, readyText } = useReadyCheck();
-    const [projects, setProjects] = useState<ComicProject[]>([]);
     const [busy, setBusy] = useState(false);
     const [progress, setProgress] = useState("");
 
-    useEffect(() => {
-        void listComics().then(setProjects);
-    }, []);
-
-    const start = async (input: ComicStartInput) => {
-        if (!readyText()) return;
+    const run = async (task: (onDelta: (text: string) => void) => Promise<ComicProject>) => {
+        if (!readyText()) return false;
         setBusy(true);
         setProgress(t("comic.start.thinking"));
         try {
-            const story = await writeStory(effectiveConfig, input, (text) => setProgress(t("comic.start.progress", { count: text.length })));
+            const project = await task((text) => setProgress(t("comic.start.progress", { count: text.length })));
+            await saveComic(project);
+            navigate(`/comic/${project.id}`);
+            return true;
+        } catch (error) {
+            message.error(error instanceof SyntaxError || (error instanceof Error && /no (json|panels)/.test(error.message)) ? t("comic.start.parseFailed") : errorText(error, t("comic.start.failed")));
+            return false;
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const start = (input: ComicStartInput) =>
+        run(async (onDelta) => {
+            const cast = input.cast.map(fromLibrary);
+            const story = await writeStory(effectiveConfig, { ...input, cast }, onDelta);
             const now = Date.now();
-            const project: ComicProject = {
+            return {
                 id: nanoid(),
                 title: story.title || fallbackTitle(input.idea),
                 idea: input.idea,
                 genre: input.genre,
                 panelCount: story.panels.length,
                 style: input.style,
-                ...applyStory({ characters: [] }, story),
+                ...applyStory({ characters: cast }, story),
                 pages: [],
                 page: 0,
                 step: "story",
                 createdAt: now,
                 updatedAt: now,
             };
-            await saveComic(project);
-            navigate(`/comic/${project.id}`);
-        } catch (error) {
-            message.error(error instanceof SyntaxError || (error instanceof Error && /no (json|panels)/.test(error.message)) ? t("comic.start.parseFailed") : errorText(error, t("comic.start.failed")));
-        } finally {
-            setBusy(false);
-        }
-    };
+        });
 
-    const remove = async (project: ComicProject) => {
-        await deleteComic(project);
+    /** 画第 N 话: same cast (with their sheets), style, genre and panel count; the story continues the earlier ones. */
+    const nextEpisode = (base: ComicProject, idea: string) =>
+        run(async (onDelta) => {
+            const episodes = seriesEpisodes(base, await listComics());
+            const series = base.series || { id: base.id, title: base.title, episode: 1 };
+            if (!base.series) await saveComic({ ...base, series });
+            const episode = Math.max(...episodes.map((item) => item.series?.episode || 1), 1) + 1;
+            const story = await writeStory(
+                effectiveConfig,
+                { idea, genre: base.genre, panelCount: base.panels.length, cast: base.characters, episode, previously: episodes.slice(-3).map((item) => episodeSummary(item.series ? item : { ...item, series })) },
+                onDelta,
+            );
+            const now = Date.now();
+            return {
+                id: nanoid(),
+                title: story.title || t("comic.series.episodeTitle", { title: series.title, n: episode }),
+                idea: idea || t("comic.series.episodeTitle", { title: series.title, n: episode }),
+                genre: base.genre,
+                panelCount: story.panels.length,
+                style: base.style,
+                mode: base.mode,
+                layout: base.layout,
+                ...applyStory({ characters: base.characters }, story),
+                pages: [],
+                page: 0,
+                step: "story",
+                series: { id: series.id, title: series.title, episode },
+                createdAt: now,
+                updatedAt: now,
+            };
+        });
+
+    return { busy, progress, start, nextEpisode };
+}
+
+function ComicHome() {
+    const navigate = useNavigate();
+    const starter = useStoryStarter();
+    const [projects, setProjects] = useState<ComicProject[]>([]);
+    const [nextOf, setNextOf] = useState<ComicProject | null>(null);
+
+    useEffect(() => {
+        void listComics().then(setProjects);
+    }, []);
+
+    const remove = async (items: ComicProject[]) => {
+        for (const item of items) await deleteComic(item);
         setProjects(await listComics());
     };
 
-    return <ComicStart projects={projects} busy={busy} progress={progress} onStart={start} onOpen={(projectId) => navigate(`/comic/${projectId}`)} onDelete={(project) => void remove(project)} />;
+    return (
+        <>
+            <ComicStart
+                projects={projects}
+                busy={starter.busy}
+                progress={starter.progress}
+                onStart={(input) => void starter.start(input)}
+                onOpen={(projectId) => navigate(`/comic/${projectId}`)}
+                onDelete={(items) => void remove(items)}
+                onNextEpisode={setNextOf}
+            />
+            <NextEpisodeModal
+                open={Boolean(nextOf)}
+                seriesTitle={nextOf?.series?.title || nextOf?.title || ""}
+                episode={nextOf ? seriesEpisodes(nextOf, projects).length + 1 : 2}
+                busy={starter.busy}
+                progress={starter.progress}
+                onClose={() => setNextOf(null)}
+                onStart={(idea) => nextOf && void starter.nextEpisode(nextOf, idea)}
+            />
+        </>
+    );
 }
 
 function ComicEditor({ id }: { id: string }) {
@@ -129,6 +201,11 @@ function ComicEditor({ id }: { id: string }) {
     const [drawing, setDrawing] = useState<Record<string, true>>({});
     const [pageBusy, setPageBusy] = useState<{ label: string; startedAt: number } | null>(null);
     const [cellBusy, setCellBusy] = useState<Record<string, number>>({});
+    const starter = useStoryStarter();
+    const [libraryOpen, setLibraryOpen] = useState(false);
+    const [nextOpen, setNextOpen] = useState(false);
+    const [episodes, setEpisodes] = useState<ComicProject[]>([]);
+    const [seriesPublishing, setSeriesPublishing] = useState(false);
 
     useEffect(() => {
         mountedRef.current = true;
@@ -138,9 +215,10 @@ function ComicEditor({ id }: { id: string }) {
     }, []);
 
     useEffect(() => {
-        void readComic(id).then((value) => {
+        void readComic(id).then(async (value) => {
             projectRef.current = value;
             setProject(value);
+            if (value) setEpisodes(seriesEpisodes(value, await listComics()));
         });
         // Leaving the page saves at once; a drawing still running files its result when it ends.
         return () => {
@@ -354,6 +432,7 @@ function ComicEditor({ id }: { id: string }) {
             model: modelOptionName(imageConfig.model),
             params: { size: `${Math.round(source.width)}x${Math.round(source.height)}`, comic: mode },
             source: "image_workbench",
+            ...(project.series ? { collectionTitle: project.series.title } : {}),
         });
     };
 
@@ -370,6 +449,51 @@ function ComicEditor({ id }: { id: string }) {
             metadata: { source: "comic", prompt: comicPrompt() },
         });
         message.success(t("common.addedToAssets"));
+    };
+
+    const pickFromLibrary = (entries: LibraryCharacter[]) => {
+        setLibraryOpen(false);
+        if (entries.length) patch((current) => ({ ...current, characters: mergeCast(current.characters, entries) }));
+    };
+
+    const keepCharacter = async (character: ComicCharacter) => {
+        try {
+            const libraryId = await saveToLibrary(character, project.style.name);
+            patch((current) => ({ ...current, characters: current.characters.map((item) => (item.id === character.id ? { ...item, libraryId } : item)) }));
+            message.success(t("comic.library.saved", { name: character.name }));
+        } catch {
+            message.error(t("comic.library.needSheet"));
+        }
+    };
+
+    const keepCast = async () => {
+        const withSheets = project.characters.filter((character) => character.sheet >= 0);
+        for (const character of withSheets) {
+            const libraryId = await saveToLibrary(character, project.style.name);
+            patch((current) => ({ ...current, characters: current.characters.map((item) => (item.id === character.id ? { ...item, libraryId } : item)) }));
+        }
+        message.success(withSheets.length ? t("comic.library.savedAll", { count: withSheets.length }) : t("comic.library.needSheet"));
+    };
+
+    const seriesTitle = project.series?.title || project.title;
+
+    /** 发布整个系列: every episode with art (up to 9) as one work, in the series' collection. */
+    const publishSeries = async () => {
+        setSeriesPublishing(true);
+        try {
+            const all = seriesEpisodes(projectRef.current!, await listComics()).map((item) => (item.id === projectRef.current!.id ? projectRef.current! : item));
+            const sources = all
+                .map((item) => sceneSource(item))
+                .filter((item): item is NonNullable<typeof item> => Boolean(item))
+                .slice(0, 9);
+            const images: string[] = [];
+            for (const item of sources) images.push((await uploadImage(await renderScene(await resolveScene(item)))).url);
+            usePublishWorkStore.getState().open({ images, title: seriesTitle, prompt: "", model: modelOptionName(imageConfig.model), params: { comic: "series", episodes: images.length }, source: "image_workbench", collectionTitle: seriesTitle });
+        } catch (error) {
+            message.error(errorText(error, t("community.publish.failed")));
+        } finally {
+            setSeriesPublishing(false);
+        }
     };
 
     const next = STEPS[stepIndex + 1];
@@ -426,6 +550,8 @@ function ComicEditor({ id }: { id: string }) {
                         project={project}
                         drawing={drawing}
                         onChange={changeCharacter}
+                        onOpenLibrary={() => setLibraryOpen(true)}
+                        onKeep={(character) => void keepCharacter(character)}
                         onDraw={(character) => void drawSheet(character)}
                         onPhoto={(character, file) => void takePhoto(character, file)}
                         onAdd={() =>
@@ -491,10 +617,24 @@ function ComicEditor({ id }: { id: string }) {
                         onSave={() => void save()}
                         onPublish={() => void publish()}
                         onAddToAssets={() => void toAssets()}
+                        series={{ title: seriesTitle, episode: project.series?.episode || 1, count: episodes.length, publishing: seriesPublishing }}
+                        onNextEpisode={() => setNextOpen(true)}
+                        onKeepCast={() => void keepCast()}
+                        onPublishSeries={() => void publishSeries()}
                     />
                 ) : null}
             </div>
             {overlay}
+            <LibraryPicker open={libraryOpen} onClose={() => setLibraryOpen(false)} onPick={pickFromLibrary} />
+            <NextEpisodeModal
+                open={nextOpen}
+                seriesTitle={seriesTitle}
+                episode={Math.max(project.series?.episode || 1, ...episodes.map((item) => item.series?.episode || 1)) + 1}
+                busy={starter.busy}
+                progress={starter.progress}
+                onClose={() => setNextOpen(false)}
+                onStart={(idea) => void starter.nextEpisode(projectRef.current!, idea)}
+            />
         </div>
     );
 }

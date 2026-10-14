@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button, Input, Segmented, Switch, Tooltip } from "antd";
-import { Crown, Download, FolderPlus, Lightbulb, Plus, RotateCcw, ScanSearch, Send, Trash2 } from "lucide-react";
+import { Bookmark, BookPlus, Crown, Download, FolderPlus, Lightbulb, Plus, RotateCcw, ScanSearch, Send, Trash2 } from "lucide-react";
 import { nanoid } from "nanoid";
 import { useTranslation } from "react-i18next";
 
@@ -29,6 +29,10 @@ export function ComicLetterStep({
     onSave,
     onPublish,
     onAddToAssets,
+    series,
+    onNextEpisode,
+    onKeepCast,
+    onPublishSeries,
 }: {
     project: ComicProject;
     source: ComicSceneSource;
@@ -44,6 +48,11 @@ export function ComicLetterStep({
     onSave: () => void;
     onPublish: () => void;
     onAddToAssets: () => void;
+    /** The series this comic belongs to (itself as episode 1 when it has none). */
+    series: { title: string; episode: number; count: number; publishing: boolean };
+    onNextEpisode: () => void;
+    onKeepCast: () => void;
+    onPublishSeries: () => void;
 }) {
     const { t } = useTranslation();
     const [selected, setSelected] = useState<string>("");
@@ -233,6 +242,25 @@ export function ComicLetterStep({
                             {t("studio.watermark.removeHint")}
                         </a>
                     ) : null}
+                </div>
+
+                <div className="rounded-2xl border border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-stone-900" data-testid="comic-continue">
+                    <h3 className="text-sm font-semibold text-stone-900 dark:text-stone-100">{t("comic.series.continueTitle")}</h3>
+                    <p className="mt-1 text-xs leading-5 text-stone-500">{t("comic.series.continueDesc", { title: series.title, n: series.episode })}</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        <Button type="primary" icon={<BookPlus className="size-4" />} onClick={onNextEpisode} data-testid="comic-next-episode">
+                            {t("comic.series.next", { n: Math.max(series.episode, series.count) + 1 })}
+                        </Button>
+                        <Button icon={<Bookmark className="size-4" />} onClick={onKeepCast}>
+                            {t("comic.library.keepAll")}
+                        </Button>
+                        {series.count > 1 ? (
+                            <Button icon={<Send className="size-4" />} loading={series.publishing} onClick={onPublishSeries}>
+                                {t("comic.series.publishAll", { count: Math.min(9, series.count) })}
+                            </Button>
+                        ) : null}
+                    </div>
+                    <div className="mt-2 text-[11px] leading-5 text-stone-400">{t("comic.series.continueHint")}</div>
                 </div>
             </div>
         </div>
