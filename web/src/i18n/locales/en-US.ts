@@ -1049,7 +1049,7 @@ export default {
             handraw: "More hand-drawn styles",
             handrawCount: "273 →",
             handrawTitle: "Pick a hand-drawn style",
-            handrawSearch: "Search styles, e.g. watercolor, Ghibli, woodcut",
+            handrawSearch: "Search styles, e.g. watercolor, crayon, woodcut",
             handrawEmpty: "No style found, try another word",
             customStyle: "Describe a style",
             customStylePlaceholder: "Describe the style, e.g. retro Hong Kong comics, heavy black shadows, warm yellow tones",

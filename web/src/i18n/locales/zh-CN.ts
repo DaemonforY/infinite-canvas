@@ -1049,7 +1049,7 @@ export default {
             handraw: "更多手绘风格",
             handrawCount: "273 种 →",
             handrawTitle: "从手绘风格图鉴里选画风",
-            handrawSearch: "搜索风格，比如：水彩、Ghibli、木刻",
+            handrawSearch: "搜索风格，比如：水彩、蜡笔、木刻",
             handrawEmpty: "没有找到风格，换个关键词试试",
             customStyle: "自己写画风",
             customStylePlaceholder: "描述你想要的画风，比如：复古港漫风格，浓重的黑色阴影，暖黄色调",
