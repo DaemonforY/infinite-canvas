@@ -39,12 +39,42 @@ export type ComicCharacter = {
     photo?: ComicImage;
 };
 
-/** A bubble rectangle in page fractions (0–1). `drawn`: we draw the balloon ourselves (none was found). */
-export type ComicBubble = { id: string; panel: number; line: number; text: string; kind: ComicLineKind; x: number; y: number; w: number; h: number; drawn: boolean };
+export type ComicBubbleKind = ComicLineKind | "sfx";
+export type ComicTail = "left" | "right" | "none";
+
+/**
+ * Lettering. The rectangle is in page fractions (0–1), or in fractions of the panel's cell when `cell` is set
+ * (逐格 pages, so a bubble stays with its panel when the layout changes). `drawn`: we draw the balloon
+ * ourselves (none was found in the art). `sfx` is a sound effect: big outlined text, no balloon.
+ */
+export type ComicBubble = {
+    id: string;
+    panel: number;
+    line: number;
+    text: string;
+    kind: ComicBubbleKind;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    drawn: boolean;
+    cell?: boolean;
+    tail?: ComicTail;
+    color?: string;
+    rotate?: number;
+};
 
 export type ComicPage = { id: string; image: ComicImage; bubbles: ComicBubble[]; createdAt: number; label?: string; prompt: string };
 
 export type ComicStep = "story" | "characters" | "page" | "letter";
+
+/** 整页一次出 (one image for the page) or 逐格精画 (one image per panel, laid out by us). */
+export type ComicMode = "page" | "cells";
+export type ComicLayoutId = "strip" | "manga" | "grid";
+
+export type ComicCellVersion = { image: ComicImage; prompt: string; label?: string; createdAt: number };
+/** A panel drawn on its own: every version kept, `focus` is where the cell crops it (0–1 each way). */
+export type ComicCell = { versions: ComicCellVersion[]; version: number; focus: { x: number; y: number } };
 
 export type ComicProject = {
     id: string;
@@ -59,6 +89,11 @@ export type ComicProject = {
     /** Index into pages of the version shown. */
     page: number;
     step: ComicStep;
+    mode?: ComicMode;
+    layout?: ComicLayoutId;
+    /** 逐格: drawn panels by panel id, and their lettering (cell-relative bubbles). */
+    cells?: Record<string, ComicCell>;
+    cellBubbles?: ComicBubble[];
     createdAt: number;
     updatedAt: number;
 };
@@ -192,7 +227,7 @@ export function parseStory(text: string, panelCount: number): ComicStory {
 export type PromptSegmentKind = "shot" | "who" | "action" | "place" | "style" | "space";
 export type PromptSegment = { kind: PromptSegmentKind; text: string };
 
-export function panelSegments(panel: Pick<ComicPanel, "shot" | "action" | "place" | "characters" | "lines">, characters: ComicCharacter[], style: ComicStyleChoice): PromptSegment[] {
+export function panelSegments(panel: Pick<ComicPanel, "shot" | "action" | "place" | "characters" | "lines">, characters: ComicCharacter[], style: ComicStyleChoice, mode: ComicMode = "page"): PromptSegment[] {
     const who = panel.characters
         .map((name) => characters.find((item) => item.name === name))
         .filter((item): item is ComicCharacter => Boolean(item))
@@ -202,7 +237,7 @@ export function panelSegments(panel: Pick<ComicPanel, "shot" | "action" | "place
     segments.push({ kind: "action", text: panel.action });
     if (panel.place) segments.push({ kind: "place", text: panel.place });
     segments.push({ kind: "style", text: style.prompt });
-    segments.push({ kind: "space", text: spaceInstruction(panel.lines) });
+    segments.push({ kind: "space", text: mode === "cells" ? cellSpaceInstruction(panel.lines) : spaceInstruction(panel.lines) });
     return segments;
 }
 
@@ -215,6 +250,11 @@ function spaceInstruction(lines: ComicLine[]) {
     else if (speakers.length > 1) parts.push(`留 ${speakers.length} 个空白的白色对话气泡，从左到右依次是${speakers.join("、")}说的，尾巴指向说话的人`);
     if (narration) parts.push("角落留一个空白的长方形旁白框");
     return parts.length ? `${parts.join("，")}，气泡里不要写字` : "这一格没有对白，不要画对话气泡";
+}
+
+/** 逐格: we letter the panel ourselves, so the art only leaves room for it. */
+function cellSpaceInstruction(lines: ComicLine[]) {
+    return lines.length ? "画面上方留出一些干净的空白放对白，不要画对话气泡，不要任何文字" : "不要画对话气泡，不要任何文字";
 }
 
 /** Layout of a page: rows × columns of equal panels, reading left to right, top to bottom. */
@@ -268,6 +308,34 @@ export function panelEditPrompt(panelIndex: number, instruction: string, sheetCh
         `这次的修改要求：${instruction.trim()}。`,
         refs ? `角色长相要和设定图一致（${refs}）。` : "",
         "对话气泡保持空白，画面里不要出现任何文字。",
+    ]
+        .filter(Boolean)
+        .join("\n");
+}
+
+/** 逐格: one panel as its own image; the sheets of the characters in it are 图片1, 图片2… */
+export function cellPrompt(project: Pick<ComicProject, "panels" | "characters" | "style">, panelIndex: number, sheetCharacters: ComicCharacter[], ratio: string) {
+    const panel = project.panels[panelIndex];
+    const [w, h] = ratio.split(":").map(Number);
+    const shape = w > h ? "横版" : w < h ? "竖版" : "方形";
+    const lines = [`一格漫画画面（一部 ${project.panels.length} 格漫画里的第 ${panelIndex + 1} 格），${shape}构图，画面铺满整张图。`, `画风：${project.style.prompt}。`];
+    if (sheetCharacters.length)
+        lines.push(`角色必须和参考图完全一致（脸型、毛色/发型、服装、配色都不能变）：${sheetCharacters.map((item, index) => `${item.name}是图片${index + 1}里的角色`).join("；")}。参考图只用来确定角色长相，不要照搬参考图的排版和背景。`);
+    const segments = panelSegments(panel, project.characters, project.style, "cells").filter((segment) => segment.kind !== "style");
+    lines.push(`画面：${segments.map((segment) => segment.text).join("，")}。`);
+    lines.push("不要画漫画分格边框、对话气泡和旁白框，画面里不要出现任何文字、字母、数字、拟声字、签名和水印。");
+    return lines.join("\n");
+}
+
+/** 逐格: changing one panel image (图片1), with the sheets after it. */
+export function cellEditPrompt(instruction: string, sheetCharacters: ComicCharacter[], panelText: string) {
+    const refs = sheetCharacters.map((item, index) => `图片${index + 2}是${item.name}的设定图`).join("，");
+    return [
+        "图片1是一格漫画画面。按下面的要求修改它，没有提到的地方（构图、角色、画风、配色）尽量保持不变，输出同样比例的完整画面。",
+        `这一格的分镜：${panelText}。`,
+        `修改要求：${instruction.trim()}。`,
+        refs ? `角色长相要和设定图一致（${refs}）。` : "",
+        "不要画对话气泡，画面里不要出现任何文字。",
     ]
         .filter(Boolean)
         .join("\n");
@@ -381,7 +449,7 @@ export function placeBubbles(panels: Array<Pick<ComicPanel, "lines">>, found: Re
 }
 
 // ---------------------------------------------------------------------------------------------
-// Lettering: the same layout is used for the on-screen preview (SVG) and the exported PNG (canvas).
+// Lettering text layout (balloons and scenes are in comic-layout.ts).
 
 export const COMIC_FONT = `"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif`;
 
@@ -422,72 +490,6 @@ function wrap(text: string, width: number, size: number, measure: Measure) {
     }
     if (current) lines.push(current);
     return lines;
-}
-
-export function canvasMeasure(fontWeight = 700): Measure {
-    const context = document.createElement("canvas").getContext("2d");
-    return (text, size) => {
-        if (!context) return text.length * size;
-        context.font = `${fontWeight} ${size}px ${COMIC_FONT}`;
-        return context.measureText(text).width;
-    };
-}
-
-/** Lays out every bubble for an image of the given pixel size. */
-export function layoutBubbles(bubbles: ComicBubble[], width: number, height: number, measure: Measure) {
-    const maxSize = Math.max(12, Math.round(Math.min(width, height) * 0.034));
-    return bubbles.map((bubble) => {
-        const box = { x: bubble.x * width, y: bubble.y * height, w: bubble.w * width, h: bubble.h * height };
-        const padX = bubble.drawn ? box.w * 0.14 : 0;
-        const padY = bubble.drawn ? box.h * 0.16 : 0;
-        const fit = fitText(bubble.text, box.w - padX * 2, box.h - padY * 2, measure, bubble.kind === "narration" ? maxSize * 0.85 : maxSize);
-        return { bubble, box, ...fit };
-    });
-}
-
-/** Draws the page with its lettering into a PNG blob. */
-export async function renderLetteredPage(src: string, bubbles: ComicBubble[]): Promise<Blob> {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const element = new Image();
-        element.crossOrigin = "anonymous";
-        element.onload = () => resolve(element);
-        element.onerror = () => reject(new Error("image load failed"));
-        element.src = src;
-    });
-    const width = image.naturalWidth;
-    const height = image.naturalHeight;
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("canvas unavailable");
-    context.drawImage(image, 0, 0, width, height);
-    const stroke = Math.max(2, Math.round(Math.min(width, height) * 0.0035));
-    for (const item of layoutBubbles(bubbles, width, height, canvasMeasure())) {
-        const { box, bubble } = item;
-        if (bubble.drawn) drawBalloon(context, box, bubble.kind, stroke);
-        context.fillStyle = "#111";
-        context.font = `${bubble.kind === "narration" ? 500 : 700} ${item.fontSize}px ${COMIC_FONT}`;
-        context.textAlign = "center";
-        context.textBaseline = "middle";
-        const lineHeight = item.fontSize * 1.25;
-        const top = box.y + box.h / 2 - ((item.lines.length - 1) * lineHeight) / 2;
-        item.lines.forEach((line, index) => context.fillText(line, box.x + box.w / 2, top + index * lineHeight));
-    }
-    return new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("encode failed"))), "image/png"));
-}
-
-function drawBalloon(context: CanvasRenderingContext2D, box: Rect, kind: ComicLineKind, stroke: number) {
-    context.save();
-    context.lineWidth = stroke;
-    context.strokeStyle = "#111";
-    context.fillStyle = kind === "narration" ? "#fffbea" : "#fff";
-    context.beginPath();
-    if (kind === "narration") context.rect(box.x, box.y, box.w, box.h);
-    else context.ellipse(box.x + box.w / 2, box.y + box.h / 2, box.w / 2, box.h / 2, 0, 0, Math.PI * 2);
-    context.fill();
-    context.stroke();
-    context.restore();
 }
 
 /** Short Chinese title for a project without one. */

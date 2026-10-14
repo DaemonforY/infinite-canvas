@@ -25,7 +25,11 @@ export async function saveComic(project: ComicProject) {
 }
 
 export function comicImages(project: ComicProject): ComicImage[] {
-    return [...project.characters.flatMap((character) => [...character.sheets, ...(character.photo ? [character.photo] : [])]), ...project.pages.map((page) => page.image)];
+    return [
+        ...project.characters.flatMap((character) => [...character.sheets, ...(character.photo ? [character.photo] : [])]),
+        ...project.pages.map((page) => page.image),
+        ...Object.values(project.cells || {}).flatMap((cell) => cell.versions.map((version) => version.image)),
+    ];
 }
 
 export async function deleteComic(project: ComicProject) {

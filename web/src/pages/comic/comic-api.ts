@@ -2,6 +2,8 @@ import { nanoid } from "nanoid";
 
 import { promptAssistConfig } from "@/lib/prompt-assist";
 import {
+    cellEditPrompt,
+    cellPrompt,
     characterSheetPrompt,
     findBubbles,
     pagePrompt,
@@ -12,6 +14,7 @@ import {
     placeBubbles,
     STORY_INSTRUCTION,
     storyRequest,
+    type ComicCellVersion,
     type ComicCharacter,
     type ComicGenre,
     type ComicImage,
@@ -20,11 +23,13 @@ import {
     type ComicStory,
     type ComicStyleChoice,
 } from "@/lib/comic";
+import { layoutPage, placeCellBubbles, ratioFor } from "@/lib/comic-layout";
 import { imageSizePresets } from "@/lib/media-size";
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import type { AiConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
+import type { ComicSceneSource } from "./comic-lettering";
 
 // The model calls of 画漫画, all on the user's own channel (text model for the story, image model for the rest).
 
@@ -144,6 +149,76 @@ export async function redrawPanel(config: AiConfig, project: ComicProject, page:
         ...fresh.filter((bubble) => bubble.panel === panelIndex).map((bubble) => ({ ...bubble, text: page.bubbles.find((old) => old.panel === panelIndex && old.line === bubble.line)?.text ?? bubble.text })),
     ];
     return { id: nanoid(), image, bubbles, createdAt: Date.now(), prompt, label: `第 ${panelIndex + 1} 格：${instruction.trim()}` };
+}
+
+// ---------------------------------------------------------------------------------------------
+// 逐格精画: every panel is its own image, in the shape of its cell in the chosen layout.
+
+export function projectLayout(project: Pick<ComicProject, "layout" | "panels">) {
+    return layoutPage(project.layout || "manga", project.panels.length);
+}
+
+/** The panel's cast with a chosen design sheet (sent as 图片1, 图片2… for that panel only). */
+export function panelSheetCharacters(project: ComicProject, panelIndex: number) {
+    const cast = new Set(project.panels[panelIndex].characters);
+    return sheetCharacters(project).filter((character) => cast.has(character.name));
+}
+
+function panelText(project: ComicProject, panelIndex: number) {
+    return panelSegments(project.panels[panelIndex], project.characters, project.style, "cells")
+        .filter((segment) => segment.kind !== "style")
+        .map((segment) => segment.text)
+        .join("，");
+}
+
+export function cellRatio(project: ComicProject, panelIndex: number) {
+    return ratioFor(projectLayout(project).cells[panelIndex]);
+}
+
+export async function drawCell(config: AiConfig, project: ComicProject, panelIndex: number): Promise<ComicCellVersion> {
+    const characters = panelSheetCharacters(project, panelIndex);
+    const ratio = cellRatio(project, panelIndex);
+    const prompt = cellPrompt(project, panelIndex, characters, ratio);
+    const references = await Promise.all(characters.map((character, index) => sheetReference(chosenSheet(character)!, index)));
+    const request = comicRequest(config, ratio);
+    const result = references.length ? await requestEdit(request, prompt, references) : await requestGeneration(request, prompt);
+    if (!result[0]) throw new Error("no image");
+    return { image: await store(result[0].dataUrl), prompt, createdAt: Date.now() };
+}
+
+/** Changes a drawn panel by an instruction: the panel is 图片1, the sheets of its cast follow. */
+export async function editCell(config: AiConfig, project: ComicProject, panelIndex: number, base: ComicImage, instruction: string): Promise<ComicCellVersion> {
+    const characters = panelSheetCharacters(project, panelIndex);
+    const prompt = cellEditPrompt(instruction, characters, panelText(project, panelIndex));
+    const references = [toReference(base, "panel.png"), ...(await Promise.all(characters.map((character, index) => sheetReference(chosenSheet(character)!, index + 1))))];
+    const result = await requestEdit(comicRequest(config, cellRatio(project, panelIndex)), prompt, references);
+    if (!result[0]) throw new Error("no image");
+    return { image: await store(result[0].dataUrl), prompt, label: instruction.trim(), createdAt: Date.now() };
+}
+
+/** What the page shows: the current one-image page, or the drawn panels in the layout's cells. */
+export function sceneSource(project: ComicProject): ComicSceneSource | null {
+    if ((project.mode || "page") === "page") {
+        const page = project.pages[project.page];
+        if (!page) return null;
+        return { width: page.image.width || 1024, height: page.image.height || 1536, image: page.image, bubbles: page.bubbles };
+    }
+    const layout = projectLayout(project);
+    return {
+        width: layout.width,
+        height: layout.height,
+        cells: layout.cells.map((rect, index) => {
+            const cell = project.cells?.[project.panels[index].id];
+            return { rect, image: cell?.versions[cell.version]?.image, focus: cell?.focus };
+        }),
+        bubbles: project.cellBubbles ?? placeCellBubbles(project.panels, nanoid),
+    };
+}
+
+/** Panel areas in page pixels for selection: the model's grid on a one-image page, the cells on a 逐格 page. */
+export function scenePanelRects(project: ComicProject, source: ComicSceneSource) {
+    if (source.cells) return source.cells.map((cell) => cell.rect);
+    return panelRects(project.panels.length).map((rect) => ({ x: rect.x * source.width, y: rect.y * source.height, w: rect.w * source.width, h: rect.h * source.height }));
 }
 
 /** Finds the empty balloons of a page and puts the story's lines in them. */
