@@ -20,7 +20,7 @@ import { ComicCharactersStep } from "./comic-characters-step";
 import { ComicLetterStep } from "./comic-letter-step";
 import { ComicPageStep } from "./comic-page-step";
 import { ComicStart, type ComicStartInput } from "./comic-start";
-import { deleteComic, listComics, readComic, saveComic, seriesEpisodes } from "./comic-store";
+import { COMICS_SYNCED_EVENT, deleteComic, listComics, readComic, saveComic, seriesEpisodes } from "./comic-store";
 import { fromLibrary, mergeCast, saveToLibrary, type LibraryCharacter } from "./comic-library";
 import { LibraryPicker, NextEpisodeModal } from "./comic-series";
 import { ComicStoryStep } from "./comic-story-step";
@@ -153,7 +153,11 @@ function ComicHome() {
     const [nextOf, setNextOf] = useState<ComicProject | null>(null);
 
     useEffect(() => {
-        void listComics().then(setProjects);
+        const load = () => void listComics().then(setProjects);
+        load();
+        // Cloud sync replaced the comics on this device: show the merged list.
+        window.addEventListener(COMICS_SYNCED_EVENT, load);
+        return () => window.removeEventListener(COMICS_SYNCED_EVENT, load);
     }, []);
 
     const remove = async (items: ComicProject[]) => {

@@ -1028,6 +1028,17 @@ export default {
             brand: { name: "Brand story", desc: "Problem → product → happy ending" },
         },
         kinds: { speech: "Speech", thought: "Thought", shout: "Shout", narration: "Caption", sfx: "Sound effect" },
+        sync: {
+            signInHint: "Sign in and turn on cloud sync to continue on another phone or computer",
+            offHint: "Turn on cloud sync to keep comics and your characters on your account and continue on other devices",
+            on: "Cloud sync on · last synced {{time}}",
+            onNever: "Cloud sync on",
+            syncing: "Syncing…",
+            signIn: "Sign in",
+            enable: "Turn on cloud sync",
+            now: "Sync now",
+            done: "Synced: {{count}} comics on your account",
+        },
         library: {
             title: "My characters",
             hint: "Designed characters are kept here for any later story: name, look and design sheet come along, nothing to redraw. Stored on this device only.",
@@ -1610,10 +1621,10 @@ export default {
         },
         cloud: {
             title: "{{site}} cloud sync",
-            description: "Sync this device's canvases, assets and image / video records to your account and pick up on another computer or browser.",
+            description: "Sync this device's canvases, comics, assets and image / video records to your account and pick up on another computer or browser.",
             signIn: "Sign in to {{site}} to turn on cloud sync",
             auto: "Sync automatically",
-            autoHint: "When on: syncs when the site opens and when you leave a canvas, then every 10 minutes when something changed. A canvas you are editing is never interrupted.",
+            autoHint: "When on: syncs when the site opens and when you leave a canvas, then every 10 minutes when something changed. A canvas or comic you are editing is never interrupted.",
             usage: "{{used}} of {{quota}} used",
             moreForSubscribers: "subscribers get more space",
             done: "Synced: {{projects}} canvases, {{assets}} assets; uploaded {{files}} files ({{bytes}})",
@@ -1647,6 +1658,7 @@ export default {
                 assets: "My Assets",
                 imageWorkbench: "Image Studio",
                 videoWorkbench: "Video Studio",
+                comic: "Comics",
             },
             stages: {
                 waiting: "Waiting",

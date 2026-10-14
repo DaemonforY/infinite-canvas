@@ -7,6 +7,7 @@ import { COMIC_GENRES, COMIC_PANEL_COUNTS, COMIC_STYLES, type ComicGenre, type C
 import { HandrawStylePicker } from "./handraw-style-picker";
 import { listLibrary, type LibraryCharacter } from "./comic-library";
 import { LibraryPicker } from "./comic-series";
+import { ComicSyncBar } from "./comic-sync-bar";
 import { ComicImageView } from "./comic-lettering";
 
 const GENRE_ICONS: Record<ComicGenre, string> = { funny: "😹", work: "💼", romance: "💕", science: "🔬", brand: "🏷️" };
@@ -212,6 +213,7 @@ export function ComicStart({
 
                 <section className="mt-10">
                     <h2 className="mb-3 text-sm font-semibold text-stone-900 dark:text-stone-100">{t("comic.start.continue")}</h2>
+                    <ComicSyncBar />
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                         {groups.map((episodes) => {
                             const latest = episodes[episodes.length - 1];

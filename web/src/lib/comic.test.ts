@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { beatsFor, COMIC_STYLES, episodeSummary, keysToDelete, storyRequest, type ComicProject, findBubbles, fitText, pagePrompt, panelRects, panelSegments, parseStory, placeBubbles, type ComicCharacter, type ComicPanel } from "./comic";
+import { beatsFor, COMIC_STYLES, episodeSummary, keysToDelete, mergeComicData, storyRequest, type ComicProject, findBubbles, fitText, pagePrompt, panelRects, panelSegments, parseStory, placeBubbles, type ComicCharacter, type ComicPanel } from "./comic";
 
 const cat: ComicCharacter = { id: "c1", name: "阿橘", role: "主角", look: "胖乎乎的橘猫，穿藏青西装、红领带", sheets: [{ url: "blob:1", width: 1536, height: 1024 }], sheet: 0 };
 const boss: ComicCharacter = { id: "c2", name: "柴主管", role: "配角", look: "直立的柴犬，戴小方框眼镜，灰马甲", sheets: [], sheet: -1 };
@@ -176,5 +176,43 @@ describe("series and library", () => {
         expect(keysToDelete(one, [two], [])).toEqual(["page-1"]);
         expect(keysToDelete(one, [], [image("sheet-a")])).toEqual(["page-1"]);
         expect(keysToDelete(one, [], []).sort()).toEqual(["page-1", "sheet-a"]);
+    });
+});
+
+describe("cloud sync merge", () => {
+    const comic = (id: string, updatedAt: number, title = id) => ({ id, updatedAt, title }) as unknown as ComicProject;
+    const empty = { projects: [], deleted: [], library: [], libraryDeleted: [] };
+
+    test("the newest edit of a comic wins and comics from both devices are kept", () => {
+        const merged = mergeComicData({ ...empty, projects: [comic("a", 5, "here"), comic("b", 1)] }, { ...empty, projects: [comic("a", 9, "there"), comic("c", 3)] });
+        expect(merged.projects.map((item) => [item.id, item.title])).toEqual([
+            ["a", "there"],
+            ["c", "c"],
+            ["b", "b"],
+        ]);
+    });
+
+    test("a deletion wins over older edits, a later edit wins over the deletion", () => {
+        const deletedHere = mergeComicData({ ...empty, deleted: [{ id: "a", deletedAt: 10 }] }, { ...empty, projects: [comic("a", 5)] });
+        expect(deletedHere.projects).toEqual([]);
+        expect(deletedHere.deleted).toEqual([{ id: "a", deletedAt: 10 }]);
+        const editedThere = mergeComicData({ ...empty, deleted: [{ id: "a", deletedAt: 10 }] }, { ...empty, projects: [comic("a", 12)] });
+        expect(editedThere.projects.map((item) => item.id)).toEqual(["a"]);
+        expect(editedThere.deleted).toEqual([]);
+    });
+
+    test("我的角色 merges the same way", () => {
+        const merged = mergeComicData(
+            { ...empty, library: [{ id: "x", updatedAt: 2 }], libraryDeleted: [{ id: "y", deletedAt: 5 }] },
+            {
+                ...empty,
+                library: [
+                    { id: "y", updatedAt: 3 },
+                    { id: "z", updatedAt: 1 },
+                ],
+            },
+        );
+        expect(merged.library.map((item) => item.id)).toEqual(["x", "z"]);
+        expect(merged.libraryDeleted).toEqual([{ id: "y", deletedAt: 5 }]);
     });
 });

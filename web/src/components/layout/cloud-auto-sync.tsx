@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
 
+import { COMICS_CHANGED_EVENT } from "@/pages/comic/comic-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useCloudSyncEnabled, useCloudSyncStore } from "@/stores/use-cloud-sync-store";
@@ -11,12 +12,12 @@ const IDLE_INTERVAL_MS = 30 * 60 * 1000;
 /**
  * Automatic cloud sync for users who turned it on: when the app opens, when leaving a canvas, every
  * 10 minutes if something changed here and every 30 minutes anyway (to pick up other devices). Never
- * while a canvas is open — the editor holds its own copy of that canvas.
+ * while a canvas or a comic is open — the editor holds its own copy of it.
  */
 export function CloudAutoSync() {
     const enabled = useCloudSyncEnabled();
     const { pathname } = useLocation();
-    const inCanvas = /^\/canvas\/[^/]+/.test(pathname);
+    const inCanvas = /^\/(canvas|comic)\/[^/]+/.test(pathname);
     const inCanvasRef = useRef(inCanvas);
     const lastRunRef = useRef(0);
     const dirtyRef = useRef(false);
@@ -27,9 +28,11 @@ export function CloudAutoSync() {
         };
         const offCanvas = useCanvasStore.subscribe((state, prev) => state.projects !== prev.projects && markDirty());
         const offAssets = useAssetStore.subscribe((state, prev) => state.assets !== prev.assets && markDirty());
+        window.addEventListener(COMICS_CHANGED_EVENT, markDirty);
         return () => {
             offCanvas();
             offAssets();
+            window.removeEventListener(COMICS_CHANGED_EVENT, markDirty);
         };
     }, []);
 

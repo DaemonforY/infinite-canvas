@@ -540,6 +540,40 @@ export function keysToDelete(project: ComicProject, others: ComicProject[], libr
     return [...new Set(comicImages(project).map((image) => image.storageKey))].filter((key): key is string => Boolean(key) && !keep.has(key));
 }
 
+// ---------------------------------------------------------------------------------------------
+// Cloud sync: comics and 我的角色 merge by id, newest edit wins, and a deletion wins over older edits.
+
+export type ComicTombstone = { id: string; deletedAt: number };
+/** `library` holds 我的角色 entries (pages/comic/comic-library); only id and updatedAt matter here. */
+export type ComicSyncData = { projects: ComicProject[]; deleted: ComicTombstone[]; library: Array<{ id: string; updatedAt: number }>; libraryDeleted: ComicTombstone[] };
+
+function mergeKeyed<T extends { id: string; updatedAt: number }>(local: T[], remote: T[], localDeleted: ComicTombstone[], remoteDeleted: ComicTombstone[]) {
+    const deletedAt = new Map<string, number>();
+    for (const item of [...remoteDeleted, ...localDeleted]) if (item.id && (deletedAt.get(item.id) || 0) < item.deletedAt) deletedAt.set(item.id, item.deletedAt);
+    const byId = new Map<string, T>();
+    for (const item of [...remote, ...local]) {
+        const current = byId.get(item.id);
+        if (!current || item.updatedAt >= current.updatedAt) byId.set(item.id, item);
+    }
+    const items = [...byId.values()].filter((item) => {
+        const at = deletedAt.get(item.id);
+        if (at === undefined) return true;
+        // Edited after it was deleted elsewhere: the edit wins and the tombstone goes.
+        if (item.updatedAt > at) {
+            deletedAt.delete(item.id);
+            return true;
+        }
+        return false;
+    });
+    return { items: items.sort((a, b) => b.updatedAt - a.updatedAt), deleted: [...deletedAt.entries()].map(([id, at]) => ({ id, deletedAt: at })) };
+}
+
+export function mergeComicData(local: ComicSyncData, remote: ComicSyncData): ComicSyncData {
+    const projects = mergeKeyed(local.projects || [], remote.projects || [], local.deleted || [], remote.deleted || []);
+    const library = mergeKeyed(local.library || [], remote.library || [], local.libraryDeleted || [], remote.libraryDeleted || []);
+    return { projects: projects.items, deleted: projects.deleted, library: library.items, libraryDeleted: library.deleted };
+}
+
 /** Short Chinese title for a project without one. */
 export function fallbackTitle(idea: string) {
     return (

@@ -1028,6 +1028,17 @@ export default {
             brand: { name: "品牌 / 产品故事", desc: "痛点 → 产品 → 好结果" },
         },
         kinds: { speech: "对话", thought: "想法", shout: "大喊", narration: "旁白", sfx: "拟声词" },
+        sync: {
+            signInHint: "登录后开启云同步，换手机、换电脑也能接着画",
+            offHint: "开启云同步，漫画和我的角色会同步到账号，换手机、换电脑也能接着画",
+            on: "已开启云同步 · 上次同步 {{time}}",
+            onNever: "已开启云同步",
+            syncing: "正在同步…",
+            signIn: "登录",
+            enable: "开启云同步",
+            now: "立即同步",
+            done: "同步完成，账号里共有 {{count}} 部漫画",
+        },
         library: {
             title: "我的角色",
             hint: "定过妆的角色存在这里，以后写任何故事都能请他们出演：名字、外貌和定妆图原样带过去，不用再画一次。只存在这台设备上。",
@@ -1610,10 +1621,10 @@ export default {
         },
         cloud: {
             title: "{{site}} 云同步",
-            description: "把这台设备上的画布、我的资产和生图 / 视频记录同步到你的账号，换电脑、换浏览器也能接着用。",
+            description: "把这台设备上的画布、漫画、我的资产和生图 / 视频记录同步到你的账号，换电脑、换浏览器也能接着用。",
             signIn: "登录 {{site}} 开启云同步",
             auto: "自动同步",
-            autoHint: "开启后：打开画布站、离开一张画布时自动同步，之后每 10 分钟同步一次改动。正在编辑的画布不会被打断。",
+            autoHint: "开启后：打开画布站、离开一张画布时自动同步，之后每 10 分钟同步一次改动。正在编辑的画布和漫画不会被打断。",
             usage: "已用 {{used}} / {{quota}}",
             moreForSubscribers: "订阅用户空间更大",
             done: "同步完成：{{projects}} 张画布、{{assets}} 个资产，上传 {{files}} 个文件（{{bytes}}）",
@@ -1647,6 +1658,7 @@ export default {
                 assets: "我的资产",
                 imageWorkbench: "生图工作台",
                 videoWorkbench: "视频创作台",
+                comic: "漫画",
             },
             stages: {
                 waiting: "等待同步",

@@ -1,6 +1,8 @@
 import localforage from "localforage";
 
 import i18n from "@/i18n";
+import { mergeComicData, type ComicSyncData } from "@/lib/comic";
+import { readComicSyncData, writeComicSyncData } from "@/pages/comic/comic-store";
 import { getMediaBlob, resolveMediaUrl, setMediaBlob } from "@/services/file-storage";
 import { getImageBlob, resolveImageUrl, setImageBlob } from "@/services/image-storage";
 import { downloadWebdavFile, uploadWebdavFile, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
@@ -11,7 +13,7 @@ import type { CanvasDeletedProject, CanvasProject } from "@/stores/canvas/use-ca
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 
 type StoredLog = Record<string, unknown> & { id?: string };
-export type AppSyncDomainKey = "canvas" | "assets" | "image-workbench" | "video-workbench";
+export type AppSyncDomainKey = "canvas" | "assets" | "image-workbench" | "video-workbench" | "comic";
 type DomainKey = AppSyncDomainKey;
 type CanvasDomainData = { projects: CanvasProject[]; deleted: CanvasDeletedProject[] };
 type AssetDomainData = { assets: Asset[] };
@@ -60,6 +62,7 @@ export type AppSyncResult = {
     assets: number;
     imageLogs: number;
     videoLogs: number;
+    comics: number;
     files: number;
     manifestBytes: number;
     uploadedFiles: number;
@@ -107,7 +110,7 @@ export async function syncAppData(config: SyncTransport, onProgress?: AppSyncPro
     emitProgress(onProgress, { stage: "等待本地数据加载" });
     await Promise.all([waitForHydration(useCanvasStore), waitForHydration(useAssetStore)]);
 
-    const [canvas, assets, imageLogs, videoLogs] = await Promise.all([
+    const [canvas, assets, imageLogs, videoLogs, comics] = await Promise.all([
         syncDomain<CanvasDomainData>(config, onProgress, {
             key: "canvas",
             label: "画布",
@@ -143,6 +146,15 @@ export async function syncAppData(config: SyncTransport, onProgress?: AppSyncPro
             mergeData: (local, remote) => ({ logs: mergeById(local.logs, remote.logs, "createdAt") }),
             applyData: async (data) => replaceStoredLogs(videoLogStore, data.logs),
         }),
+        // 画漫画: comics (with every version of every image) and 我的角色, deletions included.
+        syncDomain<ComicSyncData>(config, onProgress, {
+            key: "comic",
+            label: "漫画",
+            emptyData: { projects: [], deleted: [], library: [], libraryDeleted: [] },
+            localData: readComicSyncData,
+            mergeData: mergeComicData,
+            applyData: writeComicSyncData,
+        }),
     ]);
 
     if (config.prune) {
@@ -153,6 +165,7 @@ export async function syncAppData(config: SyncTransport, onProgress?: AppSyncPro
             ["assets", assets],
             ["image-workbench", imageLogs],
             ["video-workbench", videoLogs],
+            ["comic", comics],
         ] as const) {
             keep.add(domainPath(key, WEBDAV_MANIFEST_FILE_NAME));
             domain.paths.forEach((path) => keep.add(path));
@@ -162,15 +175,16 @@ export async function syncAppData(config: SyncTransport, onProgress?: AppSyncPro
 
     const result = {
         syncedAt: new Date().toISOString(),
-        mergedRemote: [canvas, assets, imageLogs, videoLogs].some((item) => item.mergedRemote),
+        mergedRemote: [canvas, assets, imageLogs, videoLogs, comics].some((item) => item.mergedRemote),
         projects: canvas.data.projects.length,
         assets: assets.data.assets.length,
         imageLogs: imageLogs.data.logs.length,
         videoLogs: videoLogs.data.logs.length,
-        files: canvas.files + assets.files + imageLogs.files + videoLogs.files,
-        manifestBytes: canvas.manifestBytes + assets.manifestBytes + imageLogs.manifestBytes + videoLogs.manifestBytes,
-        uploadedFiles: canvas.uploadedFiles + assets.uploadedFiles + imageLogs.uploadedFiles + videoLogs.uploadedFiles,
-        uploadedBytes: canvas.uploadedBytes + assets.uploadedBytes + imageLogs.uploadedBytes + videoLogs.uploadedBytes,
+        comics: comics.data.projects.length,
+        files: canvas.files + assets.files + imageLogs.files + videoLogs.files + comics.files,
+        manifestBytes: canvas.manifestBytes + assets.manifestBytes + imageLogs.manifestBytes + videoLogs.manifestBytes + comics.manifestBytes,
+        uploadedFiles: canvas.uploadedFiles + assets.uploadedFiles + imageLogs.uploadedFiles + videoLogs.uploadedFiles + comics.uploadedFiles,
+        uploadedBytes: canvas.uploadedBytes + assets.uploadedBytes + imageLogs.uploadedBytes + videoLogs.uploadedBytes + comics.uploadedBytes,
     };
     emitProgress(onProgress, { stage: "同步完成", status: "success" });
     return result;
@@ -394,6 +408,7 @@ function domainLabel(domain: DomainKey) {
     if (domain === "canvas") return "画布";
     if (domain === "assets") return "我的资产";
     if (domain === "image-workbench") return "生图工作台";
+    if (domain === "comic") return "漫画";
     return "视频创作台";
 }
 

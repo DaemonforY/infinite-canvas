@@ -59,8 +59,10 @@ export function cloudTransport(): SyncTransport {
             await json(res, "上传到云端失败");
         },
         prune: async (keep) => {
+            // Only the domains this version syncs: files of a domain added by a newer version stay.
+            const domains = new Set([...keep].map((path) => path.split("/")[0]));
             for (const file of await listCloudFiles()) {
-                if (keep.has(file.path)) continue;
+                if (keep.has(file.path) || !domains.has(file.path.split("/")[0])) continue;
                 const res = await fetch(fileUrl(file.path), { method: "DELETE", credentials: "include", headers: CANVAS_HEADER });
                 if (!res.ok && res.status !== 404) await fail(res, "清理云端文件失败");
             }

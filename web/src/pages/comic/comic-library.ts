@@ -2,6 +2,7 @@ import localforage from "localforage";
 import { nanoid } from "nanoid";
 
 import type { ComicCharacter, ComicImage } from "@/lib/comic";
+import { addTombstone, notifyComicsChanged } from "./comic-store";
 
 // 我的角色: characters with a chosen design sheet, kept for other stories and later episodes. Stored on this
 // device next to the comic projects; the sheet image is shared by key (deleting a comic keeps images the
@@ -10,6 +11,7 @@ import type { ComicCharacter, ComicImage } from "@/lib/comic";
 export type LibraryCharacter = { id: string; name: string; role: string; look: string; sheet: ComicImage; styleName: string; createdAt: number; updatedAt: number };
 
 const store = localforage.createInstance({ name: "infinite-canvas", storeName: "comic_characters" });
+export const libraryStore = store;
 
 export async function listLibrary() {
     const items: LibraryCharacter[] = [];
@@ -27,11 +29,13 @@ export async function saveToLibrary(character: ComicCharacter, styleName: string
     const now = Date.now();
     const entry: LibraryCharacter = { id: existing?.id || nanoid(), name: character.name, role: character.role, look: character.look, sheet, styleName, createdAt: existing?.createdAt || now, updatedAt: now };
     await store.setItem(entry.id, entry);
+    notifyComicsChanged();
     return entry.id;
 }
 
 export async function removeFromLibrary(id: string) {
     await store.removeItem(id);
+    await addTombstone("character", id);
 }
 
 /** A library character as a project character, its sheet already chosen. */
