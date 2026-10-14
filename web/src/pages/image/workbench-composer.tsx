@@ -1,8 +1,9 @@
 import { useRef, useState, type Dispatch, type ReactNode, type Ref, type SetStateAction } from "react";
 import { Button, Input, InputNumber, Popover, Tooltip } from "antd";
 import type { TextAreaRef } from "antd/es/input/TextArea";
-import { ArrowLeft, ArrowRight, BookOpen, ChevronDown, History, ImagePlus, ScanText, SlidersHorizontal, Sparkles, Wand2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, ChevronDown, History, ImagePlus, PanelsTopLeft, ScanText, SlidersHorizontal, Sparkles, Wand2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 
 import { ImageSettingsPanel } from "@/components/image-settings-panel";
 import { ReferenceSizeBadge } from "@/components/image-tools/reference-image-tool";
@@ -96,6 +97,7 @@ export function WorkbenchComposer({
     const theme = useCanvasTheme();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [assist, setAssist] = useState<PromptAssistMode | null>(null);
+    const navigate = useNavigate();
     const [dragging, setDragging] = useState(false);
     const account = useMainAccountStore((state) => state.account);
 
@@ -333,6 +335,14 @@ export function WorkbenchComposer({
                                 <Chip onClick={onOpenInspiration}>
                                     <BookOpen className="size-3.5" />
                                     <span className="max-md:hidden">{t("studio.composer.library")}</span>
+                                </Chip>
+                            </span>
+                        </Tooltip>
+                        <Tooltip title={t("studio.composer.comicTip")}>
+                            <span>
+                                <Chip onClick={() => navigate("/comic")}>
+                                    <PanelsTopLeft className="size-3.5" />
+                                    <span className="max-md:hidden">{t("studio.composer.comic")}</span>
                                 </Chip>
                             </span>
                         </Tooltip>

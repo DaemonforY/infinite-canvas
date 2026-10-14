@@ -1,9 +1,10 @@
-import { Compass, FileText, ImageDown, ImagePlus, Images, Maximize2, Settings2, Video, WandSparkles } from "lucide-react";
+import { BookOpen, Compass, FileText, ImageDown, ImagePlus, Images, Maximize2, Settings2, Video, WandSparkles } from "lucide-react";
 
 // Top navigation: 生图 first (it is where most people work), the rest behind 「更多」.
 // `primary` items are always in the bar; the others are in the 更多 menu (desktop) and below a divider (mobile).
 export const navigationTools = [
     { slug: "image", icon: ImagePlus, primary: true },
+    { slug: "comic", icon: BookOpen, primary: true },
     { slug: "video", icon: Video, primary: true },
     { slug: "explore", icon: Compass, primary: true },
     { slug: "assets", icon: Images, primary: true },
