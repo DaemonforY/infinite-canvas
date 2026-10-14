@@ -1047,7 +1047,7 @@ export default {
             styleTitle: "选个画风",
             styleHint: "整部漫画都用这个画风，每一格风格统一",
             handraw: "更多手绘风格",
-            handrawCount: "327 种 →",
+            handrawCount: "273 种 →",
             handrawTitle: "从手绘风格图鉴里选画风",
             handrawSearch: "搜索风格，比如：水彩、Ghibli、木刻",
             handrawEmpty: "没有找到风格，换个关键词试试",

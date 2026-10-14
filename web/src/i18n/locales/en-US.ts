@@ -1047,7 +1047,7 @@ export default {
             styleTitle: "Pick a style",
             styleHint: "the whole comic uses one style",
             handraw: "More hand-drawn styles",
-            handrawCount: "327 →",
+            handrawCount: "273 →",
             handrawTitle: "Pick a hand-drawn style",
             handrawSearch: "Search styles, e.g. watercolor, Ghibli, woodcut",
             handrawEmpty: "No style found, try another word",
