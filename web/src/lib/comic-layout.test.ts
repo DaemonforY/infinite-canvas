@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { cellPrompt, COMIC_STYLES, panelSegments, type ComicCharacter, type ComicPanel } from "./comic";
-import { balloonPath, bubbleBox, COMIC_LAYOUTS, coverPlacement, layoutPage, layoutScene, placeCellBubbles, ratioFor } from "./comic-layout";
+import { balloonPath, bubbleBox, COMIC_LAYOUTS, coverPlacement, layoutPage, layoutScene, pageLabelBox, placeCellBubbles, placeSlideBubbles, ratioFor } from "./comic-layout";
 
 const measure = (text: string, size: number) => Array.from(text).length * size;
 
@@ -120,5 +120,84 @@ describe("cell prompts", () => {
         expect(prompt).toContain("阿橘是图片1里的角色");
         expect(prompt).toContain("不要画漫画分格边框、对话气泡");
         expect(panelSegments(panel, [cat], COMIC_STYLES[0], "cells").at(-1)?.text).toContain("留出一些干净的空白");
+    });
+});
+
+describe("小红书多图", () => {
+    test("slides parse with cover titles, captions and cliffhangers", async () => {
+        const { parseStory } = await import("./comic");
+        const story = parseStory(
+            '{"title":"上班","coverTitles":["入职第一天，我把周报交成了爪印","标题二"],"characters":[{"name":"阿橘","look":"橘猫"}],"slides":[{"beat":"封面","action":"阿橘大表情"},{"beat":"转折","action":"主管出现","caption":"下班前","hook":"周报是什么？","lines":[{"speaker":"柴主管","text":"周报呢？"}]}]}',
+            18,
+        );
+        expect(story.coverTitles).toEqual(["入职第一天，我把周报交成了爪印", "标题二"]);
+        expect(story.panels[1].caption).toBe("下班前");
+        expect(story.panels[1].hook).toBe("周报是什么？");
+        expect(story.panels[0].caption).toBeUndefined();
+    });
+
+    test("a slides request asks for a cover and a 互动页, or lets the model pick the count", async () => {
+        const { storyRequest } = await import("./comic");
+        expect(storyRequest({ idea: "猫上班", genre: "funny", panelCount: 0, format: "slides", cta: true })).toContain("5–9 张");
+        const fixed = storyRequest({ idea: "猫上班", genre: "funny", panelCount: 7, format: "slides", cta: false });
+        expect(fixed).toContain("一共 7 张");
+        expect(fixed).toContain("最后一张是结局");
+    });
+
+    test("the cover and 互动页 prompts leave room for big text", async () => {
+        const { slidePrompt } = await import("./comic");
+        const panels: ComicPanel[] = [
+            { id: "a", beat: "封面", shot: "特写", action: "大表情", place: "", characters: [], lines: [], note: "" },
+            { id: "b", beat: "互动", shot: "中景", action: "挥手", place: "", characters: [], lines: [], note: "", caption: "你呢？" },
+        ];
+        expect(slidePrompt({ panels, characters: [], style: COMIC_STYLES[0] }, 0, [])).toContain("上方 35%");
+        expect(slidePrompt({ panels, characters: [], style: COMIC_STYLES[0] }, 1, [])).toContain("上半部分");
+    });
+
+    test("default slide lettering: cover title, question, balloons and the caption bar", () => {
+        let n = 0;
+        const bubbles = placeSlideBubbles(
+            [
+                { beat: "封面", lines: [] },
+                { beat: "转折", caption: "下班前", lines: [{ text: "周报呢？", kind: "speech" }] },
+                { beat: "互动", caption: "你呢？", lines: [] },
+            ],
+            "入职第一天",
+            () => `b${++n}`,
+        );
+        expect(bubbles.map((bubble) => [bubble.panel, bubble.kind, bubble.text])).toEqual([
+            [0, "title", "入职第一天"],
+            [1, "speech", "周报呢？"],
+            [1, "caption", "下班前"],
+            [2, "title", "你呢？"],
+        ]);
+        const caption = bubbles.find((bubble) => bubble.kind === "caption")!;
+        expect(caption.y + caption.h).toBeCloseTo(1);
+    });
+
+    test("caption bars get a strip, titles none, and the page label sits top right", () => {
+        const laid = layoutScene(
+            {
+                width: 1080,
+                height: 1440,
+                bubbles: [
+                    { id: "a", panel: 0, line: 0, text: "下班前", kind: "caption", x: 0, y: 0.875, w: 1, h: 0.125, drawn: true },
+                    { id: "b", panel: 0, line: 1, text: "入职第一天", kind: "title", x: 0.05, y: 0.05, w: 0.9, h: 0.2, drawn: true },
+                ],
+            },
+            measure,
+        );
+        expect(laid[0].path).toMatch(/^M0 1260/);
+        expect(laid[1].path).toBe("");
+        expect(laid[1].lineWidths[0]).toBe(measure(laid[1].lines[0], laid[1].fontSize));
+        const label = pageLabelBox({ width: 1080, height: 1440, pageLabel: "2/7" }, measure);
+        expect(label.x + label.w).toBeLessThan(1080);
+        expect(label.y).toBeLessThan(60);
+    });
+
+    test("the note parses and strips # from tags", async () => {
+        const { parseNote } = await import("./comic");
+        expect(parseNote('好的 {"title":"入职第一天😹","body":"第一行\\n你呢？","tags":["#打工人日常","原创漫画"]}')).toEqual({ title: "入职第一天😹", body: "第一行\n你呢？", tags: ["打工人日常", "原创漫画"] });
+        expect(() => parseNote("{}")).toThrow();
     });
 });

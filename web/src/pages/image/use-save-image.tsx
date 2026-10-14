@@ -78,5 +78,6 @@ export function useSaveImage() {
         </div>
     ) : null;
 
-    return { save, free, onSale, overlay };
+    // `prepare` gives the blob a save would write (watermarked unless 创作会员), for saving many at once.
+    return { save, prepare: imageBlob, free, onSale, overlay };
 }

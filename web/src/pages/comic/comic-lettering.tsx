@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
 import { COMIC_FONT, type ComicBubble, type ComicImage, type Rect } from "@/lib/comic";
-import { bubbleFrame, canvasMeasureWeight, CELL_BORDER, coverPlacement, layoutScene, SFX_COLORS, type ComicScene } from "@/lib/comic-layout";
+import { balloonStyle, bubbleFrame, canvasMeasureWeight, CELL_BORDER, coverPlacement, layoutScene, pageLabelBox, SFX_COLORS, TITLE_HIGHLIGHT, type ComicScene } from "@/lib/comic-layout";
 import { comicImageUrl } from "./comic-api";
 
 /** The displayable URL of a stored comic image (object URLs do not survive a reload; storage keys do). */
@@ -32,7 +32,15 @@ export function ComicImageView({ image, className, alt = "" }: { image?: ComicIm
 }
 
 /** What a page is drawn from: the one-image page, or 逐格 panels in the cells of a layout. */
-export type ComicSceneSource = { width: number; height: number; image?: ComicImage; cells?: Array<{ rect: Rect; image?: ComicImage; focus?: { x: number; y: number } }>; bubbles: ComicBubble[] };
+export type ComicSceneSource = {
+    width: number;
+    height: number;
+    image?: ComicImage;
+    cells?: Array<{ rect: Rect; image?: ComicImage; focus?: { x: number; y: number }; hidden?: boolean; border?: boolean }>;
+    bubbles: ComicBubble[];
+    pageLabel?: string;
+    textScale?: number;
+};
 
 /** Resolves the stored images of a scene to URLs (for export). */
 export async function resolveScene(source: ComicSceneSource): Promise<ComicScene> {
@@ -40,9 +48,21 @@ export async function resolveScene(source: ComicSceneSource): Promise<ComicScene
         width: source.width,
         height: source.height,
         bubbles: source.bubbles,
+        pageLabel: source.pageLabel,
+        textScale: source.textScale,
         image: source.image ? await comicImageUrl(source.image) : undefined,
         cells: source.cells
-            ? await Promise.all(source.cells.map(async (cell) => ({ rect: cell.rect, focus: cell.focus, src: cell.image ? await comicImageUrl(cell.image) : undefined, imageWidth: cell.image?.width, imageHeight: cell.image?.height })))
+            ? await Promise.all(
+                  source.cells.map(async (cell) => ({
+                      rect: cell.rect,
+                      focus: cell.focus,
+                      hidden: cell.hidden,
+                      border: cell.border,
+                      src: cell.image && !cell.hidden ? await comicImageUrl(cell.image) : undefined,
+                      imageWidth: cell.image?.width,
+                      imageHeight: cell.image?.height,
+                  })),
+              )
             : undefined,
     };
 }
@@ -88,7 +108,8 @@ export function ComicSceneView({
     const pageUrl = useComicImageUrl(source.image);
     const cellUrls = useComicImageUrls((source.cells || []).map((cell) => cell.image));
     const measure = useMemo(() => canvasMeasureWeight(), []);
-    const scene: ComicScene = useMemo(() => ({ width, height, bubbles: source.bubbles, cells: source.cells?.map((cell) => ({ rect: cell.rect })) }), [width, height, source.bubbles, source.cells]);
+    const scene: ComicScene = useMemo(() => ({ width, height, bubbles: source.bubbles, textScale: source.textScale, cells: source.cells?.map((cell) => ({ rect: cell.rect })) }), [width, height, source.bubbles, source.cells, source.textScale]);
+    const label = useMemo(() => (source.pageLabel ? pageLabelBox({ width, height, pageLabel: source.pageLabel }, (text, size) => measure(text, size, 600)) : null), [source.pageLabel, width, height, measure]);
     const laid = useMemo(() => layoutScene(scene, measure), [scene, measure]);
     const stroke = Math.max(2, Math.round(Math.min(width, height) * 0.0035));
 
@@ -140,6 +161,7 @@ export function ComicSceneView({
             <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} className="absolute inset-0 size-full touch-none rounded-md bg-white" onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
                 {source.image ? pageUrl ? <image href={pageUrl} x={0} y={0} width={width} height={height} preserveAspectRatio="none" /> : <rect width={width} height={height} className="animate-pulse fill-stone-100" /> : null}
                 {source.cells?.map((cell, index) => {
+                    if (cell.hidden) return null;
                     const url = cellUrls[index];
                     const place = cell.image ? coverPlacement(cell.rect, cell.image.width || 1, cell.image.height || 1, cell.focus) : null;
                     return (
@@ -162,7 +184,7 @@ export function ComicSceneView({
                                     onClick={() => onSelectPanel?.(index)}
                                 />
                             ) : null}
-                            <rect x={cell.rect.x} y={cell.rect.y} width={cell.rect.w} height={cell.rect.h} fill="none" stroke="#111" strokeWidth={CELL_BORDER} pointerEvents="none" />
+                            {cell.border === false ? null : <rect x={cell.rect.x} y={cell.rect.y} width={cell.rect.w} height={cell.rect.h} fill="none" stroke="#111" strokeWidth={CELL_BORDER} pointerEvents="none" />}
                         </g>
                     );
                 })}
@@ -181,7 +203,7 @@ export function ComicSceneView({
                         pointerEvents="none"
                     />
                 ) : null}
-                {laid.map(({ bubble, box, path, fontSize, lines, weight }) => {
+                {laid.map(({ bubble, box, path, fontSize, lines, lineWidths, weight }) => {
                     const selected = selectedBubble === bubble.id;
                     const lineHeight = fontSize * 1.25;
                     const top = -((lines.length - 1) * lineHeight) / 2;
@@ -203,13 +225,19 @@ export function ComicSceneView({
                         >
                             {path ? (
                                 <>
-                                    <path d={path} fill="none" stroke="#111" strokeWidth={stroke * 2} strokeLinejoin="round" />
-                                    <path d={path} fill={bubble.kind === "narration" ? "#fffbea" : "#fff"} />
+                                    {balloonStyle(bubble.kind).outline ? <path d={path} fill="none" stroke="#111" strokeWidth={stroke * 2} strokeLinejoin="round" /> : null}
+                                    <path d={path} fill={balloonStyle(bubble.kind).fill} />
                                 </>
                             ) : (
                                 <rect x={box.x} y={box.y} width={box.w} height={box.h} fill="transparent" />
                             )}
                             <g transform={`translate(${box.x + box.w / 2} ${box.y + box.h / 2})${bubble.rotate ? ` rotate(${bubble.rotate})` : ""}`}>
+                                {bubble.kind === "title"
+                                    ? lines.map((_, index) => {
+                                          const w = lineWidths[index] + fontSize * 0.3;
+                                          return <rect key={`hl-${index}`} x={-w / 2} y={top + index * lineHeight + fontSize * 0.02} width={w} height={fontSize * 0.48} fill={TITLE_HIGHLIGHT} />;
+                                      })
+                                    : null}
                                 {lines.map((line, index) => (
                                     <text
                                         key={index}
@@ -248,6 +276,14 @@ export function ComicSceneView({
                         </g>
                     );
                 })}
+                {label ? (
+                    <g pointerEvents="none">
+                        <rect x={label.x} y={label.y} width={label.w} height={label.h} rx={label.h / 2} fill="rgba(0,0,0,0.45)" />
+                        <text x={label.x + label.w / 2} y={label.y + label.h / 2} fontSize={label.fontSize} fontWeight={600} fontFamily={COMIC_FONT} fill="#fff" textAnchor="middle" dominantBaseline="central">
+                            {source.pageLabel}
+                        </text>
+                    </g>
+                ) : null}
             </svg>
             {panelRects && (panelBadge || panelOverlay)
                 ? panelRects.map((rect, index) => (

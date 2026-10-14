@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button, Input, Select, Tooltip } from "antd";
-import { Lightbulb, LoaderCircle, Plus, RefreshCw, Sparkles, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Lightbulb, LoaderCircle, Plus, RefreshCw, Sparkles, Trash2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { BEAT_TIPS, SHOTS, type ComicLine, type ComicLineKind, type ComicPanel, type ComicProject } from "@/lib/comic";
@@ -18,7 +18,17 @@ export const BEAT_COLORS: Record<string, string> = {
     转机: "bg-green-600",
     产品: "bg-orange-600",
     结果: "bg-purple-600",
+    封面: "bg-rose-600",
+    交代: "bg-blue-600",
+    发展: "bg-green-600",
+    转折: "bg-orange-600",
+    高潮: "bg-purple-600",
+    反转: "bg-pink-600",
+    结局: "bg-indigo-600",
+    互动: "bg-teal-600",
 };
+
+const SLIDE_GUIDE = ["封面", "交代", "发展", "转折", "反转", "互动"];
 
 export function BeatTag({ beat }: { beat: string }) {
     if (!beat) return null;
@@ -28,8 +38,33 @@ export function BeatTag({ beat }: { beat: string }) {
 const KINDS: ComicLineKind[] = ["speech", "thought", "shout", "narration"];
 
 /** Step 1: the panels the text model wrote, every field editable, with one-tap rewrites on the side. */
-export function ComicStoryStep({ project, busy, onChange, onRewrite }: { project: ComicProject; busy: boolean; onChange: (panels: ComicPanel[]) => void; onRewrite: (change: string, panelCount?: number) => void }) {
+export function ComicStoryStep({
+    project,
+    busy,
+    onChange,
+    onRewrite,
+    onCoverTitle,
+    onInsert,
+    inserting,
+}: {
+    project: ComicProject;
+    busy: boolean;
+    onChange: (panels: ComicPanel[]) => void;
+    onRewrite: (change: string, panelCount?: number) => void;
+    /** 小红书多图 only. */
+    onCoverTitle?: (title: string) => void;
+    onInsert?: (afterIndex: number) => void;
+    inserting?: number | null;
+}) {
     const { t } = useTranslation();
+    const slides = project.format === "slides";
+    const count = project.panels.length;
+    const move = (index: number, by: number) => {
+        const next = [...project.panels];
+        const [item] = next.splice(index, 1);
+        next.splice(index + by, 0, item);
+        onChange(next);
+    };
     const [ask, setAsk] = useState("");
     const names = project.characters.map((character) => character.name);
     const quick = t("comic.story.quick", { returnObjects: true }) as string[];
@@ -50,12 +85,42 @@ export function ComicStoryStep({ project, busy, onChange, onRewrite }: { project
                         <div key={panel.id} className="flex flex-col gap-2.5 rounded-xl border border-stone-200 bg-white p-3.5 dark:border-stone-700 dark:bg-stone-900" data-testid="comic-panel-card">
                             <div className="flex items-center gap-2">
                                 <BeatTag beat={panel.beat} />
-                                <b className="text-sm text-stone-900 dark:text-stone-100">{t("comic.panelN", { n: index + 1 })}</b>
+                                <b className="text-sm text-stone-900 dark:text-stone-100">{slides ? t("comic.slides.slideN", { n: index + 1 }) : t("comic.panelN", { n: index + 1 })}</b>
                                 <span className="flex-1" />
+                                {slides ? (
+                                    <>
+                                        <Tooltip title={t("comic.slides.moveUp")}>
+                                            <Button type="text" size="small" disabled={index === 0} icon={<ArrowUp className="size-3.5" />} onClick={() => move(index, -1)} />
+                                        </Tooltip>
+                                        <Tooltip title={t("comic.slides.moveDown")}>
+                                            <Button type="text" size="small" disabled={index === count - 1} icon={<ArrowDown className="size-3.5" />} onClick={() => move(index, 1)} />
+                                        </Tooltip>
+                                        <Tooltip title={t("comic.slides.remove")}>
+                                            <Button type="text" size="small" disabled={count <= 3} icon={<Trash2 className="size-3.5" />} onClick={() => onChange(project.panels.filter((_, i) => i !== index))} />
+                                        </Tooltip>
+                                    </>
+                                ) : null}
                                 <Tooltip title={t("comic.story.rewritePanel")}>
-                                    <Button type="text" size="small" icon={<RefreshCw className="size-3.5" />} onClick={() => onRewrite(t("comic.story.rewritePanelAsk", { n: index + 1 }))} />
+                                    <Button type="text" size="small" icon={<RefreshCw className="size-3.5" />} onClick={() => onRewrite(t(slides ? "comic.slides.rewriteAsk" : "comic.story.rewritePanelAsk", { n: index + 1 }))} />
                                 </Tooltip>
                             </div>
+                            {slides && panel.beat === "封面" ? (
+                                <Field label={t("comic.slides.coverTitle")}>
+                                    <div className="flex flex-col gap-1.5">
+                                        {(project.coverTitles || []).map((title) => (
+                                            <button
+                                                key={title}
+                                                type="button"
+                                                onClick={() => onCoverTitle?.(title)}
+                                                className={`rounded-lg border px-2.5 py-1.5 text-left text-sm font-semibold ${title === project.coverTitle ? "border-rose-500 bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-200" : "border-stone-200 text-stone-700 dark:border-stone-700 dark:text-stone-200"}`}
+                                            >
+                                                {title}
+                                            </button>
+                                        ))}
+                                        <Input size="small" value={project.coverTitle || ""} onChange={(event) => onCoverTitle?.(event.target.value.slice(0, 30))} placeholder={t("comic.slides.coverTitlePlaceholder")} />
+                                    </div>
+                                </Field>
+                            ) : null}
                             {BEAT_TIPS[panel.beat] ? (
                                 <div className="rounded-lg bg-stone-50 px-2.5 py-1.5 text-xs leading-5 text-stone-600 dark:bg-stone-800 dark:text-stone-300">
                                     <b className="text-stone-800 dark:text-stone-100">{panel.beat}：</b>
@@ -116,10 +181,33 @@ export function ComicStoryStep({ project, busy, onChange, onRewrite }: { project
                                     ))}
                                 </div>
                             </Field>
+                            {slides && panel.beat !== "封面" ? (
+                                <Field label={panel.beat === "互动" ? t("comic.slides.question") : t("comic.slides.caption")}>
+                                    <Input value={panel.caption || ""} onChange={(event) => setPanel(index, { caption: event.target.value.slice(0, 40) })} placeholder={t("comic.slides.captionPlaceholder")} />
+                                </Field>
+                            ) : null}
+                            {slides && panel.hook ? (
+                                <div className="rounded-lg bg-rose-50 px-2.5 py-1.5 text-xs leading-5 text-rose-700 dark:bg-rose-950/40 dark:text-rose-200">
+                                    ↪ <b>{t("comic.slides.hook")}</b>
+                                    {panel.hook}
+                                </div>
+                            ) : null}
                             {names.length ? (
                                 <Field label={t("comic.story.cast")}>
                                     <Select mode="multiple" size="small" value={panel.characters} onChange={(value) => setPanel(index, { characters: value })} options={names.map((name) => ({ value: name, label: name }))} className="w-full" />
                                 </Field>
+                            ) : null}
+                            {slides && index < count - 1 && count < 18 ? (
+                                <Button
+                                    size="small"
+                                    type="dashed"
+                                    className="mt-auto"
+                                    icon={inserting === index ? <LoaderCircle className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+                                    disabled={inserting !== null && inserting !== undefined}
+                                    onClick={() => onInsert?.(index)}
+                                >
+                                    {t("comic.slides.insertAfter")}
+                                </Button>
                             ) : null}
                         </div>
                     ))}
@@ -134,9 +222,20 @@ export function ComicStoryStep({ project, busy, onChange, onRewrite }: { project
                             {item}
                         </Button>
                     ))}
-                    <Button size="small" disabled={busy} onClick={() => onRewrite(t("comic.story.toCount", { count: project.panels.length > 4 ? 4 : 6 }), project.panels.length > 4 ? 4 : 6)}>
-                        {t("comic.story.toCount", { count: project.panels.length > 4 ? 4 : 6 })}
-                    </Button>
+                    {slides ? (
+                        <>
+                            <Button size="small" disabled={busy || count <= 3} onClick={() => onRewrite(t("comic.slides.shorterAsk", { count: Math.max(3, count - 2) }), Math.max(3, count - 2))}>
+                                {t("comic.slides.shorter", { count: Math.max(3, count - 2) })}
+                            </Button>
+                            <Button size="small" disabled={busy || count >= 18} onClick={() => onRewrite(t("comic.slides.longerAsk", { count: Math.min(18, count + 2) }), Math.min(18, count + 2))}>
+                                {t("comic.slides.longer", { count: Math.min(18, count + 2) })}
+                            </Button>
+                        </>
+                    ) : (
+                        <Button size="small" disabled={busy} onClick={() => onRewrite(t("comic.story.toCount", { count: project.panels.length > 4 ? 4 : 6 }), project.panels.length > 4 ? 4 : 6)}>
+                            {t("comic.story.toCount", { count: project.panels.length > 4 ? 4 : 6 })}
+                        </Button>
+                    )}
                 </div>
                 <div className="mt-2 flex gap-1.5">
                     <Input size="small" value={ask} onChange={(event) => setAsk(event.target.value)} placeholder={t("comic.story.askPlaceholder")} onPressEnter={() => ask.trim() && onRewrite(ask)} />
@@ -146,16 +245,16 @@ export function ComicStoryStep({ project, busy, onChange, onRewrite }: { project
 
                 <h3 className="mb-2 mt-6 flex items-center gap-1 text-sm font-semibold text-stone-900 dark:text-stone-100">
                     <Lightbulb className="size-4 text-(--skin-accent)" />
-                    {t("comic.story.guideTitle")}
+                    {slides ? t("comic.slides.guideTitle") : t("comic.story.guideTitle")}
                 </h3>
                 <div className="space-y-1.5 rounded-xl bg-(--skin-accent)/5 p-3 text-xs leading-5 text-stone-600 dark:text-stone-300">
-                    {["起", "承", "转", "合"].map((beat) => (
+                    {(slides ? SLIDE_GUIDE : ["起", "承", "转", "合"]).map((beat) => (
                         <div key={beat} className="flex items-start gap-2">
                             <BeatTag beat={beat} />
-                            <span>{t(`comic.story.guide.${beat}`)}</span>
+                            <span>{slides ? BEAT_TIPS[beat] : t(`comic.story.guide.${beat}`)}</span>
                         </div>
                     ))}
-                    <div className="pt-1">{t("comic.story.guide.more")}</div>
+                    <div className="pt-1">{slides ? t("comic.slides.guideMore") : t("comic.story.guide.more")}</div>
                 </div>
 
                 {project.characters.length ? (

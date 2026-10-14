@@ -12,18 +12,25 @@ import {
     panelSegments,
     parseStory,
     placeBubbles,
+    NOTE_INSTRUCTION,
+    noteRequest,
+    parseNote,
+    slideInsertRequest,
+    slidePrompt,
+    SLIDES_INSTRUCTION,
     STORY_INSTRUCTION,
     storyRequest,
     type ComicCellVersion,
     type ComicCharacter,
     type ComicImage,
+    type ComicNote,
     type ComicPage,
     type ComicProject,
     type ComicStory,
     type ComicStyleChoice,
     type StoryInput,
 } from "@/lib/comic";
-import { layoutPage, placeCellBubbles, ratioFor } from "@/lib/comic-layout";
+import { layoutPage, placeCellBubbles, placeSlideBubbles, ratioFor, SLIDE_HEIGHT, SLIDE_TEXT_SCALE, SLIDE_WIDTH } from "@/lib/comic-layout";
 import { imageSizePresets } from "@/lib/media-size";
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
@@ -34,16 +41,43 @@ import type { ComicSceneSource } from "./comic-lettering";
 // The model calls of 画漫画, all on the user's own channel (text model for the story, image model for the rest).
 
 export async function writeStory(config: AiConfig, input: StoryInput, onDelta: (text: string) => void, signal?: AbortSignal) {
+    const slides = input.format === "slides";
     const answer = await requestImageQuestion(
         promptAssistConfig(config),
         [
-            { role: "system", content: STORY_INSTRUCTION },
+            { role: "system", content: slides ? SLIDES_INSTRUCTION : STORY_INSTRUCTION },
             { role: "user", content: storyRequest(input) },
         ],
         onDelta,
         { signal },
     );
-    return parseStory(answer, input.panelCount);
+    return parseStory(answer, slides ? input.panelCount || 18 : input.panelCount);
+}
+
+/** 小红书多图: one new slide written to fit after `index`. */
+export async function writeInsertedSlide(config: AiConfig, project: ComicProject, index: number) {
+    const answer = await requestImageQuestion(
+        promptAssistConfig(config),
+        [
+            { role: "system", content: SLIDES_INSTRUCTION },
+            { role: "user", content: slideInsertRequest(project, index) },
+        ],
+        () => undefined,
+    );
+    return parseStory(answer, 1).panels[0];
+}
+
+/** 笔记文案 for posting the slides. */
+export async function writeNote(config: AiConfig, project: ComicProject): Promise<ComicNote> {
+    const answer = await requestImageQuestion(
+        promptAssistConfig(config),
+        [
+            { role: "system", content: NOTE_INSTRUCTION },
+            { role: "user", content: noteRequest(project) },
+        ],
+        () => undefined,
+    );
+    return parseNote(answer);
 }
 
 export function storyOf(project: ComicProject): ComicStory {
@@ -172,13 +206,43 @@ function panelText(project: ComicProject, panelIndex: number) {
 }
 
 export function cellRatio(project: ComicProject, panelIndex: number) {
+    // Slides are 3:4; they are drawn at 2:3 (1024×1536, the closest size the model returns reliably) and cropped.
+    if (project.format === "slides") return "2:3";
     return ratioFor(projectLayout(project).cells[panelIndex]);
+}
+
+/** The prompt a panel (or slide) is drawn from. */
+export function panelPrompt(project: ComicProject, panelIndex: number) {
+    const characters = panelSheetCharacters(project, panelIndex);
+    return project.format === "slides" ? slidePrompt(project, panelIndex, characters) : cellPrompt(project, panelIndex, characters, cellRatio(project, panelIndex));
+}
+
+/** 小红书多图: lettering of every slide (the defaults until the user edits them). */
+export function slideBubbles(project: ComicProject) {
+    return project.cellBubbles ?? placeSlideBubbles(project.panels, project.coverTitle || project.coverTitles?.[0] || project.title, nanoid);
+}
+
+/** One slide as a scene: full-bleed art, its own lettering and the page number. */
+export function slideSource(project: ComicProject, index: number, bubbles = slideBubbles(project)): ComicSceneSource {
+    const rect = { x: 0, y: 0, w: SLIDE_WIDTH, h: SLIDE_HEIGHT };
+    return {
+        width: SLIDE_WIDTH,
+        height: SLIDE_HEIGHT,
+        // Every panel has a frame so bubbles keep their panel index; only this one is drawn.
+        cells: project.panels.map((panel, i) => {
+            const cell = project.cells?.[panel.id];
+            return { rect, image: i === index ? cell?.versions[cell.version]?.image : undefined, focus: cell?.focus, hidden: i !== index, border: false };
+        }),
+        bubbles: bubbles.filter((bubble) => bubble.panel === index),
+        pageLabel: project.pageNumbers === false || index === 0 ? undefined : `${index + 1}/${project.panels.length}`,
+        textScale: SLIDE_TEXT_SCALE,
+    };
 }
 
 export async function drawCell(config: AiConfig, project: ComicProject, panelIndex: number): Promise<ComicCellVersion> {
     const characters = panelSheetCharacters(project, panelIndex);
     const ratio = cellRatio(project, panelIndex);
-    const prompt = cellPrompt(project, panelIndex, characters, ratio);
+    const prompt = panelPrompt(project, panelIndex);
     const references = await Promise.all(characters.map((character, index) => sheetReference(chosenSheet(character)!, index)));
     const request = comicRequest(config, ratio);
     const result = references.length ? await requestEdit(request, prompt, references) : await requestGeneration(request, prompt);
@@ -198,6 +262,7 @@ export async function editCell(config: AiConfig, project: ComicProject, panelInd
 
 /** What the page shows: the current one-image page, or the drawn panels in the layout's cells. */
 export function sceneSource(project: ComicProject): ComicSceneSource | null {
+    if (project.format === "slides") return slideSource(project, 0);
     if ((project.mode || "page") === "page") {
         const page = project.pages[project.page];
         if (!page) return null;

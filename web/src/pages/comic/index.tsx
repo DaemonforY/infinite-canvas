@@ -4,18 +4,22 @@ import { ArrowLeft, ArrowRight, Check, ChevronLeft } from "lucide-react";
 import { nanoid } from "nanoid";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
+import { saveAs } from "file-saver";
 
 import { useCopyText } from "@/hooks/use-copy-text";
-import { cellPrompt, episodeSummary, fallbackTitle, pagePrompt, type ComicBubble, type ComicCellVersion, type ComicCharacter, type ComicLayoutId, type ComicMode, type ComicPanel, type ComicProject, type ComicStep, type ComicStory } from "@/lib/comic";
-import { placeCellBubbles, renderScene } from "@/lib/comic-layout";
+import { episodeSummary, fallbackTitle, pagePrompt, type ComicBubble, type ComicCellVersion, type ComicCharacter, type ComicLayoutId, type ComicMode, type ComicPanel, type ComicProject, type ComicStep, type ComicStory } from "@/lib/comic";
+import { placeCellBubbles, placeSlideBubbles, renderScene, SLIDE_HEIGHT, SLIDE_WIDTH } from "@/lib/comic-layout";
+import { createZip } from "@/lib/zip";
 import { promptAssistConfig } from "@/lib/prompt-assist";
 import { uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { modelOptionName, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { usePublishWorkStore } from "@/stores/use-publish-work-store";
-import { membershipLink, useSaveImage } from "../image/use-save-image";
-import { cellRatio, drawCell, drawCharacterSheet, drawPage, editCell, letter, panelSheetCharacters, redrawPanel, sceneSource, sheetCharacters, storyOf, writeStory } from "./comic-api";
+import { isWeChatBrowser, membershipLink, useSaveImage } from "../image/use-save-image";
+import { drawCell, drawCharacterSheet, drawPage, editCell, letter, panelPrompt, redrawPanel, sceneSource, sheetCharacters, slideBubbles, slideSource, storyOf, writeInsertedSlide, writeNote, writeStory } from "./comic-api";
 import { resolveScene } from "./comic-lettering";
+import { SlideGallery } from "./comic-slide-gallery";
+import { ComicSlidesLetterStep } from "./comic-slides-letter";
 import { ComicCharactersStep } from "./comic-characters-step";
 import { ComicLetterStep } from "./comic-letter-step";
 import { ComicPageStep } from "./comic-page-step";
@@ -36,6 +40,11 @@ function applyStory(project: Pick<ComicProject, "characters"> & { panels?: Comic
     // Panel ids stay by position, so panels already drawn one by one (逐格) keep their art.
     const panels: ComicPanel[] = story.panels.map((panel, index) => ({ ...panel, id: project.panels?.[index]?.id || nanoid() }));
     return { characters, panels };
+}
+
+/** A new 小红书多图 project: drawn slide by slide (逐格) with the model's cover titles. */
+function slideFields(story: ComicStory, cta: boolean): Partial<ComicProject> {
+    return { format: "slides", mode: "cells", cta, coverTitles: story.coverTitles || [], coverTitle: story.coverTitles?.[0] || story.title };
 }
 
 export default function ComicPage() {
@@ -103,6 +112,7 @@ function useStoryStarter() {
                 panelCount: story.panels.length,
                 style: input.style,
                 ...applyStory({ characters: cast }, story),
+                ...(input.format === "slides" ? slideFields(story, input.cta) : {}),
                 pages: [],
                 page: 0,
                 step: "story",
@@ -120,7 +130,16 @@ function useStoryStarter() {
             const episode = Math.max(...episodes.map((item) => item.series?.episode || 1), 1) + 1;
             const story = await writeStory(
                 effectiveConfig,
-                { idea, genre: base.genre, panelCount: base.panels.length, cast: base.characters, episode, previously: episodes.slice(-3).map((item) => episodeSummary(item.series ? item : { ...item, series })) },
+                {
+                    idea,
+                    genre: base.genre,
+                    panelCount: base.format === "slides" ? 0 : base.panels.length,
+                    cast: base.characters,
+                    episode,
+                    previously: episodes.slice(-3).map((item) => episodeSummary(item.series ? item : { ...item, series })),
+                    format: base.format,
+                    cta: base.cta,
+                },
                 onDelta,
             );
             const now = Date.now();
@@ -134,6 +153,7 @@ function useStoryStarter() {
                 mode: base.mode,
                 layout: base.layout,
                 ...applyStory({ characters: base.characters }, story),
+                ...(base.format === "slides" ? { ...slideFields(story, Boolean(base.cta)), pageNumbers: base.pageNumbers } : {}),
                 pages: [],
                 page: 0,
                 step: "story",
@@ -195,7 +215,7 @@ function ComicEditor({ id }: { id: string }) {
     const navigate = useNavigate();
     const copyText = useCopyText();
     const addAsset = useAssetStore((state) => state.addAsset);
-    const { save: saveImage, free, onSale, overlay } = useSaveImage();
+    const { save: saveImage, prepare, free, onSale, overlay } = useSaveImage();
     const { effectiveConfig, imageConfig, readyText, readyImage } = useReadyCheck();
     const [project, setProject] = useState<ComicProject | null | undefined>(undefined);
     const projectRef = useRef<ComicProject | null>(null);
@@ -205,11 +225,17 @@ function ComicEditor({ id }: { id: string }) {
     const [drawing, setDrawing] = useState<Record<string, true>>({});
     const [pageBusy, setPageBusy] = useState<{ label: string; startedAt: number } | null>(null);
     const [cellBusy, setCellBusy] = useState<Record<string, number>>({});
+    /** Panels waiting for a free drawing slot (two draw at a time). */
+    const [cellQueued, setCellQueued] = useState<Record<string, true>>({});
     const starter = useStoryStarter();
     const [libraryOpen, setLibraryOpen] = useState(false);
     const [nextOpen, setNextOpen] = useState(false);
     const [episodes, setEpisodes] = useState<ComicProject[]>([]);
     const [seriesPublishing, setSeriesPublishing] = useState(false);
+    const [inserting, setInserting] = useState<number | null>(null);
+    const [noteBusy, setNoteBusy] = useState(false);
+    const [slidesBusy, setSlidesBusy] = useState(false);
+    const [gallery, setGallery] = useState<{ urls: string[]; index: number; saving: boolean } | null>(null);
 
     useEffect(() => {
         mountedRef.current = true;
@@ -263,14 +289,29 @@ function ComicEditor({ id }: { id: string }) {
     const hasArt = mode === "page" ? Boolean(page) : project.panels.some((panel) => project.cells?.[panel.id]?.versions.length);
     const canEnter = (step: ComicStep) => (step === "letter" ? hasArt : true);
     // 逐格 lettering starts from the story's lines in default places, made once so the ids stay put.
-    const goStep = (step: ComicStep) => canEnter(step) && patch((current) => ({ ...current, step, ...(step === "letter" && (current.mode || "page") === "cells" && !current.cellBubbles ? { cellBubbles: placeCellBubbles(current.panels, nanoid) } : {}) }));
+    const goStep = (step: ComicStep) =>
+        canEnter(step) &&
+        patch((current) => ({
+            ...current,
+            step,
+            ...(step === "letter" && (current.mode || "page") === "cells" && !current.cellBubbles
+                ? { cellBubbles: current.format === "slides" ? placeSlideBubbles(current.panels, current.coverTitle || current.title, nanoid) : placeCellBubbles(current.panels, nanoid) }
+                : {}),
+        }));
 
     const rewrite = async (change: string, panelCount = project.panels.length) => {
         if (!readyText()) return;
         setStoryBusy(true);
         try {
-            const story = await writeStory(effectiveConfig, { idea: project.idea, genre: project.genre, panelCount, previous: storyOf(project), change }, () => undefined);
-            patch((current) => ({ ...current, ...applyStory(current, story), panelCount: story.panels.length, title: current.title || story.title, cellBubbles: undefined }));
+            const story = await writeStory(effectiveConfig, { idea: project.idea, genre: project.genre, panelCount, previous: storyOf(project), change, format: project.format, cta: project.cta }, () => undefined);
+            patch((current) => ({
+                ...current,
+                ...applyStory(current, story),
+                panelCount: story.panels.length,
+                title: current.title || story.title,
+                cellBubbles: undefined,
+                ...(current.format === "slides" && story.coverTitles?.length ? { coverTitles: story.coverTitles, coverTitle: story.coverTitles.includes(current.coverTitle || "") ? current.coverTitle : story.coverTitles[0] } : {}),
+            }));
             message.success(t("comic.story.rewritten"));
         } catch (error) {
             message.error(error instanceof SyntaxError ? t("comic.start.parseFailed") : errorText(error, t("comic.start.failed")));
@@ -338,13 +379,17 @@ function ComicEditor({ id }: { id: string }) {
     /** 逐格: draws panels, two at a time (each takes a minute or two); each result becomes that panel's newest version. */
     const drawCells = async (indices: number[]) => {
         if (!readyImage()) return;
-        const queue = indices.map((index) => project.panels[index]).filter((panel) => panel && !cellBusy[panel.id]);
-        const startedAt = Date.now();
-        setCellBusy((value) => Object.fromEntries([...Object.entries(value), ...queue.map((panel) => [panel.id, startedAt] as const)]));
+        const queue = indices.map((index) => project.panels[index]).filter((panel) => panel && !cellBusy[panel.id] && !cellQueued[panel.id]);
+        setCellQueued((value) => ({ ...value, ...Object.fromEntries(queue.map((panel) => [panel.id, true as const])) }));
         const run = async (panel: ComicPanel) => {
             const current = projectRef.current!;
             const index = current.panels.findIndex((item) => item.id === panel.id);
             try {
+                setCellQueued((value) => {
+                    const next = { ...value };
+                    delete next[panel.id];
+                    return next;
+                });
                 if (index < 0) return;
                 setCellBusy((value) => ({ ...value, [panel.id]: Date.now() }));
                 addCellVersion(panel.id, await drawCell(imageConfig, current, index));
@@ -411,9 +456,110 @@ function ComicEditor({ id }: { id: string }) {
 
     /** The prompt published with the comic: the page prompt, or every panel's prompt in order. */
     const comicPrompt = () =>
-        mode === "page"
-            ? pagePrompt(project, sheetCharacters(project))
-            : project.panels.map((_, index) => `【${t("comic.panelN", { n: index + 1 })}】${cellPrompt(project, index, panelSheetCharacters(project, index), cellRatio(project, index))}`).join("\n\n");
+        mode === "page" ? pagePrompt(project, sheetCharacters(project)) : project.panels.map((_, index) => `【${t(project.format === "slides" ? "comic.slides.slideN" : "comic.panelN", { n: index + 1 })}】${panelPrompt(project, index)}`).join("\n\n");
+
+    /** 小红书多图: every slide with its lettering, as PNG blobs. */
+    const slideBlobs = async () => {
+        const current = projectRef.current!;
+        const bubbles = slideBubbles(current);
+        const blobs: Blob[] = [];
+        for (let i = 0; i < current.panels.length; i++) blobs.push(await renderScene(await resolveScene(slideSource(current, i, bubbles))));
+        return blobs;
+    };
+
+    const preview = async (index: number) => {
+        setSlidesBusy(true);
+        try {
+            setGallery({ urls: (await slideBlobs()).map((blob) => URL.createObjectURL(blob)), index, saving: false });
+        } catch (error) {
+            message.error(errorText(error, t("studio.save.failed")));
+        } finally {
+            setSlidesBusy(false);
+        }
+    };
+
+    /** Saves every slide: watermarked unless 创作会员; a zip on a computer, one long-press at a time on phones / WeChat. */
+    const saveAll = async () => {
+        setSlidesBusy(true);
+        try {
+            const blobs = await slideBlobs();
+            const ready: Blob[] = [];
+            for (const blob of blobs) {
+                const url = URL.createObjectURL(blob);
+                ready.push(await prepare({ dataUrl: url, mimeType: "image/png", width: SLIDE_WIDTH, height: SLIDE_HEIGHT }));
+                URL.revokeObjectURL(url);
+            }
+            const name = (project.coverTitle || project.title || "comic").replace(/[\\/:*?"<>|\s]+/g, "_").slice(0, 30);
+            if (isWeChatBrowser() || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+                setGallery({ urls: ready.map((blob) => URL.createObjectURL(blob)), index: 0, saving: true });
+                return;
+            }
+            const ext = (blob: Blob) => (blob.type === "image/jpeg" ? "jpg" : blob.type === "image/webp" ? "webp" : "png");
+            saveAs(await createZip(ready.map((blob, i) => ({ name: `${String(i + 1).padStart(2, "0")}.${ext(blob)}`, data: blob }))), `${name}.zip`);
+            message.success(t("comic.slides.savedZip", { count: ready.length }));
+        } catch (error) {
+            message.error(errorText(error, t("studio.save.failed")));
+        } finally {
+            setSlidesBusy(false);
+        }
+    };
+
+    const closeGallery = () =>
+        setGallery((value) => {
+            value?.urls.forEach((url) => URL.revokeObjectURL(url));
+            return null;
+        });
+
+    const publishSlides = async () => {
+        setSlidesBusy(true);
+        try {
+            const images: string[] = [];
+            for (const blob of (await slideBlobs()).slice(0, 9)) images.push((await uploadImage(blob)).url);
+            usePublishWorkStore.getState().open({
+                images,
+                prompt: comicPrompt(),
+                title: project.coverTitle || project.title,
+                model: modelOptionName(imageConfig.model),
+                params: { size: `${SLIDE_WIDTH}x${SLIDE_HEIGHT}`, comic: "slides", slides: project.panels.length },
+                source: "image_workbench",
+                ...(project.series ? { collectionTitle: project.series.title } : {}),
+            });
+        } catch (error) {
+            message.error(errorText(error, t("community.publish.failed")));
+        } finally {
+            setSlidesBusy(false);
+        }
+    };
+
+    const writeNoteNow = async () => {
+        if (!readyText()) return;
+        setNoteBusy(true);
+        try {
+            const note = await writeNote(effectiveConfig, projectRef.current!);
+            patch((current) => ({ ...current, note }));
+        } catch (error) {
+            message.error(error instanceof SyntaxError ? t("comic.start.parseFailed") : errorText(error, t("comic.start.failed")));
+        } finally {
+            setNoteBusy(false);
+        }
+    };
+
+    const insertSlide = async (index: number) => {
+        if (!readyText()) return;
+        setInserting(index);
+        try {
+            const slide = await writeInsertedSlide(effectiveConfig, projectRef.current!, index);
+            patch((current) => {
+                const panels = [...current.panels];
+                panels.splice(index + 1, 0, { ...slide, id: nanoid() });
+                return { ...current, panels, cellBubbles: undefined };
+            });
+        } catch (error) {
+            message.error(error instanceof SyntaxError ? t("comic.start.parseFailed") : errorText(error, t("comic.start.failed")));
+        } finally {
+            setInserting(null);
+        }
+    };
 
     const save = async () => {
         try {
@@ -548,7 +694,18 @@ function ComicEditor({ id }: { id: string }) {
             </div>
 
             <div className="min-h-0 flex-1">
-                {project.step === "story" ? <ComicStoryStep project={project} busy={storyBusy} onChange={(panels) => patch((current) => ({ ...current, panels }))} onRewrite={(change, count) => void rewrite(change, count)} /> : null}
+                {project.step === "story" ? (
+                    <ComicStoryStep
+                        project={project}
+                        busy={storyBusy}
+                        // Lettering of slides is keyed by position: moving or removing slides starts it afresh.
+                        onChange={(panels) => patch((current) => ({ ...current, panels, ...(panels.map((item) => item.id).join() !== current.panels.map((item) => item.id).join() ? { cellBubbles: undefined } : {}) }))}
+                        onRewrite={(change, count) => void rewrite(change, count)}
+                        onCoverTitle={(title) => patch((current) => ({ ...current, coverTitle: title, cellBubbles: current.cellBubbles?.map((bubble) => (bubble.panel === 0 && bubble.kind === "title" ? { ...bubble, text: title } : bubble)) }))}
+                        onInsert={(index) => void insertSlide(index)}
+                        inserting={inserting}
+                    />
+                ) : null}
                 {project.step === "characters" ? (
                     <ComicCharactersStep
                         project={project}
@@ -578,6 +735,7 @@ function ComicEditor({ id }: { id: string }) {
                         project={project}
                         pageBusy={pageBusy}
                         cellBusy={cellBusy}
+                        cellQueued={cellQueued}
                         onMode={(value) => patch((current) => ({ ...current, mode: value }))}
                         onLayout={(value: ComicLayoutId) => patch((current) => ({ ...current, layout: value }))}
                         onDrawCells={(indices) => void drawCells(indices)}
@@ -600,7 +758,34 @@ function ComicEditor({ id }: { id: string }) {
                         onOpenInWorkbench={(text) => navigate(`/image?prompt=${encodeURIComponent(text.slice(0, 4000))}`)}
                     />
                 ) : null}
-                {project.step === "letter" && source ? (
+                {project.step === "letter" && project.format === "slides" ? (
+                    <ComicSlidesLetterStep
+                        project={project}
+                        bubbles={slideBubbles(project)}
+                        busy={Boolean(pageBusy)}
+                        free={free}
+                        onSale={onSale}
+                        membershipHref={membershipLink("comic-slides")}
+                        noteBusy={noteBusy}
+                        saving={slidesBusy}
+                        onChange={updateBubbles}
+                        onFocus={(panel, focus) =>
+                            patch((current) => {
+                                const id = current.panels[panel].id;
+                                const cell = current.cells?.[id];
+                                return cell ? { ...current, cells: { ...current.cells, [id]: { ...cell, focus } } } : current;
+                            })
+                        }
+                        onPageNumbers={(on) => patch((current) => ({ ...current, pageNumbers: on }))}
+                        onReset={() => updateBubbles(placeSlideBubbles(project.panels, project.coverTitle || project.title, nanoid))}
+                        onPreview={(index) => void preview(index)}
+                        onWriteNote={() => void writeNoteNow()}
+                        onCopy={(text) => copyText(text)}
+                        onSaveAll={() => void saveAll()}
+                        onPublish={() => void publishSlides()}
+                        onNextEpisode={() => setNextOpen(true)}
+                    />
+                ) : project.step === "letter" && source ? (
                     <ComicLetterStep
                         project={project}
                         source={source}
@@ -629,6 +814,29 @@ function ComicEditor({ id }: { id: string }) {
                 ) : null}
             </div>
             {overlay}
+            <SlideGallery
+                open={Boolean(gallery)}
+                images={gallery?.urls || []}
+                startIndex={gallery?.index || 0}
+                title={project.coverTitle || project.title}
+                hint={gallery?.saving ? t("comic.slides.longPress") : undefined}
+                onClose={closeGallery}
+                footer={
+                    gallery?.saving
+                        ? (index, go) =>
+                              index < (gallery?.urls.length || 0) - 1 ? (
+                                  <Button type="primary" onClick={() => go(index + 1)}>
+                                      {t("comic.slides.savedNext", { n: index + 1, count: gallery?.urls.length || 0 })}
+                                  </Button>
+                              ) : (
+                                  <div className="flex flex-col items-center gap-2 text-center text-sm">
+                                      <span>{t("comic.slides.allSaved", { count: gallery?.urls.length || 0 })}</span>
+                                      {project.note ? <Button onClick={() => copyText(`${project.note!.title}\n\n${project.note!.body}\n\n${project.note!.tags.map((tag) => `#${tag}`).join(" ")}`)}>{t("comic.slides.copyNote")}</Button> : null}
+                                  </div>
+                              )
+                        : undefined
+                }
+            />
             <LibraryPicker open={libraryOpen} onClose={() => setLibraryOpen(false)} onPick={pickFromLibrary} />
             <NextEpisodeModal
                 open={nextOpen}

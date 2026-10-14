@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { formatDuration } from "@/lib/image-utils";
 import { cellPrompt, pagePrompt, panelSegments, type ComicLayoutId, type ComicMode, type ComicProject, type PromptSegmentKind } from "@/lib/comic";
 import { COMIC_LAYOUTS, layoutPage } from "@/lib/comic-layout";
-import { cellRatio, chosenSheet, panelSheetCharacters, sceneSource, scenePanelRects, sheetCharacters } from "./comic-api";
+import { cellRatio, chosenSheet, panelPrompt, panelSheetCharacters, sceneSource, scenePanelRects, sheetCharacters } from "./comic-api";
 import { ComicImageView, ComicSceneView } from "./comic-lettering";
 import { BeatTag } from "./comic-story-step";
 
@@ -47,6 +47,8 @@ export type ComicPageStepProps = {
     pageBusy: { label: string; startedAt: number } | null;
     /** 逐格: panels being drawn, by panel id (start time). */
     cellBusy: Record<string, number>;
+    /** 逐格 / slides waiting for a free drawing slot. */
+    cellQueued?: Record<string, true>;
     onMode: (mode: ComicMode) => void;
     onLayout: (layout: ComicLayoutId) => void;
     onDraw: () => void;
@@ -65,6 +67,7 @@ export function ComicPageStep(props: ComicPageStepProps) {
     const { project } = props;
     const mode = project.mode || "page";
     const busy = Boolean(props.pageBusy) || Object.keys(props.cellBusy).length > 0;
+    if (project.format === "slides") return <SlidesMode {...props} />;
     return (
         <div className="flex h-full min-h-0 flex-col">
             <div className="grid shrink-0 grid-cols-2 gap-2 px-4 pt-3 lg:px-6">
@@ -197,7 +200,7 @@ function PageMode({ project, pageBusy, onDraw, onRedrawPanel, onPickVersion, onC
     );
 }
 
-function CellsMode({ project, cellBusy, onLayout, onDrawCells, onEditCell, onPickCellVersion, onCopy, onOpenInWorkbench }: ComicPageStepProps) {
+function CellsMode({ project, cellBusy, cellQueued = {}, onLayout, onDrawCells, onEditCell, onPickCellVersion, onCopy, onOpenInWorkbench }: ComicPageStepProps) {
     const { t } = useTranslation();
     const [selected, setSelected] = useState(0);
     const [instruction, setInstruction] = useState("");
@@ -207,7 +210,7 @@ function CellsMode({ project, cellBusy, onLayout, onDrawCells, onEditCell, onPic
     const panel = project.panels[index];
     const cell = project.cells?.[panel.id];
     const current = cell?.versions[cell.version];
-    const missing = project.panels.map((item, i) => (project.cells?.[item.id]?.versions.length || cellBusy[item.id] ? -1 : i)).filter((i) => i >= 0);
+    const missing = project.panels.map((item, i) => (project.cells?.[item.id]?.versions.length || cellBusy[item.id] || cellQueued[item.id] ? -1 : i)).filter((i) => i >= 0);
     const drawnCount = project.panels.filter((item) => project.cells?.[item.id]?.versions.length).length;
     const panelBusy = Boolean(cellBusy[panel.id]);
     const anyBusy = Object.keys(cellBusy).length > 0;
@@ -294,6 +297,125 @@ function CellsMode({ project, cellBusy, onLayout, onDrawCells, onEditCell, onPic
     );
 }
 
+/** 小红书多图: every slide is drawn on its own (like 逐格); a grid of slides and the selected one up close. */
+function SlidesMode({ project, cellBusy, cellQueued = {}, onDrawCells, onEditCell, onPickCellVersion, onCopy, onOpenInWorkbench }: ComicPageStepProps) {
+    const { t } = useTranslation();
+    const [selected, setSelected] = useState(0);
+    const [instruction, setInstruction] = useState("");
+    const index = Math.min(selected, project.panels.length - 1);
+    const panel = project.panels[index];
+    const cell = project.cells?.[panel.id];
+    const current = cell?.versions[cell.version];
+    const panelBusy = Boolean(cellBusy[panel.id]);
+    const missing = project.panels.map((item, i) => (project.cells?.[item.id]?.versions.length || cellBusy[item.id] || cellQueued[item.id] ? -1 : i)).filter((i) => i >= 0);
+    const drawn = project.panels.filter((item) => project.cells?.[item.id]?.versions.length).length;
+
+    return (
+        <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4 lg:flex-row lg:overflow-hidden lg:p-6">
+            <div className="relative mx-auto aspect-[3/4] w-full max-w-sm shrink-0 overflow-hidden rounded-xl bg-stone-100 shadow-lg lg:mx-0 lg:h-full lg:w-auto lg:max-w-none dark:bg-stone-800">
+                {current ? <ComicImageView image={current.image} className="absolute inset-0 size-full object-cover" /> : null}
+                {panelBusy ? (
+                    <div className="absolute inset-0 flex items-center justify-center bg-white/70 dark:bg-stone-900/70">
+                        <Progress label={t("comic.page.cellDrawing")} startedAt={cellBusy[panel.id]} />
+                    </div>
+                ) : !current ? (
+                    <div className="absolute inset-0 flex items-center justify-center text-sm text-stone-400">{cellQueued[panel.id] ? t("comic.slides.queued") : t("comic.slides.notDrawn", { n: index + 1 })}</div>
+                ) : null}
+                <span className="absolute left-2 top-2">
+                    <BeatTag beat={panel.beat} />
+                </span>
+            </div>
+
+            <div className="flex min-w-0 flex-1 flex-col gap-3 lg:overflow-y-auto">
+                <div className="flex flex-wrap items-center gap-2">
+                    {missing.length ? (
+                        <Button type="primary" icon={<Sparkles className="size-4" />} onClick={() => onDrawCells(missing)} data-testid="comic-draw-slides">
+                            {drawn ? t("comic.slides.drawRest", { count: missing.length }) : t("comic.slides.drawAll", { count: missing.length })}
+                        </Button>
+                    ) : null}
+                    <span className="text-xs text-stone-400">{t("comic.slides.drawCost", { drawn, count: project.panels.length })}</span>
+                </div>
+                <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 xl:grid-cols-7">
+                    {project.panels.map((item, i) => {
+                        const itemCell = project.cells?.[item.id];
+                        const image = itemCell?.versions[itemCell.version]?.image;
+                        return (
+                            <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => setSelected(i)}
+                                className={`relative aspect-[3/4] overflow-hidden rounded-lg border-2 bg-stone-100 dark:bg-stone-800 ${i === index ? "border-(--skin-accent)" : "border-transparent"}`}
+                                data-testid="comic-slide-thumb"
+                            >
+                                {image ? <ComicImageView image={image} className="absolute inset-0 size-full object-cover" /> : null}
+                                {cellBusy[item.id] ? (
+                                    <span className="absolute inset-0 flex items-center justify-center bg-white/60 dark:bg-stone-900/60">
+                                        <LoaderCircle className="size-4 animate-spin text-(--skin-accent)" />
+                                    </span>
+                                ) : cellQueued[item.id] ? (
+                                    <span className="absolute inset-0 flex items-center justify-center bg-white/60 text-[10px] text-stone-500 dark:bg-stone-900/60">{t("comic.slides.queued")}</span>
+                                ) : null}
+                                <span className="absolute left-1 top-1 rounded bg-black/55 px-1 text-[10px] text-white">{i + 1}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+
+                <div className="rounded-2xl border border-stone-200 bg-white p-3 dark:border-stone-700 dark:bg-stone-900">
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <BeatTag beat={panel.beat} />
+                        <b className="text-sm text-stone-900 dark:text-stone-100">{t("comic.slides.slideN", { n: index + 1 })}</b>
+                        {cell && cell.versions.length > 1
+                            ? cell.versions.map((version, v) => (
+                                  <Tooltip key={version.createdAt} title={version.label || t("comic.page.versionN", { n: v + 1 })}>
+                                      <button
+                                          type="button"
+                                          disabled={panelBusy}
+                                          onClick={() => onPickCellVersion(index, v)}
+                                          className={`h-10 w-8 overflow-hidden rounded border-2 ${v === cell.version ? "border-(--skin-accent)" : "border-stone-200 dark:border-stone-700"}`}
+                                      >
+                                          <ComicImageView image={version.image} className="size-full object-cover" />
+                                      </button>
+                                  </Tooltip>
+                              ))
+                            : null}
+                        <span className="flex-1" />
+                        <Button size="small" icon={current ? <RefreshCw className="size-3.5" /> : <Sparkles className="size-3.5" />} disabled={panelBusy} onClick={() => onDrawCells([index])}>
+                            {current ? t("comic.slides.redraw") : t("comic.slides.draw")}
+                        </Button>
+                    </div>
+                    {current ? (
+                        <div className="flex gap-2">
+                            <Input
+                                value={instruction}
+                                onChange={(event) => setInstruction(event.target.value)}
+                                placeholder={t("comic.slides.changePlaceholder")}
+                                onPressEnter={() => instruction.trim() && !panelBusy && onEditCell(index, instruction)}
+                                disabled={panelBusy}
+                            />
+                            <Button type="primary" icon={<WandSparkles className="size-4" />} disabled={panelBusy || !instruction.trim()} onClick={() => onEditCell(index, instruction)}>
+                                {t("comic.page.change")}
+                            </Button>
+                        </div>
+                    ) : null}
+                    <div className="mt-2 text-xs text-stone-400">{t("comic.page.cellHint")}</div>
+                </div>
+
+                <PromptLesson
+                    project={project}
+                    index={index}
+                    mode="cells"
+                    title={t("comic.slides.lessonTitle", { n: index + 1 })}
+                    fullPrompt={panelPrompt(project, index)}
+                    copyLabel={t("comic.page.copyCellPrompt")}
+                    onCopy={onCopy}
+                    onOpenInWorkbench={onOpenInWorkbench}
+                />
+            </div>
+        </div>
+    );
+}
+
 export function LayoutPicker({ value, count, disabled, onChange }: { value: ComicLayoutId; count: number; disabled?: boolean; onChange: (layout: ComicLayoutId) => void }) {
     const { t } = useTranslation();
     return (
@@ -355,6 +477,7 @@ function PromptLesson({
     project,
     index,
     mode,
+    title,
     fullPrompt,
     copyLabel,
     onCopy,
@@ -363,6 +486,7 @@ function PromptLesson({
     project: ComicProject;
     index: number;
     mode: ComicMode;
+    title?: string;
     fullPrompt: string;
     copyLabel: string;
     onCopy: (text: string) => void;
@@ -376,7 +500,7 @@ function PromptLesson({
         <div className="rounded-2xl border border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-stone-900" data-testid="comic-prompt-lesson">
             <div className="mb-2 flex flex-wrap items-center gap-2">
                 <BeatTag beat={panel.beat} />
-                <b className="text-sm text-stone-900 dark:text-stone-100">{t("comic.page.lessonTitle", { n: index + 1 })}</b>
+                <b className="text-sm text-stone-900 dark:text-stone-100">{title || t("comic.page.lessonTitle", { n: index + 1 })}</b>
                 <span className="ml-auto text-xs text-stone-400">{t("comic.page.pickPanel")}</span>
             </div>
             <div className="text-sm leading-8">

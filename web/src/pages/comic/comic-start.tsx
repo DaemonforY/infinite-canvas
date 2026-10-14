@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { App, Button, Input, Modal, Popconfirm, Segmented } from "antd";
-import { BookOpen, LoaderCircle, Palette, Plus, RefreshCw, Sparkles, Trash2, UserRound } from "lucide-react";
+import { App, Button, Input, Modal, Popconfirm, Segmented, Slider, Switch } from "antd";
+import { BookOpen, GalleryHorizontal, LoaderCircle, Palette, Plus, RefreshCw, Sparkles, Trash2, UserRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { COMIC_GENRES, COMIC_PANEL_COUNTS, COMIC_STYLES, type ComicGenre, type ComicProject, type ComicStyleChoice } from "@/lib/comic";
+import { COMIC_GENRES, COMIC_PANEL_COUNTS, COMIC_STYLES, type ComicFormat, type ComicGenre, type ComicProject, type ComicStyleChoice } from "@/lib/comic";
 import { HandrawStylePicker } from "./handraw-style-picker";
 import { listLibrary, type LibraryCharacter } from "./comic-library";
 import { LibraryPicker } from "./comic-series";
 import { ComicSyncBar } from "./comic-sync-bar";
+import { SlideGallery } from "./comic-slide-gallery";
 import { ComicImageView } from "./comic-lettering";
 
 const GENRE_ICONS: Record<ComicGenre, string> = { funny: "😹", work: "💼", romance: "💕", science: "🔬", brand: "🏷️" };
@@ -15,7 +16,11 @@ const GENRE_BG: Record<ComicGenre, string> = { funny: "bg-amber-100", work: "bg-
 // A sample of each built-in style (the same cat drawn in each), in web/public/comic-styles.
 const styleSample = (id: string) => `/comic-styles/${id}.webp`;
 
-export type ComicStartInput = { idea: string; genre: ComicGenre; panelCount: number; style: ComicStyleChoice; cast: LibraryCharacter[] };
+export type ComicStartInput = { idea: string; genre: ComicGenre; panelCount: number; style: ComicStyleChoice; cast: LibraryCharacter[]; format: ComicFormat; cta: boolean };
+
+// A finished 小红书多图 comic shown as the example (web/public/comic-samples, drawn with this feature's prompts).
+const sampleUrl = (name: string) => `/comic-samples/${name}.webp`;
+const SAMPLE_SLIDES = ["xhs-1", "xhs-2", "xhs-3", "xhs-4", "xhs-5", "xhs-6", "xhs-7"];
 
 /** 画漫画 start: one idea, three optional choices, and the comics drawn before. */
 export function ComicStart({
@@ -43,6 +48,11 @@ export function ComicStart({
     const [idea, setIdea] = useState("");
     const [genre, setGenre] = useState<ComicGenre>("funny");
     const [panelCount, setPanelCount] = useState<number>(4);
+    const [format, setFormat] = useState<ComicFormat>("page");
+    /** 小红书多图: 0 lets the model choose (5–9). */
+    const [slideCount, setSlideCount] = useState(0);
+    const [cta, setCta] = useState(true);
+    const [sampleOpen, setSampleOpen] = useState(false);
     const [style, setStyle] = useState<ComicStyleChoice>(COMIC_STYLES[0]);
     const [ideaPage, setIdeaPage] = useState(0);
     const [pickerOpen, setPickerOpen] = useState(false);
@@ -75,7 +85,7 @@ export function ComicStart({
             inputRef.current?.focus();
             return;
         }
-        onStart({ idea: idea.trim(), genre, panelCount, style, cast });
+        onStart({ idea: idea.trim(), genre, panelCount: format === "slides" ? slideCount : panelCount, style, cast, format, cta: format === "slides" && cta });
     };
 
     const shownIdeas = ideas
@@ -106,7 +116,14 @@ export function ComicStart({
                         data-testid="comic-idea"
                     />
                     <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <Segmented size="small" value={panelCount} onChange={(value) => setPanelCount(Number(value))} options={COMIC_PANEL_COUNTS.map((count) => ({ value: count, label: t("comic.start.panels", { count }) }))} />
+                        {format === "page" ? (
+                            <Segmented size="small" value={panelCount} onChange={(value) => setPanelCount(Number(value))} options={COMIC_PANEL_COUNTS.map((count) => ({ value: count, label: t("comic.start.panels", { count }) }))} />
+                        ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-xs text-rose-600 dark:bg-rose-950/40 dark:text-rose-300">
+                                <GalleryHorizontal className="size-3.5" />
+                                {slideCount ? t("comic.slides.count", { count: slideCount }) : t("comic.slides.auto")}
+                            </span>
+                        )}
                         <span className="inline-flex items-center gap-1 rounded-full bg-stone-100 px-2.5 py-1 text-xs text-stone-600 dark:bg-stone-800 dark:text-stone-300">
                             <Palette className="size-3.5" />
                             {style.name}
@@ -146,6 +163,85 @@ export function ComicStart({
                         {t("comic.start.moreIdeas")}
                     </button>
                 </div>
+
+                <section className="mx-auto mt-8 max-w-3xl">
+                    <h2 className="mb-3 text-sm font-semibold text-stone-900 dark:text-stone-100">
+                        {t("comic.slides.formatTitle")} <span className="ml-1 text-xs font-normal text-stone-400">{t("comic.slides.formatHint")}</span>
+                    </h2>
+                    <div className="grid grid-cols-2 gap-3">
+                        <button
+                            type="button"
+                            onClick={() => setFormat("page")}
+                            className={`flex gap-3 rounded-xl border-2 bg-white p-3 text-left dark:bg-stone-900 ${format === "page" ? "border-(--skin-accent)" : "border-stone-200 dark:border-stone-700"}`}
+                            data-testid="comic-format-page"
+                        >
+                            <img src={sampleUrl("page")} alt="" className="h-24 w-16 shrink-0 rounded-md object-cover object-top" />
+                            <span>
+                                <b className="block text-sm text-stone-900 dark:text-stone-100">{t("comic.slides.pageName")}</b>
+                                <span className="mt-1 block text-xs leading-5 text-stone-500">{t("comic.slides.pageDesc")}</span>
+                            </span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setFormat("slides")}
+                            className={`flex gap-3 rounded-xl border-2 bg-white p-3 text-left dark:bg-stone-900 ${format === "slides" ? "border-rose-500" : "border-stone-200 dark:border-stone-700"}`}
+                            data-testid="comic-format-slides"
+                        >
+                            <span className="flex h-24 shrink-0 gap-0.5">
+                                {[1, 2, 3].map((n) => (
+                                    <img key={n} src={sampleUrl(`xhs-${n}`)} alt="" className="h-24 w-[3.4rem] rounded-md object-cover" />
+                                ))}
+                            </span>
+                            <span>
+                                <b className="flex items-center gap-1.5 text-sm text-rose-600">
+                                    {t("comic.slides.name")}
+                                    <span className="rounded bg-teal-600 px-1 text-[10px] leading-4 text-white">{t("comic.slides.new")}</span>
+                                </b>
+                                <span className="mt-1 block text-xs leading-5 text-stone-500">{t("comic.slides.desc")}</span>
+                                <span
+                                    role="button"
+                                    tabIndex={0}
+                                    className="mt-1 inline-block text-xs text-rose-600 underline-offset-2 hover:underline"
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        setSampleOpen(true);
+                                    }}
+                                    data-testid="comic-slides-sample"
+                                >
+                                    {t("comic.slides.sample")} ›
+                                </span>
+                            </span>
+                        </button>
+                    </div>
+                    {format === "slides" ? (
+                        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-3 rounded-xl border border-rose-200 bg-rose-50/50 px-4 py-3 text-xs text-stone-600 dark:border-rose-900/50 dark:bg-rose-950/20 dark:text-stone-300">
+                            <span className="flex items-center gap-2">
+                                {t("comic.slides.howMany")}
+                                <Segmented
+                                    size="small"
+                                    value={slideCount ? "manual" : "auto"}
+                                    onChange={(value) => setSlideCount(value === "auto" ? 0 : 7)}
+                                    options={[
+                                        { value: "auto", label: t("comic.slides.autoShort") },
+                                        { value: "manual", label: t("comic.slides.manual") },
+                                    ]}
+                                />
+                            </span>
+                            {slideCount ? (
+                                <span className="flex min-w-56 flex-1 items-center gap-2">
+                                    <Slider className="flex-1" min={3} max={18} value={slideCount} onChange={(value) => setSlideCount(Number(value))} />
+                                    <span className="w-28 text-stone-500">{t("comic.slides.estimate", { count: slideCount, minutes: Math.max(1, Math.ceil(slideCount / 2)) })}</span>
+                                </span>
+                            ) : (
+                                <span className="text-stone-400">{t("comic.slides.autoHint")}</span>
+                            )}
+                            <label className="flex items-center gap-1.5">
+                                <Switch size="small" checked={cta} onChange={setCta} />
+                                {t("comic.slides.cta")}
+                            </label>
+                        </div>
+                    ) : null}
+                </section>
 
                 <section className="mt-10">
                     <h2 className="mb-3 text-sm font-semibold text-stone-900 dark:text-stone-100">
@@ -290,6 +386,7 @@ export function ComicStart({
                 </section>
             </div>
 
+            <SlideGallery open={sampleOpen} title={t("comic.slides.sampleTitle")} images={SAMPLE_SLIDES.map((name) => sampleUrl(name))} onClose={() => setSampleOpen(false)} />
             <LibraryPicker
                 open={libraryOpen}
                 picked={cast.map((item) => item.id)}

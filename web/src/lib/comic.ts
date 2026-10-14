@@ -22,6 +22,9 @@ export type ComicPanel = {
     lines: ComicLine[];
     /** One sentence on why the panel is written (and prompted) this way — the prompt lesson. */
     note: string;
+    /** 小红书多图: the caption bar at the bottom of the slide (旁白), and the cliffhanger that makes readers swipe on. */
+    caption?: string;
+    hook?: string;
 };
 
 export type ComicImage = { url: string; storageKey?: string; width: number; height: number; mimeType?: string };
@@ -41,7 +44,8 @@ export type ComicCharacter = {
     libraryId?: string;
 };
 
-export type ComicBubbleKind = ComicLineKind | "sfx";
+/** `caption`: the bar along the bottom of a 小红书 slide; `title`: big highlighted text (cover title, 互动页 question). */
+export type ComicBubbleKind = ComicLineKind | "sfx" | "caption" | "title";
 export type ComicTail = "left" | "right" | "none";
 
 /**
@@ -72,6 +76,9 @@ export type ComicStep = "story" | "characters" | "page" | "letter";
 
 /** 整页一次出 (one image for the page) or 逐格精画 (one image per panel, laid out by us). */
 export type ComicMode = "page" | "cells";
+/** 一页漫画 (4 / 6 panels on one page) or 小红书多图 (one 3:4 image per scene, 3–18 of them, swiped through). */
+export type ComicFormat = "page" | "slides";
+export type ComicNote = { title: string; body: string; tags: string[] };
 export type ComicLayoutId = "strip" | "manga" | "grid";
 
 export type ComicCellVersion = { image: ComicImage; prompt: string; label?: string; createdAt: number };
@@ -98,6 +105,16 @@ export type ComicProject = {
     cellBubbles?: ComicBubble[];
     /** 连载: episodes of one series share an id; `title` is the series name. */
     series?: ComicSeries;
+    /** 小红书多图 (slides are drawn like 逐格 panels and stored in `cells` / `cellBubbles`). */
+    format?: ComicFormat;
+    /** Whether the last slide is the 互动页. */
+    cta?: boolean;
+    coverTitles?: string[];
+    coverTitle?: string;
+    /** 笔记文案 for the post. */
+    note?: ComicNote;
+    /** Page numbers 「2/7」 on slides (on unless turned off). */
+    pageNumbers?: boolean;
     createdAt: number;
     updatedAt: number;
 };
@@ -148,6 +165,14 @@ export const BEAT_TIPS: Record<string, string> = {
     转机: "情况开始变化，引出解决办法。",
     产品: "产品自然登场，展示它怎么解决问题，不要硬广。",
     结果: "展示用了之后的好结果，情绪要正向。",
+    封面: "封面只放结果、不说原因，主角大表情，顶部留大标题，让人想点开。",
+    交代: "交代谁、在哪、要干嘛，一张图就让人看懂。",
+    发展: "顺着往下发展，一张只讲一件事，结尾留个小悬念。",
+    转折: "出意外！这一张结尾最好卡在悬念上，让人忍不住往后滑。",
+    高潮: "冲突最激烈、笑点最大的一张，画面要夸张。",
+    反转: "出人意料的反转，是读者转发的理由。",
+    结局: "给个结局或余味，情绪落下来。",
+    互动: "最后一张请读者评论：问一个和故事有关、人人能答的问题。",
 };
 
 export const SHOTS = ["远景", "中景", "近景", "特写"] as const;
@@ -167,6 +192,61 @@ export const STORY_INSTRUCTION = [
     "5. 用户写出的名字、品牌和具体内容原样使用，不要编造产品功效、数据和日期。",
 ].join("\n");
 
+/** 小红书多图: one scene per 3:4 image, swiped through; the cover and the 互动页 are slides too. */
+export const SLIDES_INSTRUCTION = [
+    "你是小红书漫画博主的编剧，帮完全不懂漫画的新手把一个点子写成小红书多图漫画：一张图讲一幕，读者一张张往后滑着看完一个故事。",
+    "只输出一个 JSON 对象，不要任何解释，不要代码块。格式：",
+    '{"title":"故事名，10 字以内","coverTitles":["封面标题 1","封面标题 2","封面标题 3"],"characters":[{"name":"角色名","role":"主角/配角","look":"固定外貌，30–60 字：物种或人物、体型、发型/毛色、五官特点、固定服装和配饰，写得具体"}],"slides":[{"beat":"封面/交代/发展/转折/高潮/反转/结局/互动","shot":"远景/中景/近景/特写","action":"谁在做什么、什么表情，20–50 字","place":"在哪里、时间和环境，10–25 字","characters":["出场角色名"],"lines":[{"speaker":"说话的角色名","text":"对白","kind":"speech/thought/shout"}],"caption":"底部字幕条的旁白，18 字以内，可以为空","hook":"这一张结尾留的悬念（让人想往后滑），可以为空","note":"一句话说明这一张为什么这样写，40 字以内，给新手看"}]}',
+    "要求：",
+    "1. 第 1 张是封面：主角特写、大表情，画面和故事的结果有关但不说破原因；不要对白和字幕。coverTitles 给 3 个封面标题，每个 20 字以内：只说结果不说原因、用「我」或主角的口吻、带反差，像小红书爆款标题。",
+    "2. 中间每张只讲一幕：交代 → 发展（可以有好几张）→ 转折 → 高潮 → 反转或结局。镜头要有变化。转折前后的几张写 hook，卡在悬念上。",
+    "3. 对白每句不超过 14 个字，每张最多 2 句；字幕条讲旁白和时间变化（「下班前……」），能用画面表达的就不写字。",
+    "4. 如果要互动页：最后一张 beat 写「互动」，主要角色对着读者挥手或摆姿势，caption 写一个和故事有关、人人能答的问题（20 字以内），lines 留空。",
+    "5. 角色 1–3 个；不要用现有动漫、影视里的角色和名人；不要血腥、暴力、色情、政治和歧视内容；用户写出的名字和具体内容原样使用。",
+].join("\n");
+
+/** Asks for one new slide to insert after `index` (fits between its neighbours). */
+export function slideInsertRequest(project: Pick<ComicProject, "title" | "panels" | "characters">, index: number) {
+    const brief = (panel: ComicPanel | undefined) => (panel ? `${panel.beat}：${panel.action}${panel.lines.length ? `（${panel.lines.map((line) => `${line.speaker}：「${line.text}」`).join(" ")}）` : ""}` : "（没有）");
+    return [
+        `这是小红书多图漫画《${project.title}》的分镜，一共 ${project.panels.length} 张：`,
+        ...project.panels.map((panel, i) => `${i + 1}. ${brief(panel)}`),
+        `请在第 ${index + 1} 张和第 ${index + 2} 张之间插入一张新的，让前后衔接得更自然或者多一个笑点。`,
+        `可用角色：${project.characters.map((item) => `${item.name}：${item.look}`).join("；")}`,
+        '只输出一个 JSON 对象：{"slides":[{这一张，字段和格式与分镜相同}]}',
+    ].join("\n");
+}
+
+/** 笔记文案: the title, body and hashtags for posting the slides on 小红书. */
+export const NOTE_INSTRUCTION = [
+    "你是小红书运营，给一组原创漫画写发布用的笔记文案。",
+    '只输出一个 JSON 对象，不要任何解释：{"title":"笔记标题，20 字以内，可以带 1 个 emoji","body":"正文 3–5 行，口语化，带 emoji，不剧透结局的反转，最后一行提一个问题引导评论","tags":["话题1","话题2","话题3","话题4","话题5"]}',
+    "话题不带 #，选小红书上常见的词，必须和这个故事的角色、场景相符（固定带上「原创漫画」）。不要编造数据，不要夸大，不要提其他平台。",
+].join("\n");
+
+export function noteRequest(project: Pick<ComicProject, "title" | "panels" | "coverTitle">) {
+    return [
+        `漫画标题：${project.coverTitle || project.title}`,
+        "分镜：",
+        ...project.panels.map((panel, i) => `${i + 1}. ${panel.action}${panel.caption ? `（字幕：${panel.caption}）` : ""}${panel.lines.length ? `（${panel.lines.map((line) => `${line.speaker}：「${line.text}」`).join(" ")}）` : ""}`),
+    ].join("\n");
+}
+
+export function parseNote(text: string): ComicNote {
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start < 0 || end <= start) throw new Error("no json");
+    const raw = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
+    const str = (value: unknown, max: number) => (typeof value === "string" ? value.trim().slice(0, max) : "");
+    const tags = (Array.isArray(raw.tags) ? raw.tags : [])
+        .map((item) => str(item, 20).replace(/^#/, ""))
+        .filter(Boolean)
+        .slice(0, 10);
+    const title = str(raw.title, 30);
+    if (!title) throw new Error("no title");
+    return { title, body: str(raw.body, 600), tags };
+}
+
 export type StoryInput = {
     idea: string;
     genre: ComicGenre;
@@ -178,6 +258,9 @@ export type StoryInput = {
     /** 连载: the episode number and what happened in the episodes before. */
     episode?: number;
     previously?: string[];
+    /** 小红书多图: a number of slides, or 0 to let the model choose 5–9; `cta` adds the 互动页. */
+    format?: ComicFormat;
+    cta?: boolean;
 };
 
 export function storyRequest(input: StoryInput) {
@@ -190,7 +273,10 @@ export function storyRequest(input: StoryInput) {
     }
     lines.push(`点子：${input.idea.trim() || (input.previously?.length ? "你来决定，顺着前面的故事自然发展" : "你来决定")}`);
     if (input.cast?.length) lines.push(`固定角色（名字和外貌原样使用，可以只用其中几个，需要时也可以加新角色）：${input.cast.map((item) => `${item.name}${item.role ? `（${item.role}）` : ""}：${item.look}`).join("；")}`);
-    lines.push(`类型：${GENRE_BRIEF[genre.id]}`, `一共 ${input.panelCount} 格，每格的 beat 依次是：${beats.join("、")}。`);
+    if (input.format === "slides") {
+        const count = input.panelCount ? `一共 ${input.panelCount} 张` : "张数按故事长短来定，一般 5–9 张";
+        lines.push(`类型：${GENRE_BRIEF[genre.id]}`, `${count}（包括封面${input.cta ? "和最后的互动页" : ""}）。第 1 张是封面${input.cta ? "，最后一张是互动页" : "，最后一张是结局"}。`);
+    } else lines.push(`类型：${GENRE_BRIEF[genre.id]}`, `一共 ${input.panelCount} 格，每格的 beat 依次是：${beats.join("、")}。`);
     if (input.previous) {
         lines.push(`上一版分镜：${JSON.stringify(input.previous)}`);
         lines.push(`这次的修改要求：${input.change?.trim() || "换一种写法"}。没有要求改动的地方尽量保留，角色外貌不要变；输出完整的新 JSON。`);
@@ -215,7 +301,7 @@ export function beatsFor(genre: ComicGenre, panelCount: number) {
     return [...out, base[base.length - 1]];
 }
 
-export type ComicStory = { title: string; characters: Array<{ name: string; role: string; look: string }>; panels: Array<Omit<ComicPanel, "id">> };
+export type ComicStory = { title: string; characters: Array<{ name: string; role: string; look: string }>; panels: Array<Omit<ComicPanel, "id">>; coverTitles?: string[] };
 
 const LINE_KINDS: ComicLineKind[] = ["speech", "thought", "shout", "narration"];
 
@@ -232,7 +318,8 @@ export function parseStory(text: string, panelCount: number): ComicStory {
         .filter((item) => item.name)
         .slice(0, 4);
     const names = new Set(characters.map((item) => item.name));
-    const panels = (Array.isArray(raw.panels) ? raw.panels : [])
+    const list = Array.isArray(raw.slides) ? raw.slides : Array.isArray(raw.panels) ? raw.panels : [];
+    const panels = list
         .map((item) => item as Record<string, unknown>)
         .map((item) => ({
             beat: str(item.beat, 6),
@@ -246,11 +333,17 @@ export function parseStory(text: string, panelCount: number): ComicStory {
                 .filter((line) => line.text)
                 .slice(0, 3),
             note: str(item.note, 120),
+            ...(str(item.caption) ? { caption: str(item.caption, 40) } : {}),
+            ...(str(item.hook) ? { hook: str(item.hook, 80) } : {}),
         }))
         .filter((panel) => panel.action)
         .slice(0, panelCount);
     if (!panels.length) throw new Error("no panels");
-    return { title: str(raw.title, 20), characters, panels };
+    const coverTitles = (Array.isArray(raw.coverTitles) ? raw.coverTitles : [])
+        .map((item) => str(item, 30))
+        .filter(Boolean)
+        .slice(0, 3);
+    return { title: str(raw.title, 20), characters, panels, ...(coverTitles.length ? { coverTitles } : {}) };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -357,6 +450,21 @@ export function cellPrompt(project: Pick<ComicProject, "panels" | "characters" |
     const segments = panelSegments(panel, project.characters, project.style, "cells").filter((segment) => segment.kind !== "style");
     lines.push(`画面：${segments.map((segment) => segment.text).join("，")}。`);
     lines.push("不要画漫画分格边框、对话气泡和旁白框，画面里不要出现任何文字、字母、数字、拟声字、签名和水印。");
+    return lines.join("\n");
+}
+
+/** 小红书多图: one slide as a vertical image; the cover and the 互动页 leave room for big text. */
+export function slidePrompt(project: Pick<ComicProject, "panels" | "characters" | "style">, panelIndex: number, sheetCharacters: ComicCharacter[]) {
+    const panel = project.panels[panelIndex];
+    const lines = [`一张竖版漫画插图（一组 ${project.panels.length} 张小红书多图漫画里的第 ${panelIndex + 1} 张），画面铺满整张图，主体在中间偏下。`, `画风：${project.style.prompt}。整组图画风统一。`];
+    if (sheetCharacters.length)
+        lines.push(`角色必须和参考图完全一致（脸型、毛色/发型、服装、配色都不能变）：${sheetCharacters.map((item, index) => `${item.name}是图片${index + 1}里的角色`).join("；")}。参考图只用来确定角色长相，不要照搬参考图的排版和背景。`);
+    const segments = panelSegments(panel, project.characters, project.style, "cells").filter((segment) => segment.kind !== "style" && segment.kind !== "space");
+    lines.push(`画面：${segments.map((segment) => segment.text).join("，")}。`);
+    if (panel.beat === "封面") lines.push("这是封面：主角特写、表情夸张，有速度线或闪光点缀；画面上方 35% 是干净的纯色背景，留给大标题。");
+    else if (panel.beat === "互动") lines.push("角色在画面下半部分，面向读者；画面上半部分是干净的浅色背景，留给文字。");
+    else lines.push(`画面上方留出一些干净的空白放对白${panel.caption ? "，底部 12% 不要放重要内容（会盖上字幕条）" : ""}。`);
+    lines.push("不要画分格边框、对话气泡和字幕框，画面里不要出现任何文字、字母、数字、拟声字、签名和水印。");
     return lines.join("\n");
 }
 
