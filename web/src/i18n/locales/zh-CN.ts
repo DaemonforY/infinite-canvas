@@ -1525,7 +1525,7 @@ export default {
             new: "新",
             desc: "一张图讲一幕，3–18 张滑着看，带封面和互动页。",
             sample: "看看成品",
-            samples: { work: "入职第一天，我把周报交成了爪印", phone: "教爸妈用手机（一张放两格 · 白底黑字标题）" },
+            samples: { work: "入职第一天，我把周报交成了爪印", phone: "教爸妈用手机（一张放两格 · 白底黑字标题）", dog: "谁才是偷吃王（对白全部自动排版）" },
             howMany: "画几张",
             autoShort: "让 AI 定",
             manual: "我来定",

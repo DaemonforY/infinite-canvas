@@ -19,11 +19,13 @@ const styleSample = (id: string) => `/comic-styles/${id}.webp`;
 export type ComicStartInput = { idea: string; genre: ComicGenre; panelCount: number; style: ComicStyleChoice; cast: LibraryCharacter[]; format: ComicFormat; cta: boolean };
 
 // Finished 小红书多图 comics shown as examples (web/public/comic-samples, drawn with this feature's prompts): one
-// slide per scene, and one with a two-panel slide and the 白底黑字 title.
+// slide per scene, one with a two-panel slide and the 白底黑字 title, and one lettered only by the defaults.
 const sampleUrl = (name: string) => `/comic-samples/${name}.webp`;
 const SAMPLES = [
     { key: "work", slides: ["xhs-1", "xhs-2", "xhs-3", "xhs-4", "xhs-5", "xhs-6", "xhs-7"] },
     { key: "phone", slides: ["xhs2-1", "xhs2-2", "xhs2-3", "xhs2-4", "xhs2-5"] },
+    // Lettered entirely by the default rules, nothing moved by hand.
+    { key: "dog", slides: ["xhs3-1", "xhs3-2", "xhs3-3", "xhs3-4", "xhs3-5", "xhs3-6", "xhs3-7"] },
 ];
 
 /** 画漫画 start: one idea, three optional choices, and the comics drawn before. */
