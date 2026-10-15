@@ -513,6 +513,9 @@ export function cellPrompt(project: Pick<ComicProject, "panels" | "characters" |
     const [w, h] = ratio.split(":").map(Number);
     const shape = w > h ? "横版" : w < h ? "竖版" : "方形";
     const lines = [`一格漫画画面（一部 ${project.panels.length} 格漫画里的第 ${panelIndex + 1} 格），${shape}构图，画面铺满整张图。`, `画风：${project.style.prompt}。`];
+    // A wide strip leaves no room above standing figures, and the balloons go on top: keep the cast small and low.
+    // (The model sometimes returns 3:2 for 21:9 and the strip is cropped from it, so nothing may touch the edges.)
+    if (w / h > 2) lines.splice(1, 0, "这一格是很宽的横条：人物画小一些（膝盖以上或全身），整体放在画面下半部分，头顶上方留出约三分之一画面高的干净背景放对白；头部不要贴着上下边缘（边缘可能会被裁掉一点）。");
     if (sheetCharacters.length)
         lines.push(`角色必须和参考图完全一致（脸型、毛色/发型、服装、配色都不能变）：${sheetCharacters.map((item, index) => `${item.name}是图片${index + 1}里的角色`).join("；")}。参考图只用来确定角色长相，不要照搬参考图的排版和背景。`);
     const segments = panelSegments(panel, project.characters, project.style, "cells").filter((segment) => segment.kind !== "style");

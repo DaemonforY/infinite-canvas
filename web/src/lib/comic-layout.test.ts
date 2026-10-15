@@ -117,6 +117,8 @@ describe("cell prompts", () => {
     test("a panel prompt asks for room for text but no balloons, and names the sheet", () => {
         const prompt = cellPrompt({ panels: [panel], characters: [cat], style: COMIC_STYLES[0] }, 0, [cat], "21:9");
         expect(prompt).toContain("横版");
+        expect(prompt).toContain("头顶上方留出约三分之一画面高的干净背景");
+        expect(cellPrompt({ panels: [panel], characters: [cat], style: COMIC_STYLES[0] }, 0, [cat], "1:1")).not.toContain("裁掉");
         expect(prompt).toContain("阿橘是图片1里的角色");
         expect(prompt).toContain("不要画漫画分格边框、对话气泡");
         expect(panelSegments(panel, [cat], COMIC_STYLES[0], "cells").at(-1)?.text).toContain("留出一些干净的空白");
