@@ -274,6 +274,8 @@ export function relayoutSlide(project: ComicProject, index: number) {
     return [...project.cellBubbles.filter((bubble) => bubble.panel !== index), ...fresh];
 }
 
+const SLIDE_FOCUS = { x: 0.5, y: 0.25 };
+
 /** One slide as a scene: full-bleed art, its own lettering and the page number. */
 export function slideSource(project: ComicProject, index: number, bubbles = slideBubbles(project)): ComicSceneSource {
     const rect = { x: 0, y: 0, w: SLIDE_WIDTH, h: SLIDE_HEIGHT };
@@ -283,7 +285,9 @@ export function slideSource(project: ComicProject, index: number, bubbles = slid
         // Every panel has a frame so bubbles keep their panel index; only this one is drawn.
         cells: project.panels.map((panel, i) => {
             const cell = project.cells?.[panel.id];
-            return { rect, image: i === index ? cell?.versions[cell.version]?.image : undefined, focus: cell?.focus, hidden: i !== index, border: false, contain: !!panel.sub };
+            // The 2:3 art is cropped to 3:4: by default more comes off the bottom (under the caption bar) than off the top,
+            // where the headroom for the balloons is.
+            return { rect, image: i === index ? cell?.versions[cell.version]?.image : undefined, focus: cell?.focus ?? SLIDE_FOCUS, hidden: i !== index, border: false, contain: !!panel.sub };
         }),
         bubbles: bubbles.filter((bubble) => bubble.panel === index),
         pageLabel: project.pageNumbers === false || index === 0 ? undefined : `${index + 1}/${project.panels.length}`,

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { cellPrompt, COMIC_STYLES, panelSegments, type ComicCharacter, type ComicPanel } from "./comic";
-import { balloonPath, bubbleBox, COMIC_LAYOUTS, coverPlacement, layoutPage, layoutScene, pageLabelBox, placeCellBubbles, placeSlideBubbles, ratioFor, SUB_LINE_BASE, titleCard, titlePaint } from "./comic-layout";
+import { balloonPath, balloonSlots, bubbleBox, COMIC_LAYOUTS, coverPlacement, layoutPage, layoutScene, pageLabelBox, placeCellBubbles, placeSlideBubbles, ratioFor, SUB_LINE_BASE, titleCard, titlePaint } from "./comic-layout";
 
 const measure = (text: string, size: number) => Array.from(text).length * size;
 
@@ -254,6 +254,54 @@ describe("小红书多图", () => {
         const boxed = layoutScene({ ...scene, titleStyle: "box" }, measure)[0];
         expect(boxed.titleStyle).toBe("box");
         expect(boxed.fontSize).toBeLessThanOrEqual(plain.fontSize);
+    });
+
+    test("balloons sit over their speaker (left to right as the prompt asks) and keep the reading order", async () => {
+        const slots = balloonSlots([
+            { text: "a", kind: "speech", speaker: "小林" },
+            { text: "b", kind: "shout", speaker: "林爸" },
+            { text: "c", kind: "speech", speaker: "小林" },
+        ]);
+        expect(slots.map((slot) => [slot!.side, slot!.row, slot!.tail])).toEqual([
+            [0, 0, "left"],
+            [1, 0, "none"],
+            [0, 1, "left"],
+        ]);
+        // The right-hand speaker talks first: the left one is read after, so it goes one row down.
+        const rightFirst = balloonSlots([
+            { text: "a", kind: "speech", speaker: "林妈" },
+            { text: "b", kind: "thought", speaker: "小林" },
+            { text: "c", kind: "speech", speaker: "林妈" },
+        ]);
+        expect(rightFirst.map((slot) => [slot!.side, slot!.row])).toEqual([
+            [0, 0],
+            [1, 0],
+            [0, 1],
+        ]);
+        const { slidePrompt, cellPrompt } = await import("./comic");
+        const panel: ComicPanel = {
+            id: "p",
+            beat: "转折",
+            shot: "中景",
+            action: "x",
+            place: "",
+            characters: [],
+            lines: [
+                { speaker: "小林", text: "爸", kind: "speech" },
+                { speaker: "林爸", text: "喂", kind: "shout" },
+            ],
+            note: "",
+        };
+        expect(slidePrompt({ panels: [panel], characters: [], style: COMIC_STYLES[0] }, 0, [])).toContain("从左到右依次是小林、林爸");
+        expect(cellPrompt({ panels: [panel], characters: [], style: COMIC_STYLES[0] }, 0, [], "1:1")).toContain("从左到右依次是小林、林爸");
+        expect(slidePrompt({ panels: [panel], characters: [], style: COMIC_STYLES[0] }, 0, [])).toContain("四分之一");
+    });
+
+    test("a line never ends with one or two characters on its own", async () => {
+        const { fitText } = await import("./comic");
+        const fit = fitText("给你们换新手机啦！", 7 * 10, 100, (text, size) => Array.from(text).length * size, 10);
+        expect(fit.lines).toHaveLength(2);
+        expect(Array.from(fit.lines[1]).length).toBeGreaterThan(2);
     });
 
     test("the note parses and strips # from tags", async () => {

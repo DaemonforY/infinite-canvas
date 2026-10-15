@@ -431,7 +431,8 @@ function spaceInstruction(lines: ComicLine[]) {
 
 /** 逐格: we letter the panel ourselves, so the art only leaves room for it. */
 function cellSpaceInstruction(lines: ComicLine[]) {
-    return lines.length ? "画面上方留出一些干净的空白放对白，不要画对话气泡，不要任何文字" : "不要画对话气泡，不要任何文字";
+    const order = standingOrder(lines);
+    return lines.length ? `${order ? `${order}，` : ""}人物头顶上方留出一些干净的空白放对白，不要画对话气泡，不要任何文字` : "不要画对话气泡，不要任何文字";
 }
 
 /** Layout of a page: rows × columns of equal panels, reading left to right, top to bottom. */
@@ -491,6 +492,17 @@ export function panelEditPrompt(panelIndex: number, instruction: string, sheetCh
 }
 
 /** 逐格: one panel as its own image; the sheets of the characters in it are 图片1, 图片2… */
+/** The people who talk in a panel, in the order the art places them (left to right) and the balloons follow. */
+export function speakerOrder(lines: Array<Pick<ComicLine, "speaker" | "kind">>) {
+    return [...new Set(lines.filter((line) => line.kind !== "narration" && line.speaker && line.speaker !== "旁白").map((line) => line.speaker))];
+}
+
+/** 「从左到右依次是…」 for two or more speakers, so default balloons land over the right person. */
+function standingOrder(lines: ComicLine[]) {
+    const speakers = speakerOrder(lines);
+    return speakers.length > 1 ? `说话的人在画面里从左到右依次是${speakers.join("、")}` : "";
+}
+
 export function cellPrompt(project: Pick<ComicProject, "panels" | "characters" | "style">, panelIndex: number, sheetCharacters: ComicCharacter[], ratio: string) {
     const panel = project.panels[panelIndex];
     const [w, h] = ratio.split(":").map(Number);
@@ -514,6 +526,7 @@ export function slidePrompt(project: Pick<ComicProject, "panels" | "characters" 
         panelSegments(item, project.characters, project.style, "cells")
             .filter((segment) => segment.kind !== "style" && segment.kind !== "space")
             .map((segment) => segment.text)
+            .concat(standingOrder(item.lines) || [])
             .join("，");
     if (panel.sub) {
         lines[0] = `一张竖版漫画（一组 ${project.panels.length} 张小红书多图漫画里的第 ${panelIndex + 1} 张），上下两格，两格一样大，中间是一条细黑边框和白色间隔；两格占满整张图，四周不要留白边。`;
@@ -525,7 +538,7 @@ export function slidePrompt(project: Pick<ComicProject, "panels" | "characters" 
     lines.push(`画面：${scene(panel)}。`);
     if (panel.beat === "封面") lines.push("这是封面：主角特写、表情夸张，有速度线或闪光点缀；画面上方 35% 是干净的纯色背景，留给大标题。");
     else if (panel.beat === "互动") lines.push("角色在画面下半部分，面向读者；画面上半部分是干净的浅色背景，留给文字。");
-    else lines.push(`画面上方留出一些干净的空白放对白${panel.caption ? "，底部 12% 不要放重要内容（会盖上字幕条）" : ""}。`);
+    else lines.push(`人物放在画面中下部，头顶上方留出约四分之一画面高的干净背景（墙面、天空等）放对白，不要让头部贴着画面上沿${panel.caption ? "；底部 12% 不要放重要内容（会盖上字幕条）" : ""}。`);
     lines.push("不要画分格边框、对话气泡和字幕框，画面里不要出现任何文字、字母、数字、拟声字、签名和水印。");
     return lines.join("\n");
 }
@@ -663,9 +676,21 @@ export function fitText(text: string, width: number, height: number, measure: Me
     const clean = text.replace(/\s+/g, " ").trim();
     for (let size = Math.floor(maxSize); size >= minSize; size--) {
         const lines = wrap(clean, width, size, measure);
-        if (lines.length * size * 1.25 <= height && lines.every((line) => measure(line, size) <= width)) return { fontSize: size, lines };
+        if (lines.length * size * 1.25 <= height && lines.every((line) => measure(line, size) <= width)) return { fontSize: size, lines: balance(clean, lines, width, size, measure) };
     }
     return { fontSize: minSize, lines: wrap(clean, width, minSize, measure) };
+}
+
+/** A last line of one or two characters (「…新手/机啦！」) is rewrapped narrower so the lines even out. */
+function balance(text: string, lines: string[], width: number, size: number, measure: Measure) {
+    const short = (list: string[]) => list.length > 1 && Array.from(list[list.length - 1].replace(/[，。！？、…）」』,.!?)]/g, "")).length <= 2;
+    if (!short(lines)) return lines;
+    for (let narrower = width * 0.95; narrower >= width * 0.5; narrower -= width * 0.05) {
+        const next = wrap(text, narrower, size, measure);
+        if (next.length !== lines.length) break;
+        if (!short(next)) return next;
+    }
+    return lines;
 }
 
 /** Breaks at punctuation when a phrase fits on a line (「阿橘，/周报呢？」), else between characters. */

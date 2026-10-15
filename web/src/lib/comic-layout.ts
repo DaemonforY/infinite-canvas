@@ -346,20 +346,41 @@ function drawBubble(context: CanvasRenderingContext2D, item: LaidBubble) {
 // ---------------------------------------------------------------------------------------------
 // Default lettering for 逐格 pages: drawn balloons in the top of each cell (the art leaves room there).
 
-export function placeCellBubbles(panels: Array<{ lines: Array<{ text: string; kind: ComicBubble["kind"] }> }>, makeId: () => string): ComicBubble[] {
+type PlacedLine = { text: string; kind: ComicBubble["kind"]; speaker?: string };
+
+/**
+ * Where each spoken line goes: the prompt asks for the speakers to stand left to right in the order they first talk,
+ * so a line sits on its speaker's side with the tail toward them. Rows keep the reading order — a balloon on the
+ * left never shares a row with an earlier one on the right.
+ */
+export function balloonSlots(lines: PlacedLine[]) {
+    const speakers = [...new Set(lines.filter((line) => line.kind !== "narration" && line.speaker && line.speaker !== "旁白").map((line) => line.speaker!))];
+    let row = -1;
+    let lastSide = 1;
+    let unknown = 0;
+    return lines.map((line) => {
+        if (line.kind === "narration") return null;
+        const index = line.speaker ? speakers.indexOf(line.speaker) : -1;
+        const side = speakers.length > 1 && index >= 0 ? (index === 0 ? 0 : 1) : speakers.length === 1 && index === 0 ? 0 : unknown++ % 2;
+        if (side <= lastSide) row++;
+        lastSide = side;
+        return { side, row, tail: (line.kind === "shout" ? "none" : side ? "right" : "left") as ComicTail };
+    });
+}
+
+export function placeCellBubbles(panels: Array<{ lines: PlacedLine[] }>, makeId: () => string): ComicBubble[] {
     const bubbles: ComicBubble[] = [];
     panels.forEach((panel, panelIndex) => {
-        let speech = 0;
         const hasNarration = panel.lines.some((line) => line.kind === "narration");
+        const slots = balloonSlots(panel.lines);
         panel.lines.forEach((line, lineIndex) => {
-            if (line.kind === "narration") {
+            const slot = slots[lineIndex];
+            if (!slot) {
                 bubbles.push({ id: makeId(), panel: panelIndex, line: lineIndex, text: line.text, kind: line.kind, x: 0.03, y: 0.04, w: 0.5, h: 0.15, drawn: true, cell: true, tail: "none" });
                 return;
             }
-            const right = speech % 2 === 1;
-            const y = (hasNarration ? 0.22 : 0.05) + Math.floor(speech / 2) * 0.3;
-            bubbles.push({ id: makeId(), panel: panelIndex, line: lineIndex, text: line.text, kind: line.kind, x: right ? 0.53 : 0.04, y, w: 0.43, h: 0.26, drawn: true, cell: true, tail: line.kind === "shout" ? "none" : right ? "right" : "left" });
-            speech++;
+            const y = (hasNarration ? 0.22 : 0.05) + slot.row * 0.3;
+            bubbles.push({ id: makeId(), panel: panelIndex, line: lineIndex, text: line.text, kind: line.kind, x: slot.side ? 0.53 : 0.04, y, w: 0.43, h: 0.26, drawn: true, cell: true, tail: slot.tail });
         });
     });
     return bubbles;
@@ -375,7 +396,7 @@ export const SLIDE_TEXT_SCALE = 1.45;
 /** Line numbers of a two-panel slide's 下格 start here, so they never collide with the 上格's. */
 export const SUB_LINE_BASE = 50;
 
-type SlideLines = Array<{ text: string; kind: ComicBubble["kind"] }>;
+type SlideLines = PlacedLine[];
 
 /**
  * Default lettering of slides (relative to the slide): the cover title or the 互动页 question as a big highlighted
@@ -387,20 +408,25 @@ export function placeSlideBubbles(panels: Array<{ beat: string; caption?: string
     panels.forEach((panel, panelIndex) => {
         const base = { panel: panelIndex, drawn: true, cell: true } as const;
         if (panel.beat === "封面") {
-            if (coverTitle) bubbles.push({ ...base, id: makeId(), line: 0, text: coverTitle, kind: "title", x: 0.05, y: 0.04, w: 0.9, h: 0.24, tail: "none" });
+            // The cover art keeps its top third clear; after the 3:4 crop a little of it is gone, so the title stays high.
+            if (coverTitle) bubbles.push({ ...base, id: makeId(), line: 0, text: coverTitle, kind: "title", x: 0.05, y: 0.02, w: 0.9, h: 0.2, tail: "none" });
             return;
         }
         if (panel.beat === "互动" && panel.caption) bubbles.push({ ...base, id: makeId(), line: 0, text: panel.caption, kind: "title", x: 0.06, y: 0.07, w: 0.88, h: 0.22, tail: "none" });
         // Two panels: shorter balloons, two rows at most per half.
         const half = !!panel.sub;
-        const place = (lines: SlideLines, top: number, lineBase: number) =>
+        const place = (lines: SlideLines, top: number, lineBase: number) => {
+            const slots = balloonSlots(lines);
             lines.forEach((line, lineIndex) => {
-                const right = lineIndex % 2 === 1;
-                const row = Math.floor(lineIndex / 2);
-                const y = half ? top + Math.min(row, 1) * 0.1 : top + row * 0.17;
-                bubbles.push({ ...base, id: makeId(), line: lineBase + lineIndex + 1, text: line.text, kind: line.kind, x: right ? 0.5 : 0.05, y, w: 0.45, h: half ? 0.09 : 0.15, tail: line.kind === "shout" ? "none" : right ? "right" : "left" });
+                // Slides have no narration boxes (the caption bar tells the story); narration reads as a top-left balloon.
+                const slot = slots[lineIndex] || { side: 0, row: 0, tail: "none" as ComicTail };
+                const y = half ? top + Math.min(slot.row, 1) * 0.1 : top + slot.row * 0.14;
+                // The page number sits in the top-right corner: the first balloon on the right stops short of it.
+                const w = slot.side && slot.row === 0 && lineBase === 0 ? 0.4 : 0.45;
+                bubbles.push({ ...base, id: makeId(), line: lineBase + lineIndex + 1, text: line.text, kind: line.kind, x: slot.side ? 0.5 : 0.05, y, w, h: half ? 0.09 : 0.13, tail: slot.tail });
             });
-        place(panel.lines, half ? 0.02 : 0.05, 0);
+        };
+        place(panel.lines, half ? 0.02 : 0.04, 0);
         if (panel.sub) place(panel.sub.lines, 0.52, SUB_LINE_BASE);
         if (panel.caption && panel.beat !== "互动") bubbles.push({ ...base, id: makeId(), line: 99, text: panel.caption, kind: "caption", x: 0, y: 0.875, w: 1, h: 0.125, tail: "none" });
     });
