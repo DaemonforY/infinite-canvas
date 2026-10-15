@@ -497,10 +497,15 @@ export function speakerOrder(lines: Array<Pick<ComicLine, "speaker" | "kind">>) 
     return [...new Set(lines.filter((line) => line.kind !== "narration" && line.speaker && line.speaker !== "旁白").map((line) => line.speaker))];
 }
 
-/** 「从左到右依次是…」 for two or more speakers, so default balloons land over the right person. */
+/**
+ * Where the speakers stand, so default balloons land over the right person: 「从左到右依次是…」 for two or more; a
+ * lone speaker stands right of centre with the upper left clear, where the balloon goes (tail down to the right).
+ */
 function standingOrder(lines: ComicLine[]) {
     const speakers = speakerOrder(lines);
-    return speakers.length > 1 ? `说话的人在画面里从左到右依次是${speakers.join("、")}` : "";
+    if (speakers.length > 1) return `说话的人在画面里从左到右依次是${speakers.join("、")}`;
+    if (speakers.length === 1) return `说话的${speakers[0]}在画面中间偏右，左上方留出空白放对白`;
+    return "";
 }
 
 export function cellPrompt(project: Pick<ComicProject, "panels" | "characters" | "style">, panelIndex: number, sheetCharacters: ComicCharacter[], ratio: string) {

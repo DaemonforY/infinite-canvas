@@ -350,8 +350,9 @@ type PlacedLine = { text: string; kind: ComicBubble["kind"]; speaker?: string };
 
 /**
  * Where each spoken line goes: the prompt asks for the speakers to stand left to right in the order they first talk,
- * so a line sits on its speaker's side with the tail toward them. Rows keep the reading order — a balloon on the
- * left never shares a row with an earlier one on the right.
+ * so a line sits on its speaker's side with the tail toward them. A lone speaker is asked to stand right of centre:
+ * their balloons stack at the upper left, tails pointing down to the right. Rows keep the reading order — a balloon
+ * on the left never shares a row with an earlier one on the right.
  */
 export function balloonSlots(lines: PlacedLine[]) {
     const speakers = [...new Set(lines.filter((line) => line.kind !== "narration" && line.speaker && line.speaker !== "旁白").map((line) => line.speaker!))];
@@ -364,7 +365,8 @@ export function balloonSlots(lines: PlacedLine[]) {
         const side = speakers.length > 1 && index >= 0 ? (index === 0 ? 0 : 1) : speakers.length === 1 && index === 0 ? 0 : unknown++ % 2;
         if (side <= lastSide) row++;
         lastSide = side;
-        return { side, row, tail: (line.kind === "shout" ? "none" : side ? "right" : "left") as ComicTail };
+        const alone = speakers.length === 1 && index === 0;
+        return { side, row, tail: (line.kind === "shout" ? "none" : side || alone ? "right" : "left") as ComicTail };
     });
 }
 

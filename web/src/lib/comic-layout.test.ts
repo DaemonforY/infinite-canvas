@@ -278,7 +278,19 @@ describe("小红书多图", () => {
             [1, 0],
             [0, 1],
         ]);
+        // One speaker stands right of centre: balloons stack at the upper left with the tail toward them.
+        expect(
+            balloonSlots([
+                { text: "a", kind: "speech", speaker: "主人" },
+                { text: "b", kind: "thought", speaker: "主人" },
+            ]).map((slot) => [slot!.side, slot!.row, slot!.tail]),
+        ).toEqual([
+            [0, 0, "right"],
+            [0, 1, "right"],
+        ]);
         const { slidePrompt, cellPrompt } = await import("./comic");
+        const solo: ComicPanel = { id: "s", beat: "交代", shot: "中景", action: "x", place: "", characters: [], lines: [{ speaker: "主人", text: "豆包？", kind: "speech" }], note: "" };
+        expect(slidePrompt({ panels: [solo], characters: [], style: COMIC_STYLES[0] }, 0, [])).toContain("说话的主人在画面中间偏右，左上方留出空白放对白");
         const panel: ComicPanel = {
             id: "p",
             beat: "转折",
