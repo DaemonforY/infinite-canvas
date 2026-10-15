@@ -302,6 +302,8 @@ describe("小红书多图", () => {
         const fit = fitText("给你们换新手机啦！", 7 * 10, 100, (text, size) => Array.from(text).length * size, 10);
         expect(fit.lines).toHaveLength(2);
         expect(Array.from(fit.lines[1]).length).toBeGreaterThan(2);
+        // A break at the comma is kept even though 「是谁？」 is short.
+        expect(fitText("你家最会偷吃的，是谁？", 9 * 10, 100, (text, size) => Array.from(text).length * size, 10).lines).toEqual(["你家最会偷吃的，", "是谁？"]);
     });
 
     test("the note parses and strips # from tags", async () => {

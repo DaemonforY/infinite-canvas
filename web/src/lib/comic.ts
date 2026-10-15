@@ -681,9 +681,12 @@ export function fitText(text: string, width: number, height: number, measure: Me
     return { fontSize: minSize, lines: wrap(clean, width, minSize, measure) };
 }
 
-/** A last line of one or two characters (「…新手/机啦！」) is rewrapped narrower so the lines even out. */
+/**
+ * A last line of one or two characters cut off mid-phrase (「…新手/机啦！」) is rewrapped narrower so the lines even
+ * out; a short line after punctuation (「…偷吃的，/是谁？」) is a natural break and stays.
+ */
 function balance(text: string, lines: string[], width: number, size: number, measure: Measure) {
-    const short = (list: string[]) => list.length > 1 && Array.from(list[list.length - 1].replace(/[，。！？、…）」』,.!?)]/g, "")).length <= 2;
+    const short = (list: string[]) => list.length > 1 && Array.from(list[list.length - 1].replace(/[，。！？、…）」』,.!?)]/g, "")).length <= 2 && !/[，。！？、；：,.!?;:…]$/.test(list[list.length - 2]);
     if (!short(lines)) return lines;
     for (let narrower = width * 0.95; narrower >= width * 0.5; narrower -= width * 0.05) {
         const next = wrap(text, narrower, size, measure);
