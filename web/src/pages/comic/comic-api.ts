@@ -16,6 +16,8 @@ import {
     noteRequest,
     parseNote,
     slideInsertRequest,
+    splitSlideRequest,
+    subSceneRequest,
     slidePrompt,
     SLIDES_INSTRUCTION,
     STORY_INSTRUCTION,
@@ -28,6 +30,7 @@ import {
     type ComicProject,
     type ComicStory,
     type ComicStyleChoice,
+    type ComicSubPanel,
     type StoryInput,
 } from "@/lib/comic";
 import { layoutPage, placeCellBubbles, placeSlideBubbles, ratioFor, SLIDE_HEIGHT, SLIDE_TEXT_SCALE, SLIDE_WIDTH } from "@/lib/comic-layout";
@@ -64,7 +67,48 @@ export async function writeInsertedSlide(config: AiConfig, project: ComicProject
         ],
         () => undefined,
     );
-    return parseStory(answer, 1).panels[0];
+    return parseStory(
+        answer,
+        1,
+        project.characters.map((item) => item.name),
+    ).panels[0];
+}
+
+/** 一张放两格: the 下格 written to follow the slide's own scene. */
+export async function writeSubScene(config: AiConfig, project: ComicProject, index: number): Promise<ComicSubPanel> {
+    const answer = await requestImageQuestion(
+        promptAssistConfig(config),
+        [
+            { role: "system", content: SLIDES_INSTRUCTION },
+            { role: "user", content: subSceneRequest(project, index) },
+        ],
+        () => undefined,
+    );
+    const { shot, action, place, characters, lines } = parseStory(
+        answer,
+        1,
+        project.characters.map((item) => item.name),
+    ).panels[0];
+    return { shot, action, place, characters, lines };
+}
+
+/** 拆成两张: one slide rewritten as two. */
+export async function writeSplitSlides(config: AiConfig, project: ComicProject, index: number) {
+    const answer = await requestImageQuestion(
+        promptAssistConfig(config),
+        [
+            { role: "system", content: SLIDES_INSTRUCTION },
+            { role: "user", content: splitSlideRequest(project, index) },
+        ],
+        () => undefined,
+    );
+    const panels = parseStory(
+        answer,
+        2,
+        project.characters.map((item) => item.name),
+    ).panels;
+    if (panels.length < 2) throw new Error("no panels");
+    return panels;
 }
 
 /** 笔记文案 for posting the slides. */
@@ -194,7 +238,8 @@ export function projectLayout(project: Pick<ComicProject, "layout" | "panels">) 
 
 /** The panel's cast with a chosen design sheet (sent as 图片1, 图片2… for that panel only). */
 export function panelSheetCharacters(project: ComicProject, panelIndex: number) {
-    const cast = new Set(project.panels[panelIndex].characters);
+    const panel = project.panels[panelIndex];
+    const cast = new Set([...panel.characters, ...(panel.sub?.characters || [])]);
     return sheetCharacters(project).filter((character) => cast.has(character.name));
 }
 
@@ -222,6 +267,13 @@ export function slideBubbles(project: ComicProject) {
     return project.cellBubbles ?? placeSlideBubbles(project.panels, project.coverTitle || project.coverTitles?.[0] || project.title, nanoid);
 }
 
+/** The lettering after one slide changed shape (two panels on or off): that slide gets its defaults again. */
+export function relayoutSlide(project: ComicProject, index: number) {
+    if (!project.cellBubbles) return undefined;
+    const fresh = placeSlideBubbles(project.panels, project.coverTitle || project.coverTitles?.[0] || project.title, nanoid).filter((bubble) => bubble.panel === index);
+    return [...project.cellBubbles.filter((bubble) => bubble.panel !== index), ...fresh];
+}
+
 /** One slide as a scene: full-bleed art, its own lettering and the page number. */
 export function slideSource(project: ComicProject, index: number, bubbles = slideBubbles(project)): ComicSceneSource {
     const rect = { x: 0, y: 0, w: SLIDE_WIDTH, h: SLIDE_HEIGHT };
@@ -236,6 +288,7 @@ export function slideSource(project: ComicProject, index: number, bubbles = slid
         bubbles: bubbles.filter((bubble) => bubble.panel === index),
         pageLabel: project.pageNumbers === false || index === 0 ? undefined : `${index + 1}/${project.panels.length}`,
         textScale: SLIDE_TEXT_SCALE,
+        titleStyle: project.titleStyle,
     };
 }
 

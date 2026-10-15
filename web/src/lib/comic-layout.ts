@@ -1,4 +1,4 @@
-import { COMIC_FONT, fitText, type ComicBubble, type ComicBubbleKind, type ComicLayoutId, type ComicTail, type Rect } from "./comic";
+import { COMIC_FONT, fitText, type ComicBubble, type ComicBubbleKind, type ComicLayoutId, type ComicTail, type ComicTitleStyle, type Rect } from "./comic";
 
 // 画漫画 pages as a "scene": a background (the one-image page, or 逐格 panels laid out in cells) plus lettering.
 // The same scene is drawn as SVG on screen and onto a canvas for export, so what is saved matches the preview.
@@ -126,6 +126,24 @@ export function balloonStyle(kind: ComicBubbleKind) {
 
 export const TITLE_HIGHLIGHT = "#fde047";
 
+/**
+ * How a slide title is painted: 荧光笔 (a yellow stroke under each line), 白底黑字 (black text on a white card) or
+ * 描边大字 (white text with a thick dark outline).
+ */
+export function titlePaint(style: ComicTitleStyle = "highlight") {
+    if (style === "outline") return { highlight: false, card: false, fill: "#fff", stroke: "#111", strokeWidth: 0.2 };
+    if (style === "box") return { highlight: false, card: true, fill: "#111", stroke: undefined, strokeWidth: 0 };
+    return { highlight: true, card: false, fill: "#111", stroke: undefined, strokeWidth: 0 };
+}
+
+/** The white card behind a 白底黑字 title, in coordinates centred on the bubble box. */
+export function titleCard(item: Pick<LaidBubble, "fontSize" | "lines" | "lineWidths">) {
+    const lineHeight = item.fontSize * 1.25;
+    const w = Math.max(0, ...item.lineWidths) + item.fontSize * 1.1;
+    const h = item.lines.length * lineHeight + item.fontSize * 0.7;
+    return { x: -w / 2, y: -h / 2, w, h, r: item.fontSize * 0.35 };
+}
+
 export const SFX_COLORS = ["#f97316", "#ef4444", "#2563eb", "#111111", "#a855f7"];
 
 // ---------------------------------------------------------------------------------------------
@@ -135,7 +153,8 @@ export const SFX_COLORS = ["#f97316", "#ef4444", "#2563eb", "#111111", "#a855f7"
 export type SceneCell = { rect: Rect; src?: string; imageWidth?: number; imageHeight?: number; focus?: { x: number; y: number }; hidden?: boolean; border?: boolean };
 /** `pageLabel`: 「2/7」 in the top-right corner of a slide. */
 /** `textScale`: bigger lettering for slides, which are read one at a time full screen. */
-export type ComicScene = { width: number; height: number; image?: string; cells?: SceneCell[]; bubbles: ComicBubble[]; pageLabel?: string; textScale?: number };
+/** `titleStyle`: how title bubbles are painted (see `titlePaint`). */
+export type ComicScene = { width: number; height: number; image?: string; cells?: SceneCell[]; bubbles: ComicBubble[]; pageLabel?: string; textScale?: number; titleStyle?: ComicTitleStyle };
 
 export type Measure = (text: string, fontSize: number, weight: number) => number;
 
@@ -150,7 +169,7 @@ export function bubbleFrame(bubble: Pick<ComicBubble, "cell" | "panel">, scene: 
     return bubble.cell && scene.cells?.[bubble.panel] ? scene.cells[bubble.panel].rect : { x: 0, y: 0, w: scene.width, h: scene.height };
 }
 
-export type LaidBubble = { bubble: ComicBubble; box: Rect; path: string; fontSize: number; weight: number; lines: string[]; lineWidths: number[]; stroke: number };
+export type LaidBubble = { bubble: ComicBubble; box: Rect; path: string; fontSize: number; weight: number; lines: string[]; lineWidths: number[]; stroke: number; titleStyle?: ComicTitleStyle };
 
 /** Everything needed to draw the lettering: balloon path, text lines and size, for SVG and canvas alike. */
 export function layoutScene(scene: ComicScene, measure: Measure): LaidBubble[] {
@@ -173,9 +192,11 @@ export function layoutScene(scene: ComicScene, measure: Measure): LaidBubble[] {
                       : bubble.kind === "caption"
                         ? maxSize * 1.05
                         : maxSize;
-        const fit = fitText(bubble.text, box.w * (1 - px * 2), box.h * (1 - py * 2), (text, size) => measure(text, size, weight), limit);
+        // A card or an outline needs a little room around the text.
+        const inset = bubble.kind === "title" && scene.titleStyle && scene.titleStyle !== "highlight" ? 0.08 : 0;
+        const fit = fitText(bubble.text, box.w * (1 - px * 2 - inset), box.h * (1 - py * 2 - inset), (text, size) => measure(text, size, weight), limit);
         const path = bubble.drawn ? balloonPath(bubble.kind, box, bubble.tail ?? (bubble.kind === "speech" ? "left" : "none")) : "";
-        return { bubble, box, path, weight, stroke, ...fit, lineWidths: fit.lines.map((line) => measure(line, fit.fontSize, weight)) };
+        return { bubble, box, path, weight, stroke, ...fit, lineWidths: fit.lines.map((line) => measure(line, fit.fontSize, weight)), titleStyle: scene.titleStyle };
     });
 }
 
@@ -279,20 +300,32 @@ function drawBubble(context: CanvasRenderingContext2D, item: LaidBubble) {
     context.textBaseline = "middle";
     const lineHeight = item.fontSize * 1.25;
     const top = -((item.lines.length - 1) * lineHeight) / 2;
+    const title = bubble.kind === "title" ? titlePaint(item.titleStyle) : null;
+    if (title?.card) {
+        const card = titleCard(item);
+        context.fillStyle = "#fff";
+        context.shadowColor = "rgba(0,0,0,0.25)";
+        context.shadowBlur = item.fontSize * 0.3;
+        context.beginPath();
+        context.roundRect(card.x, card.y, card.w, card.h, card.r);
+        context.fill();
+        context.shadowColor = "transparent";
+    }
     item.lines.forEach((line, index) => {
         // The cover title: a highlighter stroke under the lower half of each line.
-        if (bubble.kind === "title") {
+        if (title?.highlight) {
             const w = item.lineWidths[index] + item.fontSize * 0.3;
             context.fillStyle = TITLE_HIGHLIGHT;
             context.fillRect(-w / 2, top + index * lineHeight + item.fontSize * 0.02, w, item.fontSize * 0.48);
         }
-        if (bubble.kind === "sfx") {
+        const outline = bubble.kind === "sfx" ? { color: "#fff", width: 0.18 } : title?.stroke ? { color: title.stroke, width: title.strokeWidth } : null;
+        if (outline) {
             context.lineJoin = "round";
-            context.lineWidth = item.fontSize * 0.18;
-            context.strokeStyle = "#fff";
+            context.lineWidth = item.fontSize * outline.width;
+            context.strokeStyle = outline.color;
             context.strokeText(line, 0, top + index * lineHeight);
         }
-        context.fillStyle = bubble.kind === "sfx" ? bubble.color || SFX_COLORS[0] : "#111";
+        context.fillStyle = bubble.kind === "sfx" ? bubble.color || SFX_COLORS[0] : title ? title.fill : "#111";
         context.fillText(line, 0, top + index * lineHeight);
     });
     context.restore();
@@ -327,11 +360,17 @@ export const SLIDE_WIDTH = 1080;
 export const SLIDE_HEIGHT = 1440;
 export const SLIDE_TEXT_SCALE = 1.45;
 
+/** Line numbers of a two-panel slide's 下格 start here, so they never collide with the 上格's. */
+export const SUB_LINE_BASE = 50;
+
+type SlideLines = Array<{ text: string; kind: ComicBubble["kind"] }>;
+
 /**
  * Default lettering of slides (relative to the slide): the cover title or the 互动页 question as a big highlighted
- * title at the top, the lines as balloons in the top area, and the caption as a bar along the bottom.
+ * title at the top, the lines as balloons in the top area, and the caption as a bar along the bottom. A slide with
+ * two panels (`sub`) gets each panel's balloons in the top of its own half.
  */
-export function placeSlideBubbles(panels: Array<{ beat: string; caption?: string; lines: Array<{ text: string; kind: ComicBubble["kind"] }> }>, coverTitle: string, makeId: () => string): ComicBubble[] {
+export function placeSlideBubbles(panels: Array<{ beat: string; caption?: string; lines: SlideLines; sub?: { lines: SlideLines } }>, coverTitle: string, makeId: () => string): ComicBubble[] {
     const bubbles: ComicBubble[] = [];
     panels.forEach((panel, panelIndex) => {
         const base = { panel: panelIndex, drawn: true, cell: true } as const;
@@ -340,12 +379,17 @@ export function placeSlideBubbles(panels: Array<{ beat: string; caption?: string
             return;
         }
         if (panel.beat === "互动" && panel.caption) bubbles.push({ ...base, id: makeId(), line: 0, text: panel.caption, kind: "title", x: 0.06, y: 0.07, w: 0.88, h: 0.22, tail: "none" });
-        let speech = 0;
-        panel.lines.forEach((line, lineIndex) => {
-            const right = speech % 2 === 1;
-            bubbles.push({ ...base, id: makeId(), line: lineIndex + 1, text: line.text, kind: line.kind, x: right ? 0.5 : 0.05, y: 0.05 + Math.floor(speech / 2) * 0.17, w: 0.45, h: 0.15, tail: line.kind === "shout" ? "none" : right ? "right" : "left" });
-            speech++;
-        });
+        // Two panels: shorter balloons, two rows at most per half.
+        const half = !!panel.sub;
+        const place = (lines: SlideLines, top: number, lineBase: number) =>
+            lines.forEach((line, lineIndex) => {
+                const right = lineIndex % 2 === 1;
+                const row = Math.floor(lineIndex / 2);
+                const y = half ? top + Math.min(row, 1) * 0.11 : top + row * 0.17;
+                bubbles.push({ ...base, id: makeId(), line: lineBase + lineIndex + 1, text: line.text, kind: line.kind, x: right ? 0.5 : 0.05, y, w: 0.45, h: half ? 0.1 : 0.15, tail: line.kind === "shout" ? "none" : right ? "right" : "left" });
+            });
+        place(panel.lines, half ? 0.04 : 0.05, 0);
+        if (panel.sub) place(panel.sub.lines, 0.53, SUB_LINE_BASE);
         if (panel.caption && panel.beat !== "互动") bubbles.push({ ...base, id: makeId(), line: 99, text: panel.caption, kind: "caption", x: 0, y: 0.875, w: 1, h: 0.125, tail: "none" });
     });
     return bubbles;

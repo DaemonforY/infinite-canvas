@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
-import { COMIC_FONT, type ComicBubble, type ComicImage, type Rect } from "@/lib/comic";
-import { balloonStyle, bubbleFrame, canvasMeasureWeight, CELL_BORDER, coverPlacement, layoutScene, pageLabelBox, SFX_COLORS, TITLE_HIGHLIGHT, type ComicScene } from "@/lib/comic-layout";
+import { COMIC_FONT, type ComicBubble, type ComicImage, type ComicTitleStyle, type Rect } from "@/lib/comic";
+import { balloonStyle, bubbleFrame, canvasMeasureWeight, CELL_BORDER, coverPlacement, layoutScene, pageLabelBox, SFX_COLORS, TITLE_HIGHLIGHT, titleCard, titlePaint, type ComicScene } from "@/lib/comic-layout";
 import { comicImageUrl } from "./comic-api";
 
 /** The displayable URL of a stored comic image (object URLs do not survive a reload; storage keys do). */
@@ -40,6 +40,7 @@ export type ComicSceneSource = {
     bubbles: ComicBubble[];
     pageLabel?: string;
     textScale?: number;
+    titleStyle?: ComicTitleStyle;
 };
 
 /** Resolves the stored images of a scene to URLs (for export). */
@@ -50,6 +51,7 @@ export async function resolveScene(source: ComicSceneSource): Promise<ComicScene
         bubbles: source.bubbles,
         pageLabel: source.pageLabel,
         textScale: source.textScale,
+        titleStyle: source.titleStyle,
         image: source.image ? await comicImageUrl(source.image) : undefined,
         cells: source.cells
             ? await Promise.all(
@@ -108,7 +110,10 @@ export function ComicSceneView({
     const pageUrl = useComicImageUrl(source.image);
     const cellUrls = useComicImageUrls((source.cells || []).map((cell) => cell.image));
     const measure = useMemo(() => canvasMeasureWeight(), []);
-    const scene: ComicScene = useMemo(() => ({ width, height, bubbles: source.bubbles, textScale: source.textScale, cells: source.cells?.map((cell) => ({ rect: cell.rect })) }), [width, height, source.bubbles, source.cells, source.textScale]);
+    const scene: ComicScene = useMemo(
+        () => ({ width, height, bubbles: source.bubbles, textScale: source.textScale, titleStyle: source.titleStyle, cells: source.cells?.map((cell) => ({ rect: cell.rect })) }),
+        [width, height, source.bubbles, source.cells, source.textScale, source.titleStyle],
+    );
     const label = useMemo(() => (source.pageLabel ? pageLabelBox({ width, height, pageLabel: source.pageLabel }, (text, size) => measure(text, size, 600)) : null), [source.pageLabel, width, height, measure]);
     const laid = useMemo(() => layoutScene(scene, measure), [scene, measure]);
     const stroke = Math.max(2, Math.round(Math.min(width, height) * 0.0035));
@@ -203,8 +208,9 @@ export function ComicSceneView({
                         pointerEvents="none"
                     />
                 ) : null}
-                {laid.map(({ bubble, box, path, fontSize, lines, lineWidths, weight }) => {
+                {laid.map(({ bubble, box, path, fontSize, lines, lineWidths, weight, titleStyle }) => {
                     const selected = selectedBubble === bubble.id;
+                    const title = bubble.kind === "title" ? titlePaint(titleStyle) : null;
                     const lineHeight = fontSize * 1.25;
                     const top = -((lines.length - 1) * lineHeight) / 2;
                     const sfx = bubble.kind === "sfx";
@@ -232,7 +238,13 @@ export function ComicSceneView({
                                 <rect x={box.x} y={box.y} width={box.w} height={box.h} fill="transparent" />
                             )}
                             <g transform={`translate(${box.x + box.w / 2} ${box.y + box.h / 2})${bubble.rotate ? ` rotate(${bubble.rotate})` : ""}`}>
-                                {bubble.kind === "title"
+                                {title?.card
+                                    ? (() => {
+                                          const card = titleCard({ fontSize, lines, lineWidths });
+                                          return <rect x={card.x} y={card.y} width={card.w} height={card.h} rx={card.r} fill="#fff" style={{ filter: `drop-shadow(0 0 ${fontSize * 0.15}px rgba(0,0,0,0.25))` }} />;
+                                      })()
+                                    : null}
+                                {title?.highlight
                                     ? lines.map((_, index) => {
                                           const w = lineWidths[index] + fontSize * 0.3;
                                           return <rect key={`hl-${index}`} x={-w / 2} y={top + index * lineHeight + fontSize * 0.02} width={w} height={fontSize * 0.48} fill={TITLE_HIGHLIGHT} />;
@@ -246,9 +258,9 @@ export function ComicSceneView({
                                         fontSize={fontSize}
                                         fontWeight={weight}
                                         fontFamily={COMIC_FONT}
-                                        fill={sfx ? bubble.color || SFX_COLORS[0] : "#111"}
-                                        stroke={sfx ? "#fff" : undefined}
-                                        strokeWidth={sfx ? fontSize * 0.18 : undefined}
+                                        fill={sfx ? bubble.color || SFX_COLORS[0] : title ? title.fill : "#111"}
+                                        stroke={sfx ? "#fff" : title?.stroke}
+                                        strokeWidth={sfx ? fontSize * 0.18 : title?.stroke ? fontSize * title.strokeWidth : undefined}
                                         strokeLinejoin="round"
                                         paintOrder="stroke"
                                         textAnchor="middle"

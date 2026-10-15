@@ -4,8 +4,8 @@ import { BookPlus, Copy, Crown, Download, Eye, LoaderCircle, Plus, RefreshCw, Ro
 import { nanoid } from "nanoid";
 import { useTranslation } from "react-i18next";
 
-import type { ComicBubble, ComicBubbleKind, ComicProject, ComicTail } from "@/lib/comic";
-import { SFX_COLORS } from "@/lib/comic-layout";
+import { TITLE_STYLES, type ComicBubble, type ComicBubbleKind, type ComicProject, type ComicTail, type ComicTitleStyle } from "@/lib/comic";
+import { SFX_COLORS, TITLE_HIGHLIGHT } from "@/lib/comic-layout";
 import { slideSource } from "./comic-api";
 import { ComicImageView, ComicSceneView } from "./comic-lettering";
 
@@ -33,6 +33,7 @@ export function ComicSlidesLetterStep({
     onChange,
     onFocus,
     onPageNumbers,
+    onTitleStyle,
     onReset,
     onPreview,
     onWriteNote,
@@ -52,6 +53,8 @@ export function ComicSlidesLetterStep({
     onChange: (bubbles: ComicBubble[]) => void;
     onFocus: (panel: number, focus: { x: number; y: number }) => void;
     onPageNumbers: (on: boolean) => void;
+    /** For every title (the cover and the 互动页). */
+    onTitleStyle: (style: ComicTitleStyle) => void;
     onReset: () => void;
     onPreview: (index: number) => void;
     onWriteNote: () => void;
@@ -196,6 +199,17 @@ export function ComicSlidesLetterStep({
                             ) : null}
                         </div>
                     ) : null}
+                    {own.some((bubble) => bubble.kind === "title") ? (
+                        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-3 text-xs text-stone-600 dark:border-stone-800 dark:text-stone-300" data-testid="comic-title-style">
+                            {t("comic.slides.titleStyle")}
+                            <Segmented
+                                size="small"
+                                value={project.titleStyle || "highlight"}
+                                onChange={(value) => onTitleStyle(value as ComicTitleStyle)}
+                                options={TITLE_STYLES.map((style) => ({ value: style, label: <TitleStyleLabel style={style} text={t(`comic.slides.titleStyles.${style}`)} /> }))}
+                            />
+                        </div>
+                    ) : null}
                     <label className="mt-3 flex items-center gap-2 border-t border-stone-100 pt-3 text-xs text-stone-600 dark:border-stone-800 dark:text-stone-300">
                         <Switch size="small" checked={project.pageNumbers !== false} onChange={onPageNumbers} />
                         {t("comic.slides.pageNumbers", { n: Math.min(2, project.panels.length), count: project.panels.length })}
@@ -259,6 +273,24 @@ export function ComicSlidesLetterStep({
                 </div>
             </div>
         </div>
+    );
+}
+
+/** The style's name, painted in that style. */
+function TitleStyleLabel({ style, text }: { style: ComicTitleStyle; text: string }) {
+    const sample =
+        style === "highlight"
+            ? { background: `linear-gradient(transparent 55%, ${TITLE_HIGHLIGHT} 55%)`, color: "#111" }
+            : style === "box"
+              ? { background: "#fff", color: "#111", borderRadius: 3, padding: "0 3px", boxShadow: "0 0 2px rgba(0,0,0,.35)" }
+              : { color: "#fff", WebkitTextStroke: "3px #111", paintOrder: "stroke fill" as const };
+    // On a light chip, like the art behind a title, so every style reads in both themes.
+    return (
+        <span className="inline-flex items-center rounded bg-stone-300 px-1.5 py-0.5">
+            <b style={sample} className="text-xs font-black">
+                {text}
+            </b>
+        </span>
     );
 }
 

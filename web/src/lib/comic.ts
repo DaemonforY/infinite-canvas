@@ -25,7 +25,15 @@ export type ComicPanel = {
     /** 小红书多图: the caption bar at the bottom of the slide (旁白), and the cliffhanger that makes readers swipe on. */
     caption?: string;
     hook?: string;
+    /** 小红书多图: a second scene, making the slide two panels stacked (上格 = this panel, 下格 = sub). */
+    sub?: ComicSubPanel;
 };
+
+export type ComicSubPanel = Pick<ComicPanel, "shot" | "action" | "place" | "characters" | "lines">;
+
+/** How big titles (cover, 互动 question) are drawn: highlighter stroke, white box, or white letters outlined in black. */
+export type ComicTitleStyle = "highlight" | "box" | "outline";
+export const TITLE_STYLES: ComicTitleStyle[] = ["highlight", "box", "outline"];
 
 export type ComicImage = { url: string; storageKey?: string; width: number; height: number; mimeType?: string };
 
@@ -115,6 +123,7 @@ export type ComicProject = {
     note?: ComicNote;
     /** Page numbers 「2/7」 on slides (on unless turned off). */
     pageNumbers?: boolean;
+    titleStyle?: ComicTitleStyle;
     createdAt: number;
     updatedAt: number;
 };
@@ -217,6 +226,47 @@ export function slideInsertRequest(project: Pick<ComicProject, "title" | "panels
     ].join("\n");
 }
 
+/** Slides that may hold two panels: not the cover or the 互动页, which need the room for big text. */
+export function canHoldTwoPanels(panel: Pick<ComicPanel, "beat">) {
+    return panel.beat !== "封面" && panel.beat !== "互动";
+}
+
+/** Asks for the 下格 of a slide becoming two panels: the next moment after the slide's own scene. */
+export function subSceneRequest(project: Pick<ComicProject, "title" | "panels" | "characters">, index: number) {
+    const panel = project.panels[index];
+    return [
+        `小红书多图漫画《${project.title}》的第 ${index + 1} 张要改成上下两格。上格就是这张原来的内容：${panel.action}（${panel.place}）${panel.lines.length ? `，对白：${panel.lines.map((line) => `${line.speaker}：「${line.text}」`).join(" ")}` : ""}。`,
+        `下一张是：${project.panels[index + 1]?.action || "（没有，这是最后一张）"}。`,
+        "请写下格：紧接着上格的下一刻（同一个场景），用一个动作或表情的变化制造小笑点或反差，不要抢下一张的内容。",
+        `可用角色：${project.characters.map((item) => `${item.name}：${item.look}`).join("；")}`,
+        '只输出一个 JSON 对象：{"slides":[{"beat":"下格","shot":"远景/中景/近景/特写","action":"…","place":"…","characters":["…"],"lines":[{"speaker":"…","text":"14 字以内","kind":"speech/thought/shout"}]}]}',
+    ].join("\n");
+}
+
+/** Asks for one slide rewritten as two consecutive slides (more room for the moment). */
+export function splitSlideRequest(project: Pick<ComicProject, "title" | "panels" | "characters">, index: number) {
+    const panel = project.panels[index];
+    return [
+        `小红书多图漫画《${project.title}》的第 ${index + 1} 张（${panel.beat}）要拆成两张，把这一幕讲得更细：${panel.action}（${panel.place}）${panel.lines.length ? `，对白：${panel.lines.map((line) => `${line.speaker}：「${line.text}」`).join(" ")}` : ""}${panel.caption ? `，字幕：${panel.caption}` : ""}。`,
+        "第一张铺垫，第二张给出结果或笑点；第一张结尾写 hook。不要改变故事走向。",
+        `可用角色：${project.characters.map((item) => `${item.name}：${item.look}`).join("；")}`,
+        '只输出一个 JSON 对象：{"slides":[{第一张},{第二张}]}，字段和分镜相同（beat、shot、action、place、characters、lines、caption、hook、note）。',
+    ].join("\n");
+}
+
+/**
+ * Splits a two-panel slide into two slides without asking the model: 上格 and 下格 become slides of their own; the
+ * caption and the hook move to the second, which ends the moment.
+ */
+export function splitTwoPanelSlide(panel: ComicPanel, makeId: () => string): ComicPanel[] {
+    if (!panel.sub) return [panel];
+    const { sub, ...top } = panel;
+    return [
+        { ...top, id: makeId(), caption: undefined, hook: undefined },
+        { ...sub, id: makeId(), beat: panel.beat, note: panel.note, caption: panel.caption, hook: panel.hook },
+    ];
+}
+
 /** 笔记文案: the title, body and hashtags for posting the slides on 小红书. */
 export const NOTE_INSTRUCTION = [
     "你是小红书运营，给一组原创漫画写发布用的笔记文案。",
@@ -306,7 +356,8 @@ export type ComicStory = { title: string; characters: Array<{ name: string; role
 const LINE_KINDS: ComicLineKind[] = ["speech", "thought", "shout", "narration"];
 
 /** Reads the model's answer; tolerant of code fences, prose around the JSON and missing fields. */
-export function parseStory(text: string, panelCount: number): ComicStory {
+/** `knownNames`: the cast already in the project (answers for one slide carry no character list). */
+export function parseStory(text: string, panelCount: number, knownNames: string[] = []): ComicStory {
     const start = text.indexOf("{");
     const end = text.lastIndexOf("}");
     if (start < 0 || end <= start) throw new Error("no json");
@@ -317,7 +368,7 @@ export function parseStory(text: string, panelCount: number): ComicStory {
         .map((item) => ({ name: str(item.name, 12), role: str(item.role, 8), look: str(item.look, 160) }))
         .filter((item) => item.name)
         .slice(0, 4);
-    const names = new Set(characters.map((item) => item.name));
+    const names = new Set([...characters.map((item) => item.name), ...knownNames]);
     const list = Array.isArray(raw.slides) ? raw.slides : Array.isArray(raw.panels) ? raw.panels : [];
     const panels = list
         .map((item) => item as Record<string, unknown>)
@@ -459,8 +510,19 @@ export function slidePrompt(project: Pick<ComicProject, "panels" | "characters" 
     const lines = [`一张竖版漫画插图（一组 ${project.panels.length} 张小红书多图漫画里的第 ${panelIndex + 1} 张），画面铺满整张图，主体在中间偏下。`, `画风：${project.style.prompt}。整组图画风统一。`];
     if (sheetCharacters.length)
         lines.push(`角色必须和参考图完全一致（脸型、毛色/发型、服装、配色都不能变）：${sheetCharacters.map((item, index) => `${item.name}是图片${index + 1}里的角色`).join("；")}。参考图只用来确定角色长相，不要照搬参考图的排版和背景。`);
-    const segments = panelSegments(panel, project.characters, project.style, "cells").filter((segment) => segment.kind !== "style" && segment.kind !== "space");
-    lines.push(`画面：${segments.map((segment) => segment.text).join("，")}。`);
+    const scene = (item: ComicSubPanel) =>
+        panelSegments(item, project.characters, project.style, "cells")
+            .filter((segment) => segment.kind !== "style" && segment.kind !== "space")
+            .map((segment) => segment.text)
+            .join("，");
+    if (panel.sub) {
+        lines[0] = `一张竖版漫画（一组 ${project.panels.length} 张小红书多图漫画里的第 ${panelIndex + 1} 张），上下两格，两格一样大，中间是细黑边框和白色间隔，画面上下各留一点白边。`;
+        lines.push(`上格：${scene(panel)}。`, `下格：${scene(panel.sub)}。`);
+        lines.push(`每一格上方留出一些干净的空白放对白${panel.caption ? "；整张图底部 12% 不要放重要内容（会盖上字幕条）" : ""}。`);
+        lines.push("不要画对话气泡和字幕框，画面里不要出现任何文字、字母、数字、拟声字、签名和水印。");
+        return lines.join("\n");
+    }
+    lines.push(`画面：${scene(panel)}。`);
     if (panel.beat === "封面") lines.push("这是封面：主角特写、表情夸张，有速度线或闪光点缀；画面上方 35% 是干净的纯色背景，留给大标题。");
     else if (panel.beat === "互动") lines.push("角色在画面下半部分，面向读者；画面上半部分是干净的浅色背景，留给文字。");
     else lines.push(`画面上方留出一些干净的空白放对白${panel.caption ? "，底部 12% 不要放重要内容（会盖上字幕条）" : ""}。`);

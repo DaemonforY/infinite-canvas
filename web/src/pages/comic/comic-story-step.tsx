@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Button, Input, Select, Tooltip } from "antd";
-import { ArrowDown, ArrowUp, Lightbulb, LoaderCircle, Plus, RefreshCw, Sparkles, Trash2, X } from "lucide-react";
+import { Button, Input, Select, Switch, Tooltip } from "antd";
+import { ArrowDown, ArrowUp, Columns2, Lightbulb, LoaderCircle, Plus, RefreshCw, Sparkles, Trash2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { BEAT_TIPS, SHOTS, type ComicLine, type ComicLineKind, type ComicPanel, type ComicProject } from "@/lib/comic";
+import { BEAT_TIPS, canHoldTwoPanels, SHOTS, type ComicLine, type ComicLineKind, type ComicPanel, type ComicProject } from "@/lib/comic";
 
 export const BEAT_COLORS: Record<string, string> = {
     起: "bg-blue-600",
@@ -46,6 +46,9 @@ export function ComicStoryStep({
     onCoverTitle,
     onInsert,
     inserting,
+    onTwoPanels,
+    onSplit,
+    working,
 }: {
     project: ComicProject;
     busy: boolean;
@@ -55,6 +58,10 @@ export function ComicStoryStep({
     onCoverTitle?: (title: string) => void;
     onInsert?: (afterIndex: number) => void;
     inserting?: number | null;
+    /** 一张放两格: on writes the 下格, off drops it. */
+    onTwoPanels?: (index: number, on: boolean) => void;
+    onSplit?: (index: number) => void;
+    working?: { index: number; kind: "sub" | "split" } | null;
 }) {
     const { t } = useTranslation();
     const slides = project.format === "slides";
@@ -70,7 +77,6 @@ export function ComicStoryStep({
     const quick = t("comic.story.quick", { returnObjects: true }) as string[];
 
     const setPanel = (index: number, next: Partial<ComicPanel>) => onChange(project.panels.map((panel, i) => (i === index ? { ...panel, ...next } : panel)));
-    const setLine = (index: number, lineIndex: number, next: Partial<ComicLine>) => setPanel(index, { lines: project.panels[index].lines.map((line, i) => (i === lineIndex ? { ...line, ...next } : line)) });
 
     return (
         <div className="flex h-full min-h-0 flex-col lg:flex-row">
@@ -127,60 +133,14 @@ export function ComicStoryStep({
                                     {BEAT_TIPS[panel.beat]}
                                 </div>
                             ) : null}
-                            <Field label={t("comic.story.action")}>
-                                <Input.TextArea autoSize={{ minRows: 2, maxRows: 5 }} value={panel.action} onChange={(event) => setPanel(index, { action: event.target.value })} />
-                            </Field>
-                            <Field label={t("comic.story.place")}>
-                                <Input value={panel.place} onChange={(event) => setPanel(index, { place: event.target.value })} />
-                            </Field>
-                            <Field label={t("comic.story.lines")}>
-                                <div className="flex flex-col gap-1.5">
-                                    {panel.lines.map((line, lineIndex) => (
-                                        <div key={lineIndex} className="flex items-start gap-1">
-                                            <Select
-                                                size="small"
-                                                value={line.speaker}
-                                                className="w-20 shrink-0"
-                                                popupMatchSelectWidth={false}
-                                                onChange={(value) => setLine(index, lineIndex, { speaker: value, kind: value === "旁白" ? "narration" : line.kind === "narration" ? "speech" : line.kind })}
-                                                options={[...names, "旁白"].map((name) => ({ value: name, label: name }))}
-                                            />
-                                            <Input.TextArea
-                                                autoSize={{ minRows: 1, maxRows: 3 }}
-                                                value={line.text}
-                                                onChange={(event) => setLine(index, lineIndex, { text: event.target.value.slice(0, 40) })}
-                                                className="!bg-amber-50 dark:!bg-amber-950/30"
-                                            />
-                                            <Button type="text" size="small" icon={<X className="size-3.5" />} onClick={() => setPanel(index, { lines: panel.lines.filter((_, i) => i !== lineIndex) })} aria-label={t("common.delete")} />
-                                        </div>
-                                    ))}
-                                    {panel.lines.length < 3 ? (
-                                        <button
-                                            type="button"
-                                            className="inline-flex items-center gap-1 self-start text-xs text-stone-500 hover:text-stone-900 dark:hover:text-stone-100"
-                                            onClick={() => setPanel(index, { lines: [...panel.lines, { speaker: names[0] || "旁白", text: "", kind: names.length ? "speech" : "narration" }] })}
-                                        >
-                                            <Plus className="size-3" />
-                                            {t("comic.story.addLine")}
-                                        </button>
-                                    ) : null}
-                                    {panel.lines.some((line) => line.text.length > 14) ? <span className="text-[11px] text-amber-600">{t("comic.story.lineTooLong")}</span> : null}
-                                </div>
-                            </Field>
-                            <Field label={t("comic.story.shot")}>
-                                <div className="flex flex-wrap gap-1">
-                                    {SHOTS.map((shot) => (
-                                        <button
-                                            key={shot}
-                                            type="button"
-                                            onClick={() => setPanel(index, { shot })}
-                                            className={`rounded-md border px-2 py-0.5 text-xs ${panel.shot === shot ? "border-(--skin-accent) bg-(--skin-accent)/10 text-stone-900 dark:text-stone-100" : "border-stone-200 text-stone-500 dark:border-stone-700"}`}
-                                        >
-                                            {shot}
-                                        </button>
-                                    ))}
-                                </div>
-                            </Field>
+                            {panel.sub ? <div className="text-xs font-semibold text-stone-500">{t("comic.slides.topPanel")}</div> : null}
+                            <SceneFields scene={panel} names={names} onChange={(next) => setPanel(index, next)} />
+                            {panel.sub ? (
+                                <>
+                                    <div className="flex items-center gap-2 border-t border-dashed border-stone-200 pt-2 text-xs font-semibold text-stone-500 dark:border-stone-700">{t("comic.slides.bottomPanel")}</div>
+                                    <SceneFields scene={panel.sub} names={names} onChange={(next) => setPanel(index, { sub: { ...panel.sub!, ...next } })} />
+                                </>
+                            ) : null}
                             {slides && panel.beat !== "封面" ? (
                                 <Field label={panel.beat === "互动" ? t("comic.slides.question") : t("comic.slides.caption")}>
                                     <Input value={panel.caption || ""} onChange={(event) => setPanel(index, { caption: event.target.value.slice(0, 40) })} placeholder={t("comic.slides.captionPlaceholder")} />
@@ -192,10 +152,30 @@ export function ComicStoryStep({
                                     {panel.hook}
                                 </div>
                             ) : null}
-                            {names.length ? (
-                                <Field label={t("comic.story.cast")}>
-                                    <Select mode="multiple" size="small" value={panel.characters} onChange={(value) => setPanel(index, { characters: value })} options={names.map((name) => ({ value: name, label: name }))} className="w-full" />
-                                </Field>
+                            {slides && canHoldTwoPanels(panel) ? (
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg bg-stone-50 px-2.5 py-2 text-xs dark:bg-stone-800">
+                                    <Tooltip title={t("comic.slides.twoPanelsTip")}>
+                                        <label className="inline-flex cursor-pointer items-center gap-1.5 text-stone-700 dark:text-stone-200">
+                                            <Switch size="small" checked={!!panel.sub} loading={working?.index === index && working.kind === "sub"} disabled={!!working} onChange={(on) => onTwoPanels?.(index, on)} data-testid="comic-two-panels" />
+                                            {t("comic.slides.twoPanels")}
+                                        </label>
+                                    </Tooltip>
+                                    {count < 18 ? (
+                                        <Tooltip title={panel.sub ? t("comic.slides.splitTwoTip") : t("comic.slides.splitTip")}>
+                                            <Button
+                                                size="small"
+                                                type="link"
+                                                className="!h-auto !p-0 !text-xs"
+                                                icon={working?.index === index && working.kind === "split" ? <LoaderCircle className="size-3 animate-spin" /> : <Columns2 className="size-3" />}
+                                                disabled={!!working}
+                                                onClick={() => onSplit?.(index)}
+                                                data-testid="comic-split-slide"
+                                            >
+                                                {t("comic.slides.split")}
+                                            </Button>
+                                        </Tooltip>
+                                    ) : null}
+                                </div>
                             ) : null}
                             {slides && index < count - 1 && count < 18 ? (
                                 <Button
@@ -272,6 +252,72 @@ export function ComicStoryStep({
                 ) : null}
             </aside>
         </div>
+    );
+}
+
+type Scene = Pick<ComicPanel, "shot" | "action" | "place" | "characters" | "lines">;
+
+/** What is drawn in one panel: action, place, lines, shot and cast (a slide's 下格 has the same fields). */
+function SceneFields({ scene, names, onChange }: { scene: Scene; names: string[]; onChange: (next: Partial<Scene>) => void }) {
+    const { t } = useTranslation();
+    const setLine = (lineIndex: number, next: Partial<ComicLine>) => onChange({ lines: scene.lines.map((line, i) => (i === lineIndex ? { ...line, ...next } : line)) });
+    return (
+        <>
+            <Field label={t("comic.story.action")}>
+                <Input.TextArea autoSize={{ minRows: 2, maxRows: 5 }} value={scene.action} onChange={(event) => onChange({ action: event.target.value })} />
+            </Field>
+            <Field label={t("comic.story.place")}>
+                <Input value={scene.place} onChange={(event) => onChange({ place: event.target.value })} />
+            </Field>
+            <Field label={t("comic.story.lines")}>
+                <div className="flex flex-col gap-1.5">
+                    {scene.lines.map((line, lineIndex) => (
+                        <div key={lineIndex} className="flex items-start gap-1">
+                            <Select
+                                size="small"
+                                value={line.speaker}
+                                className="w-20 shrink-0"
+                                popupMatchSelectWidth={false}
+                                onChange={(value) => setLine(lineIndex, { speaker: value, kind: value === "旁白" ? "narration" : line.kind === "narration" ? "speech" : line.kind })}
+                                options={[...names, "旁白"].map((name) => ({ value: name, label: name }))}
+                            />
+                            <Input.TextArea autoSize={{ minRows: 1, maxRows: 3 }} value={line.text} onChange={(event) => setLine(lineIndex, { text: event.target.value.slice(0, 40) })} className="!bg-amber-50 dark:!bg-amber-950/30" />
+                            <Button type="text" size="small" icon={<X className="size-3.5" />} onClick={() => onChange({ lines: scene.lines.filter((_, i) => i !== lineIndex) })} aria-label={t("common.delete")} />
+                        </div>
+                    ))}
+                    {scene.lines.length < 3 ? (
+                        <button
+                            type="button"
+                            className="inline-flex items-center gap-1 self-start text-xs text-stone-500 hover:text-stone-900 dark:hover:text-stone-100"
+                            onClick={() => onChange({ lines: [...scene.lines, { speaker: names[0] || "旁白", text: "", kind: names.length ? "speech" : "narration" }] })}
+                        >
+                            <Plus className="size-3" />
+                            {t("comic.story.addLine")}
+                        </button>
+                    ) : null}
+                    {scene.lines.some((line) => line.text.length > 14) ? <span className="text-[11px] text-amber-600">{t("comic.story.lineTooLong")}</span> : null}
+                </div>
+            </Field>
+            <Field label={t("comic.story.shot")}>
+                <div className="flex flex-wrap gap-1">
+                    {SHOTS.map((shot) => (
+                        <button
+                            key={shot}
+                            type="button"
+                            onClick={() => onChange({ shot })}
+                            className={`rounded-md border px-2 py-0.5 text-xs ${scene.shot === shot ? "border-(--skin-accent) bg-(--skin-accent)/10 text-stone-900 dark:text-stone-100" : "border-stone-200 text-stone-500 dark:border-stone-700"}`}
+                        >
+                            {shot}
+                        </button>
+                    ))}
+                </div>
+            </Field>
+            {names.length ? (
+                <Field label={t("comic.story.cast")}>
+                    <Select mode="multiple" size="small" value={scene.characters} onChange={(value) => onChange({ characters: value })} options={names.map((name) => ({ value: name, label: name }))} className="w-full" />
+                </Field>
+            ) : null}
+        </>
     );
 }
 

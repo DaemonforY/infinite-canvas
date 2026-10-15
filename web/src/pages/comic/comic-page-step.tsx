@@ -496,6 +496,14 @@ function PromptLesson({
     const panel = project.panels[index];
     if (!panel) return null;
     const segments = panelSegments(panel, project.characters, project.style, mode);
+    const subSegments = panel.sub ? panelSegments(panel.sub, project.characters, project.style, mode).filter((segment) => segment.kind !== "style") : null;
+    const show = (list: typeof segments) =>
+        list.map((segment, i) => (
+            <span key={i}>
+                <span className={`rounded px-1 py-0.5 ${SEGMENT_CLASS[segment.kind]}`}>{segment.text}</span>
+                {i < list.length - 1 ? "，" : ""}
+            </span>
+        ));
     return (
         <div className="rounded-2xl border border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-stone-900" data-testid="comic-prompt-lesson">
             <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -503,14 +511,17 @@ function PromptLesson({
                 <b className="text-sm text-stone-900 dark:text-stone-100">{title || t("comic.page.lessonTitle", { n: index + 1 })}</b>
                 <span className="ml-auto text-xs text-stone-400">{t("comic.page.pickPanel")}</span>
             </div>
-            <div className="text-sm leading-8">
-                {segments.map((segment, i) => (
-                    <span key={i}>
-                        <span className={`rounded px-1 py-0.5 ${SEGMENT_CLASS[segment.kind]}`}>{segment.text}</span>
-                        {i < segments.length - 1 ? "，" : ""}
-                    </span>
-                ))}
-            </div>
+            {subSegments ? (
+                <div className="text-sm leading-8">
+                    <b className="mr-1 text-xs text-stone-500">{t("comic.slides.topPanel")}</b>
+                    {show(segments)}
+                    <br />
+                    <b className="mr-1 text-xs text-stone-500">{t("comic.slides.bottomPanel")}</b>
+                    {show(subSegments)}
+                </div>
+            ) : (
+                <div className="text-sm leading-8">{show(segments)}</div>
+            )}
             <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-stone-500">
                 {SEGMENT_ORDER.map((kind) => (
                     <span key={kind} className="inline-flex items-center gap-1">

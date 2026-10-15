@@ -7,7 +7,21 @@ import { useNavigate, useParams } from "react-router-dom";
 import { saveAs } from "file-saver";
 
 import { useCopyText } from "@/hooks/use-copy-text";
-import { episodeSummary, fallbackTitle, pagePrompt, type ComicBubble, type ComicCellVersion, type ComicCharacter, type ComicLayoutId, type ComicMode, type ComicPanel, type ComicProject, type ComicStep, type ComicStory } from "@/lib/comic";
+import {
+    episodeSummary,
+    fallbackTitle,
+    pagePrompt,
+    splitTwoPanelSlide,
+    type ComicBubble,
+    type ComicCellVersion,
+    type ComicCharacter,
+    type ComicLayoutId,
+    type ComicMode,
+    type ComicPanel,
+    type ComicProject,
+    type ComicStep,
+    type ComicStory,
+} from "@/lib/comic";
 import { placeCellBubbles, placeSlideBubbles, renderScene, SLIDE_HEIGHT, SLIDE_WIDTH } from "@/lib/comic-layout";
 import { createZip } from "@/lib/zip";
 import { promptAssistConfig } from "@/lib/prompt-assist";
@@ -16,7 +30,26 @@ import { useAssetStore } from "@/stores/use-asset-store";
 import { modelOptionName, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { usePublishWorkStore } from "@/stores/use-publish-work-store";
 import { isWeChatBrowser, membershipLink, useSaveImage } from "../image/use-save-image";
-import { drawCell, drawCharacterSheet, drawPage, editCell, letter, panelPrompt, redrawPanel, sceneSource, sheetCharacters, slideBubbles, slideSource, storyOf, writeInsertedSlide, writeNote, writeStory } from "./comic-api";
+import {
+    drawCell,
+    drawCharacterSheet,
+    drawPage,
+    editCell,
+    letter,
+    panelPrompt,
+    redrawPanel,
+    sceneSource,
+    sheetCharacters,
+    slideBubbles,
+    relayoutSlide,
+    slideSource,
+    storyOf,
+    writeInsertedSlide,
+    writeNote,
+    writeSplitSlides,
+    writeStory,
+    writeSubScene,
+} from "./comic-api";
 import { resolveScene } from "./comic-lettering";
 import { SlideGallery } from "./comic-slide-gallery";
 import { ComicSlidesLetterStep } from "./comic-slides-letter";
@@ -233,6 +266,7 @@ function ComicEditor({ id }: { id: string }) {
     const [episodes, setEpisodes] = useState<ComicProject[]>([]);
     const [seriesPublishing, setSeriesPublishing] = useState(false);
     const [inserting, setInserting] = useState<number | null>(null);
+    const [slideWork, setSlideWork] = useState<{ index: number; kind: "sub" | "split" } | null>(null);
     const [noteBusy, setNoteBusy] = useState(false);
     const [slidesBusy, setSlidesBusy] = useState(false);
     const [gallery, setGallery] = useState<{ urls: string[]; index: number; saving: boolean } | null>(null);
@@ -561,6 +595,47 @@ function ComicEditor({ id }: { id: string }) {
         }
     };
 
+    /** 一张放两格: on asks the text model for the 下格; off keeps only the 上格. */
+    const setTwoPanels = async (index: number, on: boolean) => {
+        const apply = (sub: ComicPanel["sub"]) =>
+            patch((current) => {
+                const panels = current.panels.map((panel, i) => (i === index ? { ...panel, sub } : panel));
+                return { ...current, panels, cellBubbles: relayoutSlide({ ...current, panels }, index) };
+            });
+        if (!on) return apply(undefined);
+        if (!readyText()) return;
+        setSlideWork({ index, kind: "sub" });
+        try {
+            apply(await writeSubScene(effectiveConfig, projectRef.current!, index));
+        } catch (error) {
+            message.error(error instanceof SyntaxError ? t("comic.start.parseFailed") : errorText(error, t("comic.start.failed")));
+        } finally {
+            setSlideWork(null);
+        }
+    };
+
+    /** 拆成两张: a two-panel slide splits on the spot; otherwise the text model writes the two slides. */
+    const splitSlide = async (index: number) => {
+        const replace = (slides: ComicPanel[]) =>
+            patch((current) => {
+                const panels = [...current.panels];
+                panels.splice(index, 1, ...slides);
+                return { ...current, panels, cellBubbles: undefined };
+            });
+        const panel = projectRef.current!.panels[index];
+        if (panel.sub) return replace(splitTwoPanelSlide(panel, nanoid));
+        if (!readyText()) return;
+        setSlideWork({ index, kind: "split" });
+        try {
+            const slides = await writeSplitSlides(effectiveConfig, projectRef.current!, index);
+            replace(slides.map((slide) => ({ ...slide, id: nanoid() })));
+        } catch (error) {
+            message.error(error instanceof SyntaxError ? t("comic.start.parseFailed") : errorText(error, t("comic.start.failed")));
+        } finally {
+            setSlideWork(null);
+        }
+    };
+
     const save = async () => {
         try {
             const blob = await lettered();
@@ -704,6 +779,9 @@ function ComicEditor({ id }: { id: string }) {
                         onCoverTitle={(title) => patch((current) => ({ ...current, coverTitle: title, cellBubbles: current.cellBubbles?.map((bubble) => (bubble.panel === 0 && bubble.kind === "title" ? { ...bubble, text: title } : bubble)) }))}
                         onInsert={(index) => void insertSlide(index)}
                         inserting={inserting}
+                        onTwoPanels={(index, on) => void setTwoPanels(index, on)}
+                        onSplit={(index) => void splitSlide(index)}
+                        working={slideWork}
                     />
                 ) : null}
                 {project.step === "characters" ? (
@@ -777,6 +855,7 @@ function ComicEditor({ id }: { id: string }) {
                             })
                         }
                         onPageNumbers={(on) => patch((current) => ({ ...current, pageNumbers: on }))}
+                        onTitleStyle={(titleStyle) => patch((current) => ({ ...current, titleStyle }))}
                         onReset={() => updateBubbles(placeSlideBubbles(project.panels, project.coverTitle || project.title, nanoid))}
                         onPreview={(index) => void preview(index)}
                         onWriteNote={() => void writeNoteNow()}

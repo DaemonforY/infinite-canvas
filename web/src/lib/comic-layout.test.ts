@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { cellPrompt, COMIC_STYLES, panelSegments, type ComicCharacter, type ComicPanel } from "./comic";
-import { balloonPath, bubbleBox, COMIC_LAYOUTS, coverPlacement, layoutPage, layoutScene, pageLabelBox, placeCellBubbles, placeSlideBubbles, ratioFor } from "./comic-layout";
+import { balloonPath, bubbleBox, COMIC_LAYOUTS, coverPlacement, layoutPage, layoutScene, pageLabelBox, placeCellBubbles, placeSlideBubbles, ratioFor, SUB_LINE_BASE, titleCard, titlePaint } from "./comic-layout";
 
 const measure = (text: string, size: number) => Array.from(text).length * size;
 
@@ -193,6 +193,67 @@ describe("小红书多图", () => {
         const label = pageLabelBox({ width: 1080, height: 1440, pageLabel: "2/7" }, measure);
         expect(label.x + label.w).toBeLessThan(1080);
         expect(label.y).toBeLessThan(60);
+    });
+
+    test("B期: a two-panel slide is drawn as two equal panels with both scenes", async () => {
+        const { slidePrompt } = await import("./comic");
+        const panel: ComicPanel = {
+            id: "a",
+            beat: "转折",
+            shot: "中景",
+            action: "主管走来",
+            place: "工位",
+            characters: [],
+            lines: [],
+            note: "",
+            caption: "下班前",
+            sub: { shot: "特写", action: "阿橘假装睡着", place: "工位", characters: [], lines: [] },
+        };
+        const prompt = slidePrompt({ panels: [panel], characters: [], style: COMIC_STYLES[0] }, 0, []);
+        expect(prompt).toContain("上下两格");
+        expect(prompt).toContain("上格：");
+        expect(prompt).toContain("阿橘假装睡着");
+        expect(prompt).toContain("字幕条");
+    });
+
+    test("B期: splitting a two-panel slide keeps both scenes; the caption and hook go to the second", async () => {
+        const { splitTwoPanelSlide, canHoldTwoPanels } = await import("./comic");
+        let n = 0;
+        const panel: ComicPanel = { id: "a", beat: "转折", shot: "中景", action: "上", place: "", characters: [], lines: [], note: "为什么", caption: "字幕", hook: "然后呢", sub: { shot: "特写", action: "下", place: "", characters: [], lines: [] } };
+        const [first, second] = splitTwoPanelSlide(panel, () => `n${++n}`);
+        expect([first.action, second.action]).toEqual(["上", "下"]);
+        expect(first.sub).toBeUndefined();
+        expect([first.caption, second.caption, first.hook, second.hook]).toEqual([undefined, "字幕", undefined, "然后呢"]);
+        expect(new Set([first.id, second.id, panel.id]).size).toBe(3);
+        expect(canHoldTwoPanels({ beat: "封面" })).toBe(false);
+        expect(canHoldTwoPanels({ beat: "转折" })).toBe(true);
+    });
+
+    test("B期: a two-panel slide letters each half, with its own line numbers", () => {
+        let n = 0;
+        const bubbles = placeSlideBubbles([{ beat: "转折", caption: "下班前", lines: [{ text: "周报呢？", kind: "speech" }], sub: { lines: [{ text: "呼……", kind: "thought" }] } }], "", () => `b${++n}`);
+        const top = bubbles.find((bubble) => bubble.text === "周报呢？")!;
+        const bottom = bubbles.find((bubble) => bubble.text === "呼……")!;
+        expect(top.y + top.h).toBeLessThan(0.5);
+        expect(bottom.y).toBeGreaterThan(0.5);
+        expect(bottom.y + bottom.h).toBeLessThan(0.875);
+        expect(bottom.line).toBeGreaterThan(SUB_LINE_BASE);
+        expect(bubbles.at(-1)?.kind).toBe("caption");
+    });
+
+    test("B期: title styles paint a highlighter, a white card or an outline", () => {
+        expect(titlePaint().highlight).toBe(true);
+        expect(titlePaint("box")).toMatchObject({ highlight: false, card: true, fill: "#111" });
+        expect(titlePaint("outline")).toMatchObject({ highlight: false, card: false, fill: "#fff", stroke: "#111" });
+        const card = titleCard({ fontSize: 100, lines: ["一", "二"], lineWidths: [300, 200] });
+        expect(card.w).toBeGreaterThan(300);
+        expect(card.h).toBeGreaterThan(250);
+        expect(card.x).toBe(-card.w / 2);
+        const scene = { width: 1080, height: 1440, bubbles: [{ id: "t", panel: 0, line: 0, text: "入职第一天我把周报交成了爪印", kind: "title" as const, x: 0.05, y: 0.04, w: 0.9, h: 0.24, drawn: true }] };
+        const plain = layoutScene(scene, measure)[0];
+        const boxed = layoutScene({ ...scene, titleStyle: "box" }, measure)[0];
+        expect(boxed.titleStyle).toBe("box");
+        expect(boxed.fontSize).toBeLessThanOrEqual(plain.fontSize);
     });
 
     test("the note parses and strips # from tags", async () => {
