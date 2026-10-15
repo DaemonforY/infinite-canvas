@@ -283,7 +283,7 @@ export function slideSource(project: ComicProject, index: number, bubbles = slid
         // Every panel has a frame so bubbles keep their panel index; only this one is drawn.
         cells: project.panels.map((panel, i) => {
             const cell = project.cells?.[panel.id];
-            return { rect, image: i === index ? cell?.versions[cell.version]?.image : undefined, focus: cell?.focus, hidden: i !== index, border: false };
+            return { rect, image: i === index ? cell?.versions[cell.version]?.image : undefined, focus: cell?.focus, hidden: i !== index, border: false, contain: !!panel.sub };
         }),
         bubbles: bubbles.filter((bubble) => bubble.panel === index),
         pageLabel: project.pageNumbers === false || index === 0 ? undefined : `${index + 1}/${project.panels.length}`,

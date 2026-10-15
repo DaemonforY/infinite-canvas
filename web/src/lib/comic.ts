@@ -516,9 +516,9 @@ export function slidePrompt(project: Pick<ComicProject, "panels" | "characters" 
             .map((segment) => segment.text)
             .join("，");
     if (panel.sub) {
-        lines[0] = `一张竖版漫画（一组 ${project.panels.length} 张小红书多图漫画里的第 ${panelIndex + 1} 张），上下两格，两格一样大，中间是细黑边框和白色间隔，画面上下各留一点白边。`;
+        lines[0] = `一张竖版漫画（一组 ${project.panels.length} 张小红书多图漫画里的第 ${panelIndex + 1} 张），上下两格，两格一样大，中间是一条细黑边框和白色间隔；两格占满整张图，四周不要留白边。`;
         lines.push(`上格：${scene(panel)}。`, `下格：${scene(panel.sub)}。`);
-        lines.push(`每一格上方留出一些干净的空白放对白${panel.caption ? "；整张图底部 12% 不要放重要内容（会盖上字幕条）" : ""}。`);
+        lines.push(`每一格里人物放在中下部，头顶上方留出约四分之一格高的干净背景（墙面、天空等）放对白，不要让头部贴着格子上沿${panel.caption ? "；下格底部 15% 不要放重要内容（会盖上字幕条）" : ""}。`);
         lines.push("不要画对话气泡和字幕框，画面里不要出现任何文字、字母、数字、拟声字、签名和水印。");
         return lines.join("\n");
     }

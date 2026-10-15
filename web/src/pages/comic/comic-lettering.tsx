@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
 import { COMIC_FONT, type ComicBubble, type ComicImage, type ComicTitleStyle, type Rect } from "@/lib/comic";
-import { balloonStyle, bubbleFrame, canvasMeasureWeight, CELL_BORDER, coverPlacement, layoutScene, pageLabelBox, SFX_COLORS, TITLE_HIGHLIGHT, titleCard, titlePaint, type ComicScene } from "@/lib/comic-layout";
+import { balloonStyle, bubbleFrame, canvasMeasureWeight, CELL_BORDER, coverPlacement, imagePlacement, layoutScene, pageLabelBox, SFX_COLORS, TITLE_HIGHLIGHT, titleCard, titlePaint, type ComicScene } from "@/lib/comic-layout";
 import { comicImageUrl } from "./comic-api";
 
 /** The displayable URL of a stored comic image (object URLs do not survive a reload; storage keys do). */
@@ -36,7 +36,7 @@ export type ComicSceneSource = {
     width: number;
     height: number;
     image?: ComicImage;
-    cells?: Array<{ rect: Rect; image?: ComicImage; focus?: { x: number; y: number }; hidden?: boolean; border?: boolean }>;
+    cells?: Array<{ rect: Rect; image?: ComicImage; focus?: { x: number; y: number }; hidden?: boolean; border?: boolean; contain?: boolean }>;
     bubbles: ComicBubble[];
     pageLabel?: string;
     textScale?: number;
@@ -60,6 +60,7 @@ export async function resolveScene(source: ComicSceneSource): Promise<ComicScene
                       focus: cell.focus,
                       hidden: cell.hidden,
                       border: cell.border,
+                      contain: cell.contain,
                       src: cell.image && !cell.hidden ? await comicImageUrl(cell.image) : undefined,
                       imageWidth: cell.image?.width,
                       imageHeight: cell.image?.height,
@@ -168,13 +169,14 @@ export function ComicSceneView({
                 {source.cells?.map((cell, index) => {
                     if (cell.hidden) return null;
                     const url = cellUrls[index];
-                    const place = cell.image ? coverPlacement(cell.rect, cell.image.width || 1, cell.image.height || 1, cell.focus) : null;
+                    const place = cell.image ? imagePlacement(cell, cell.image.width || 1, cell.image.height || 1) : null;
+                    const pan = onChangeFocus && !cell.contain;
                     return (
                         <g key={`cell-${index}`}>
                             <clipPath id={`${clipId}-${index}`}>
                                 <rect x={cell.rect.x} y={cell.rect.y} width={cell.rect.w} height={cell.rect.h} />
                             </clipPath>
-                            <rect x={cell.rect.x} y={cell.rect.y} width={cell.rect.w} height={cell.rect.h} fill="#f5f5f4" onClick={() => onSelectPanel?.(index)} />
+                            <rect x={cell.rect.x} y={cell.rect.y} width={cell.rect.w} height={cell.rect.h} fill={cell.contain ? "#fff" : "#f5f5f4"} onClick={() => onSelectPanel?.(index)} />
                             {url && place ? (
                                 <image
                                     href={url}
@@ -184,8 +186,8 @@ export function ComicSceneView({
                                     height={place.h}
                                     preserveAspectRatio="none"
                                     clipPath={`url(#${clipId}-${index})`}
-                                    className={onChangeFocus ? "cursor-grab" : onSelectPanel ? "cursor-pointer" : undefined}
-                                    onPointerDown={onChangeFocus ? (event) => startDrag(event, { mode: "pan", panel: index, focus: cell.focus || { x: 0.5, y: 0.5 } }) : undefined}
+                                    className={pan ? "cursor-grab" : onSelectPanel ? "cursor-pointer" : undefined}
+                                    onPointerDown={pan ? (event) => startDrag(event, { mode: "pan", panel: index, focus: cell.focus || { x: 0.5, y: 0.5 } }) : undefined}
                                     onClick={() => onSelectPanel?.(index)}
                                 />
                             ) : null}

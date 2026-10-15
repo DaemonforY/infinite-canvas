@@ -65,6 +65,15 @@ export function coverPlacement(cell: Rect, imageWidth: number, imageHeight: numb
     return { x: cell.x + (cell.w - w) * focus.x, y: cell.y + (cell.h - h) * focus.y, w, h };
 }
 
+/** Where a cell's image goes: cover-cropped around the focus, or (`contain`) whole and centred on white. */
+export function imagePlacement(cell: Pick<SceneCell, "rect" | "focus" | "contain">, imageWidth: number, imageHeight: number): Rect {
+    if (!cell.contain) return coverPlacement(cell.rect, imageWidth, imageHeight, cell.focus);
+    const scale = Math.min(cell.rect.w / imageWidth, cell.rect.h / imageHeight);
+    const w = imageWidth * scale;
+    const h = imageHeight * scale;
+    return { x: cell.rect.x + (cell.rect.w - w) / 2, y: cell.rect.y + (cell.rect.h - h) / 2, w, h };
+}
+
 // ---------------------------------------------------------------------------------------------
 // Balloons. Each kind is one SVG path; drawing it twice (a double-width stroke, then the fill) merges the
 // tail or the bumps into one outlined shape.
@@ -149,8 +158,11 @@ export const SFX_COLORS = ["#f97316", "#ef4444", "#2563eb", "#111111", "#a855f7"
 // ---------------------------------------------------------------------------------------------
 // Scenes.
 
-/** `hidden`: a frame for bubbles only (another slide's panel); `border: false`: full-bleed art (小红书 slides). */
-export type SceneCell = { rect: Rect; src?: string; imageWidth?: number; imageHeight?: number; focus?: { x: number; y: number }; hidden?: boolean; border?: boolean };
+/**
+ * `hidden`: a frame for bubbles only (another slide's panel); `border: false`: full-bleed art (小红书 slides);
+ * `contain`: the whole image on white, nothing cropped (a two-panel slide, whose gutter must stay where it was drawn).
+ */
+export type SceneCell = { rect: Rect; src?: string; imageWidth?: number; imageHeight?: number; focus?: { x: number; y: number }; hidden?: boolean; border?: boolean; contain?: boolean };
 /** `pageLabel`: 「2/7」 in the top-right corner of a slide. */
 /** `textScale`: bigger lettering for slides, which are read one at a time full screen. */
 /** `titleStyle`: how title bubbles are painted (see `titlePaint`). */
@@ -233,7 +245,7 @@ export async function renderScene(scene: ComicScene): Promise<Blob> {
         if (cell.hidden) continue;
         if (cell.src) {
             const image = await loadImage(cell.src);
-            const place = coverPlacement(cell.rect, image.naturalWidth, image.naturalHeight, cell.focus);
+            const place = imagePlacement(cell, image.naturalWidth, image.naturalHeight);
             context.save();
             context.beginPath();
             context.rect(cell.rect.x, cell.rect.y, cell.rect.w, cell.rect.h);
@@ -385,11 +397,11 @@ export function placeSlideBubbles(panels: Array<{ beat: string; caption?: string
             lines.forEach((line, lineIndex) => {
                 const right = lineIndex % 2 === 1;
                 const row = Math.floor(lineIndex / 2);
-                const y = half ? top + Math.min(row, 1) * 0.11 : top + row * 0.17;
-                bubbles.push({ ...base, id: makeId(), line: lineBase + lineIndex + 1, text: line.text, kind: line.kind, x: right ? 0.5 : 0.05, y, w: 0.45, h: half ? 0.1 : 0.15, tail: line.kind === "shout" ? "none" : right ? "right" : "left" });
+                const y = half ? top + Math.min(row, 1) * 0.1 : top + row * 0.17;
+                bubbles.push({ ...base, id: makeId(), line: lineBase + lineIndex + 1, text: line.text, kind: line.kind, x: right ? 0.5 : 0.05, y, w: 0.45, h: half ? 0.09 : 0.15, tail: line.kind === "shout" ? "none" : right ? "right" : "left" });
             });
-        place(panel.lines, half ? 0.04 : 0.05, 0);
-        if (panel.sub) place(panel.sub.lines, 0.53, SUB_LINE_BASE);
+        place(panel.lines, half ? 0.02 : 0.05, 0);
+        if (panel.sub) place(panel.sub.lines, 0.52, SUB_LINE_BASE);
         if (panel.caption && panel.beat !== "互动") bubbles.push({ ...base, id: makeId(), line: 99, text: panel.caption, kind: "caption", x: 0, y: 0.875, w: 1, h: 0.125, tail: "none" });
     });
     return bubbles;
