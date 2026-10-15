@@ -1567,7 +1567,7 @@ export default {
             new: "New",
             desc: "One scene per image, 3–18 swiped through, with a cover and a closing question.",
             sample: "See an example",
-            sampleTitle: "Example · I handed in my weekly report as paw prints",
+            samples: { work: "I handed in my weekly report as paw prints", phone: "Teaching my parents to use a phone (two panels on one image · black-on-white title)" },
             howMany: "Images",
             autoShort: "Let AI decide",
             manual: "Choose",

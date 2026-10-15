@@ -18,9 +18,13 @@ const styleSample = (id: string) => `/comic-styles/${id}.webp`;
 
 export type ComicStartInput = { idea: string; genre: ComicGenre; panelCount: number; style: ComicStyleChoice; cast: LibraryCharacter[]; format: ComicFormat; cta: boolean };
 
-// A finished 小红书多图 comic shown as the example (web/public/comic-samples, drawn with this feature's prompts).
+// Finished 小红书多图 comics shown as examples (web/public/comic-samples, drawn with this feature's prompts): one
+// slide per scene, and one with a two-panel slide and the 白底黑字 title.
 const sampleUrl = (name: string) => `/comic-samples/${name}.webp`;
-const SAMPLE_SLIDES = ["xhs-1", "xhs-2", "xhs-3", "xhs-4", "xhs-5", "xhs-6", "xhs-7"];
+const SAMPLES = [
+    { key: "work", slides: ["xhs-1", "xhs-2", "xhs-3", "xhs-4", "xhs-5", "xhs-6", "xhs-7"] },
+    { key: "phone", slides: ["xhs2-1", "xhs2-2", "xhs2-3", "xhs2-4", "xhs2-5"] },
+];
 
 /** 画漫画 start: one idea, three optional choices, and the comics drawn before. */
 export function ComicStart({
@@ -53,6 +57,7 @@ export function ComicStart({
     const [slideCount, setSlideCount] = useState(0);
     const [cta, setCta] = useState(true);
     const [sampleOpen, setSampleOpen] = useState(false);
+    const [sample, setSample] = useState(0);
     const [style, setStyle] = useState<ComicStyleChoice>(COMIC_STYLES[0]);
     const [ideaPage, setIdeaPage] = useState(0);
     const [pickerOpen, setPickerOpen] = useState(false);
@@ -386,7 +391,22 @@ export function ComicStart({
                 </section>
             </div>
 
-            <SlideGallery open={sampleOpen} title={t("comic.slides.sampleTitle")} images={SAMPLE_SLIDES.map((name) => sampleUrl(name))} onClose={() => setSampleOpen(false)} />
+            <SlideGallery
+                key={sample}
+                open={sampleOpen}
+                title={t(`comic.slides.samples.${SAMPLES[sample].key}`)}
+                images={SAMPLES[sample].slides.map((name) => sampleUrl(name))}
+                onClose={() => setSampleOpen(false)}
+                footer={() => (
+                    <div className="flex flex-wrap justify-center gap-2" data-testid="comic-sample-switch">
+                        {SAMPLES.map((item, index) => (
+                            <button key={item.key} type="button" onClick={() => setSample(index)} className={`rounded-full px-3 py-1 text-xs ${index === sample ? "bg-rose-500 text-white" : "bg-white/10 text-white/80 hover:bg-white/20"}`}>
+                                {t(`comic.slides.samples.${item.key}`)}
+                            </button>
+                        ))}
+                    </div>
+                )}
+            />
             <LibraryPicker
                 open={libraryOpen}
                 picked={cast.map((item) => item.id)}
