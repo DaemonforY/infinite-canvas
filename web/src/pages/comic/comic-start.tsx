@@ -27,6 +27,8 @@ const SAMPLES = [
     // Lettered entirely by the default rules, nothing moved by hand.
     { key: "dog", slides: ["xhs3-1", "xhs3-2", "xhs3-3", "xhs3-4", "xhs3-5", "xhs3-6", "xhs3-7"] },
 ];
+// 一页漫画: the same story drawn panel by panel (逐格精画, default lettering) and as one whole page.
+const PAGE_SAMPLES = [{ key: "job", slides: ["page-job-cells", "page-job-whole"] }];
 
 /** 画漫画 start: one idea, three optional choices, and the comics drawn before. */
 export function ComicStart({
@@ -58,8 +60,14 @@ export function ComicStart({
     /** 小红书多图: 0 lets the model choose (5–9). */
     const [slideCount, setSlideCount] = useState(0);
     const [cta, setCta] = useState(true);
-    const [sampleOpen, setSampleOpen] = useState(false);
+    const [sampleOpen, setSampleOpen] = useState<"" | "page" | "slides">("");
     const [sample, setSample] = useState(0);
+    const samples = sampleOpen === "page" ? PAGE_SAMPLES : SAMPLES;
+    const shown = samples[Math.min(sample, samples.length - 1)];
+    const openSample = (kind: "page" | "slides") => {
+        setSample(0);
+        setSampleOpen(kind);
+    };
     const [style, setStyle] = useState<ComicStyleChoice>(COMIC_STYLES[0]);
     const [ideaPage, setIdeaPage] = useState(0);
     const [pickerOpen, setPickerOpen] = useState(false);
@@ -186,6 +194,18 @@ export function ComicStart({
                             <span>
                                 <b className="block text-sm text-stone-900 dark:text-stone-100">{t("comic.slides.pageName")}</b>
                                 <span className="mt-1 block text-xs leading-5 text-stone-500">{t("comic.slides.pageDesc")}</span>
+                                <span
+                                    role="button"
+                                    tabIndex={0}
+                                    className="mt-1 inline-block text-xs text-(--skin-accent) underline-offset-2 hover:underline"
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        openSample("page");
+                                    }}
+                                    data-testid="comic-page-sample"
+                                >
+                                    {t("comic.slides.sample")} ›
+                                </span>
                             </span>
                         </button>
                         <button
@@ -211,7 +231,7 @@ export function ComicStart({
                                     className="mt-1 inline-block text-xs text-rose-600 underline-offset-2 hover:underline"
                                     onClick={(event) => {
                                         event.stopPropagation();
-                                        setSampleOpen(true);
+                                        openSample("slides");
                                     }}
                                     data-testid="comic-slides-sample"
                                 >
@@ -394,20 +414,22 @@ export function ComicStart({
             </div>
 
             <SlideGallery
-                key={sample}
-                open={sampleOpen}
-                title={t(`comic.slides.samples.${SAMPLES[sample].key}`)}
-                images={SAMPLES[sample].slides.map((name) => sampleUrl(name))}
-                onClose={() => setSampleOpen(false)}
-                footer={() => (
-                    <div className="flex flex-wrap justify-center gap-2" data-testid="comic-sample-switch">
-                        {SAMPLES.map((item, index) => (
-                            <button key={item.key} type="button" onClick={() => setSample(index)} className={`rounded-full px-3 py-1 text-xs ${index === sample ? "bg-rose-500 text-white" : "bg-white/10 text-white/80 hover:bg-white/20"}`}>
-                                {t(`comic.slides.samples.${item.key}`)}
-                            </button>
-                        ))}
-                    </div>
-                )}
+                key={`${sampleOpen}-${sample}`}
+                open={Boolean(sampleOpen)}
+                title={t(`comic.slides.samples.${shown.key}`)}
+                images={shown.slides.map((name) => sampleUrl(name))}
+                onClose={() => setSampleOpen("")}
+                footer={() =>
+                    samples.length > 1 ? (
+                        <div className="flex flex-wrap justify-center gap-2" data-testid="comic-sample-switch">
+                            {samples.map((item, index) => (
+                                <button key={item.key} type="button" onClick={() => setSample(index)} className={`rounded-full px-3 py-1 text-xs ${index === sample ? "bg-rose-500 text-white" : "bg-white/10 text-white/80 hover:bg-white/20"}`}>
+                                    {t(`comic.slides.samples.${item.key}`)}
+                                </button>
+                            ))}
+                        </div>
+                    ) : null
+                }
             />
             <LibraryPicker
                 open={libraryOpen}
