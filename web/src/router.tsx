@@ -24,10 +24,11 @@ import UserPage from "@/pages/user";
 import CollectionPage from "@/pages/collection";
 import CreatorPage from "@/pages/creator";
 
-/** The site opens on the image workbench; query strings (?prompt=, ?aff=, utm) go along. */
+/** The site opens on the prompt library; a ?prompt= (做同款) still lands on the image workbench. Query strings (?aff=, utm) go along. */
 function RootRedirect() {
     const { search, hash } = useLocation();
-    return <Navigate to={{ pathname: "/image", search, hash }} replace />;
+    const pathname = new URLSearchParams(search).has("prompt") ? "/image" : "/prompts";
+    return <Navigate to={{ pathname, search, hash }} replace />;
 }
 
 export const router = createBrowserRouter([
