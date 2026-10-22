@@ -1842,7 +1842,7 @@ export default {
             publish: "Publish to Explore",
             assets: "Add to assets",
             watermark: "Saved images carry an AI-generated label in the corner.",
-            noWatermark: "Creator membership: originals without the label.",
+            noWatermark: "Saved as originals, without the label.",
         },
     },
     imageEditor: {

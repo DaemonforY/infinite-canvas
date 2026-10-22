@@ -57,6 +57,17 @@ export function isWatermarkFree(account: Pick<MainSiteAccount, "no_watermark_unt
     return Number.isFinite(until) && until > now;
 }
 
+/** 全站关闭水印 (main-site admin, 创作会员 page): everyone saves the original. Readable signed out; false on errors. */
+export async function fetchWatermarkOff(): Promise<boolean> {
+    try {
+        const res = await fetch(`${base()}/site`, { headers: CANVAS_HEADER });
+        const body = (await res.json().catch(() => null)) as { code?: number; data?: { watermark_off?: boolean } } | null;
+        return res.ok && body?.code === 0 && body.data?.watermark_off === true;
+    } catch {
+        return false;
+    }
+}
+
 /** Logs a member's unwatermarked save on the main site; false when the membership has ended. */
 export async function logUnmarkedSave(width: number, height: number): Promise<boolean> {
     try {

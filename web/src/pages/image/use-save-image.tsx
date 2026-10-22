@@ -14,14 +14,18 @@ export function isWeChatBrowser() {
     return typeof navigator !== "undefined" && /MicroMessenger/i.test(navigator.userAgent);
 }
 
+/** No watermark: 创作会员, or the main site turned it off for everyone. */
 export function useWatermarkFree() {
     const account = useMainAccountStore((state) => state.account);
-    return isWatermarkFree(account);
+    const siteOff = useMainAccountStore((state) => state.watermarkOff);
+    const loadSite = useMainAccountStore((state) => state.loadSite);
+    useEffect(() => void loadSite(), [loadSite]);
+    return siteOff || isWatermarkFree(account);
 }
 
-/** 去水印 is offered only while 创作会员 is on sale (and only to signed-in users, who can buy it). */
+/** 去水印 is offered only while 创作会员 is on sale (and only to signed-in users, who can buy it), and not while the watermark is off for everyone. */
 export function useMembershipOnSale() {
-    return useMainAccountStore((state) => state.account?.membership_on_sale === true);
+    return useMainAccountStore((state) => state.account?.membership_on_sale === true && !state.watermarkOff);
 }
 
 export function membershipLink(medium: string) {
@@ -30,7 +34,7 @@ export function membershipLink(medium: string) {
 
 type Saveable = { dataUrl: string; mimeType?: string; width?: number; height?: number };
 
-/** Saves workbench images: watermarked unless the account has 创作会员; in WeChat shows the image for a long press. */
+/** Saves workbench images: watermarked unless the account has 创作会员 or the site turned it off; in WeChat shows the image for a long press. */
 export function useSaveImage() {
     const { message } = App.useApp();
     const { t } = useTranslation();
@@ -45,7 +49,13 @@ export function useSaveImage() {
 
     // Members get the original; each such save is logged on the main site (labelling rules, 第九条).
     // If the membership ended meanwhile, the save falls back to the watermarked image.
+    // With the watermark off site-wide everyone gets the original; signed-in saves are still logged.
     const imageBlob = async (image: Saveable) => {
+        const { watermarkOff, account } = useMainAccountStore.getState();
+        if (watermarkOff) {
+            if (account) void logUnmarkedSave(image.width || 0, image.height || 0);
+            return fetch(image.dataUrl).then((res) => res.blob());
+        }
         if (free && (await logUnmarkedSave(image.width || 0, image.height || 0))) return fetch(image.dataUrl).then((res) => res.blob());
         if (free) void useMainAccountStore.getState().refresh();
         return watermarkImage(image.dataUrl, image.mimeType);

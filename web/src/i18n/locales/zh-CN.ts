@@ -1800,7 +1800,7 @@ export default {
             publish: "发布到发现",
             assets: "存到我的资产",
             watermark: "保存的图片右下角带「AI 生成」标识。",
-            noWatermark: "创作会员：保存原图，无水印。",
+            noWatermark: "保存原图，不带水印。",
         },
     },
     imageEditor: {
