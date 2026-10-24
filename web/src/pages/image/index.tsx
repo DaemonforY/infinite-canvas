@@ -36,9 +36,11 @@ import { PromptInspiration } from "./prompt-inspiration";
 import { useSaveImage } from "./use-save-image";
 import { WorkbenchComposer } from "./workbench-composer";
 import { FeedBatchView, type FeedBatch } from "./workbench-feed";
+import { keepOriginalOutside } from "@/lib/image-editor/mask-composite";
 
 /** A request ready to run: the prompt sent to the model, the config (image model in `model`) and references. */
-type Snapshot = { text: string; label?: string; config: AiConfig; references: ReferenceImage[]; count: number };
+/** `keepOutside`: a mask edit — keep the source's pixels outside the painted region (not saved with the log). */
+type Snapshot = { text: string; label?: string; config: AiConfig; references: ReferenceImage[]; count: number; keepOutside?: { sourceUrl: string; regionUrl: string } };
 
 type ActiveBatch = { id: string; snapshot: Snapshot; results: GenerationResult[]; startedAt: number };
 
@@ -171,7 +173,7 @@ export default function ImagePage() {
         const result = snapshot.references.length ? await requestEdit(config, snapshot.text, snapshot.references) : await requestGeneration(config, snapshot.text);
         const generated = result[0];
         if (!generated) throw new Error(t("imageWorkbench.missingResult"));
-        const stored = await uploadImage(generated.dataUrl);
+        const stored = await uploadImage(snapshot.keepOutside ? await keepOriginalOutside(snapshot.keepOutside.sourceUrl, generated.dataUrl, snapshot.keepOutside.regionUrl) : generated.dataUrl);
         const image: GeneratedImage = {
             id: generated.id,
             dataUrl: stored.url,
@@ -367,7 +369,14 @@ export default function ImagePage() {
             : t("canvas.projectPage.maskPrompt", { source: imageReferenceLabel(0), mask: imageReferenceLabel(1), prompt: userPrompt });
         const [source, mask] = await Promise.all([sourceReference(image), uploadImage(payload.maskDataUrl).then((stored) => toReference(stored, "mask.png"))]);
         setDetail(null);
-        void runBatch({ text, label: payload.erase ? t("studio.labels.erase") : t("studio.labels.mask", { prompt: userPrompt }), config: imageConfig({ size: "auto" }), references: [source, mask], count: 1 });
+        void runBatch({
+            text,
+            label: payload.erase ? t("studio.labels.erase") : t("studio.labels.mask", { prompt: userPrompt }),
+            config: imageConfig({ size: "auto" }),
+            references: [source, mask],
+            count: 1,
+            keepOutside: { sourceUrl: image.dataUrl, regionUrl: payload.regionDataUrl },
+        });
     };
 
     const runOutpaint = async (payload: CanvasImageOutpaintPayload) => {

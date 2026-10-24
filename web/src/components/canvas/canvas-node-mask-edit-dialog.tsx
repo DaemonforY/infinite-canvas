@@ -10,6 +10,8 @@ import { useImageEditorViewport } from "@/components/canvas/use-image-editor-vie
 export type CanvasImageMaskEditPayload = {
     prompt: string;
     maskDataUrl: string;
+    /** The painted selection alone (its alpha marks the area), for keeping the original outside it. */
+    regionDataUrl: string;
     generate: boolean;
     /** Remove what was painted over; no prompt needed. */
     erase?: boolean;
@@ -212,7 +214,7 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
         if (!nextPrompt && !erase) return setError(t("canvas.editors.maskPromptRequired"));
         if (!canvas || !element) return;
         if (!canvasHasPaint(canvas)) return setError(t("canvas.editors.maskRequired"));
-        onConfirm({ prompt: erase ? "" : nextPrompt, maskDataUrl: buildMaskOverlay(element, canvas), generate, erase });
+        onConfirm({ prompt: erase ? "" : nextPrompt, maskDataUrl: buildMaskOverlay(element, canvas), regionDataUrl: canvas.toDataURL("image/png"), generate, erase });
     };
 
     return (
