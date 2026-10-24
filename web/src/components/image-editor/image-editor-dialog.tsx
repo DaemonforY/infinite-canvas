@@ -7,10 +7,12 @@ import { CanvasNodeCropDialog, type CanvasImageCropRect } from "@/components/can
 import { cropDataUrl } from "@/lib/canvas/canvas-image-data";
 import { ADJUSTMENT_RANGES, FILTER_PRESETS, IDENTITY_GEOMETRY, NEUTRAL_ADJUSTMENTS, isNeutral, rotateBy, type Adjustments, type FilterPresetId, type Geometry } from "@/lib/image-editor/adjustments";
 import { canvasToBlob, loadImageElement, mimeTypeOf, renderEdited } from "@/lib/image-editor/render";
+import { canvasMeasure, drawTextLayers, ensureLayerFonts, hitTestLayers, layoutLayer, type TextLayer } from "@/lib/image-editor/text-layers";
+import { TextLayerPanel } from "@/components/image-editor/text-layer-panel";
 
 export type ImageEditorResult = { blob: Blob; width: number; height: number };
 
-type Tab = "adjust" | "filter" | "crop" | "ai";
+type Tab = "adjust" | "filter" | "crop" | "text" | "ai";
 
 const PREVIEW_LONG_EDGE = 1100;
 const THUMB_LONG_EDGE = 120;
@@ -19,7 +21,7 @@ const AI_SUGGESTIONS = ["night", "watercolor", "background", "clearer", "brighte
 
 /**
  * Non-destructive image editor: crop / rotate / flip, tone and color adjustments, filter presets,
- * and hand-off to AI edits. Saving always produces a new image; the original is untouched.
+ * text and seal layers (real fonts instead of the model's misspelt text), and hand-off to AI edits. Saving always produces a new image; the original is untouched.
  */
 export function ImageEditorDialog({
     open,
@@ -53,11 +55,16 @@ export function ImageEditorDialog({
     const [aiText, setAiText] = useState("");
     const [busy, setBusy] = useState<"" | "save" | "ai" | "crop">("");
     const [loadError, setLoadError] = useState(false);
+    const [layers, setLayers] = useState<TextLayer[]>([]);
+    const [selectedLayerId, setSelectedLayerId] = useState("");
+    const [fontsTick, setFontsTick] = useState(0);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const frameRef = useRef(0);
+    const dragRef = useRef<{ id: string; dx: number; dy: number; pointerId: number } | null>(null);
 
     const mimeType = useMemo(() => mimeTypeOf(src), [src]);
-    const dirty = baseSrc !== src || geometry.rotate !== 0 || geometry.flipH || geometry.flipV || !isNeutral(adjustments);
+    const hasText = layers.some((l) => l.text.trim());
+    const dirty = baseSrc !== src || geometry.rotate !== 0 || geometry.flipH || geometry.flipV || !isNeutral(adjustments) || hasText;
 
     // Reset whenever a new image is opened.
     useEffect(() => {
@@ -68,8 +75,20 @@ export function ImageEditorDialog({
         setAdjustments(NEUTRAL_ADJUSTMENTS);
         setPresetId("original");
         setAiText("");
+        setLayers([]);
+        setSelectedLayerId("");
         setLoadError(false);
     }, [open, src]);
+
+    // Fetch the font chunks for the characters in use, then redraw with the real faces.
+    useEffect(() => {
+        if (!open || !layers.length) return;
+        let cancelled = false;
+        void ensureLayerFonts(layers).then(() => !cancelled && setFontsTick((n) => n + 1));
+        return () => {
+            cancelled = true;
+        };
+    }, [layers, open]);
 
     useEffect(() => {
         if (!open || !src) return;
@@ -102,10 +121,58 @@ export function ImageEditorDialog({
         cancelAnimationFrame(frameRef.current);
         frameRef.current = requestAnimationFrame(() => {
             if (!canvasRef.current) return;
-            renderEdited(source, comparing ? IDENTITY_GEOMETRY : geometry, comparing ? NEUTRAL_ADJUSTMENTS : adjustments, PREVIEW_LONG_EDGE, canvasRef.current);
+            const canvas = renderEdited(source, comparing ? IDENTITY_GEOMETRY : geometry, comparing ? NEUTRAL_ADJUSTMENTS : adjustments, PREVIEW_LONG_EDGE, canvasRef.current);
+            if (comparing || !layers.length) return;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return;
+            drawTextLayers(ctx, layers, canvas.width, canvas.height);
+            const selected = tab === "text" ? layers.find((l) => l.id === selectedLayerId) : undefined;
+            if (selected) {
+                const { box } = layoutLayer(selected, canvas.width, canvas.height, canvasMeasure(ctx, selected));
+                const pad = 4;
+                ctx.save();
+                ctx.setLineDash([5, 4]);
+                ctx.lineWidth = 1.5;
+                ctx.strokeStyle = "rgba(255,255,255,0.95)";
+                ctx.strokeRect(box.x - pad, box.y - pad, box.w + pad * 2, box.h + pad * 2);
+                ctx.strokeStyle = "rgba(0,0,0,0.55)";
+                ctx.lineDashOffset = 4.5;
+                ctx.strokeRect(box.x - pad, box.y - pad, box.w + pad * 2, box.h + pad * 2);
+                ctx.restore();
+            }
         });
         return () => cancelAnimationFrame(frameRef.current);
-    }, [adjustments, comparing, geometry, img, open, original]);
+    }, [adjustments, comparing, fontsTick, geometry, img, layers, open, original, selectedLayerId, tab]);
+
+    // Drag text layers on the preview while the 「文字」 tab is open.
+    const pointerToCanvas = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        const canvas = e.currentTarget;
+        const rect = canvas.getBoundingClientRect();
+        return { x: ((e.clientX - rect.left) / rect.width) * canvas.width, y: ((e.clientY - rect.top) / rect.height) * canvas.height, w: canvas.width, h: canvas.height };
+    };
+    const onCanvasPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        if (tab !== "text" || !layers.length) return;
+        const ctx = e.currentTarget.getContext("2d");
+        if (!ctx) return;
+        const p = pointerToCanvas(e);
+        const index = hitTestLayers(ctx, layers, p.w, p.h, p.x, p.y);
+        if (index < 0) return;
+        const layer = layers[index];
+        setSelectedLayerId(layer.id);
+        dragRef.current = { id: layer.id, dx: p.x / p.w - layer.x, dy: p.y / p.h - layer.y, pointerId: e.pointerId };
+        e.currentTarget.setPointerCapture(e.pointerId);
+    };
+    const onCanvasPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        const drag = dragRef.current;
+        if (!drag || drag.pointerId !== e.pointerId) return;
+        const p = pointerToCanvas(e);
+        const x = Math.min(0.98, Math.max(-0.2, p.x / p.w - drag.dx));
+        const y = Math.min(0.98, Math.max(-0.2, p.y / p.h - drag.dy));
+        setLayers((current) => current.map((l) => (l.id === drag.id ? { ...l, x, y } : l)));
+    };
+    const onCanvasPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+        if (dragRef.current?.pointerId === e.pointerId) dragRef.current = null;
+    };
 
     // Filter thumbnails follow the current crop / rotation.
     useEffect(() => {
@@ -118,8 +185,13 @@ export function ImageEditorDialog({
     const renderFull = useCallback(async (): Promise<ImageEditorResult> => {
         if (!img) throw new Error("image not loaded");
         const canvas = renderEdited(img, geometry, adjustments);
+        if (layers.some((l) => l.text.trim())) {
+            await ensureLayerFonts(layers);
+            const ctx = canvas.getContext("2d");
+            if (ctx) drawTextLayers(ctx, layers, canvas.width, canvas.height);
+        }
         return { blob: await canvasToBlob(canvas, mimeType), width: canvas.width, height: canvas.height };
-    }, [adjustments, geometry, img, mimeType]);
+    }, [adjustments, geometry, img, layers, mimeType]);
 
     const setValue = (key: keyof Adjustments, value: number) => {
         setAdjustments((current) => ({ ...current, [key]: value }));
@@ -156,6 +228,8 @@ export function ImageEditorDialog({
         setGeometry(IDENTITY_GEOMETRY);
         setAdjustments(NEUTRAL_ADJUSTMENTS);
         setPresetId("original");
+        setLayers([]);
+        setSelectedLayerId("");
     };
 
     const save = async () => {
@@ -185,6 +259,7 @@ export function ImageEditorDialog({
         { label: t("imageEditor.tabs.adjust"), value: "adjust" },
         { label: t("imageEditor.tabs.filter"), value: "filter" },
         { label: t("imageEditor.tabs.crop"), value: "crop" },
+        { label: t("imageEditor.tabs.text"), value: "text" },
         ...(onAiEdit || onMaskEdit ? [{ label: t("imageEditor.tabs.ai"), value: "ai" }] : []),
     ];
 
@@ -215,7 +290,14 @@ export function ImageEditorDialog({
                     <div className="relative flex min-h-[320px] flex-1 items-center justify-center overflow-hidden rounded-lg bg-[repeating-conic-gradient(#e7e5e4_0%_25%,#fafaf9_0%_50%)] bg-[length:20px_20px] p-3 dark:bg-[repeating-conic-gradient(#292524_0%_25%,#1c1917_0%_50%)]">
                         {loadError ? <p className="text-sm text-red-500">{t("imageEditor.loadFailed")}</p> : null}
                         {!img && !loadError ? <Spin /> : null}
-                        <canvas ref={canvasRef} className={img ? "max-h-[62vh] max-w-full rounded shadow-sm" : "hidden"} />
+                        <canvas
+                            ref={canvasRef}
+                            className={img ? `max-h-[62vh] max-w-full rounded shadow-sm ${tab === "text" && layers.length ? "cursor-move touch-none" : ""}` : "hidden"}
+                            onPointerDown={onCanvasPointerDown}
+                            onPointerMove={onCanvasPointerMove}
+                            onPointerUp={onCanvasPointerUp}
+                            onPointerCancel={onCanvasPointerUp}
+                        />
                         {img ? (
                             <button
                                 type="button"
@@ -287,6 +369,8 @@ export function ImageEditorDialog({
                                 <p className="text-xs leading-5 text-stone-500 dark:text-stone-400">{t("imageEditor.cropHint")}</p>
                             </div>
                         ) : null}
+
+                        {tab === "text" ? <TextLayerPanel layers={layers} selectedId={selectedLayerId} onLayersChange={setLayers} onSelect={setSelectedLayerId} onEraseText={onMaskEdit} /> : null}
 
                         {tab === "ai" ? (
                             <div className="space-y-3">
