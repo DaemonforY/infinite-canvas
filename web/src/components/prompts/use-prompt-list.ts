@@ -35,6 +35,7 @@ export const initialPromptBrowserState = (overrides?: Partial<PromptBrowserState
 });
 
 export const MY_PROMPTS_QUERY_KEY = "my-prompts";
+export const PROMPT_FOLDERS_QUERY_KEY = "prompt-folders";
 export const FOR_YOU_QUERY_KEY = "prompt-for-you";
 
 export type ForYouResult = { items: Prompt[]; basis: "history" | "popular"; scenes: PromptScene[] };
@@ -60,7 +61,8 @@ async function fetchForYou(apiKey: string, kind: "image" | "video", recent: Prom
 }
 
 /** Library list for the prompts page and the picker dialog: the catalog, for-you, mine, favorites or recents. */
-export function usePromptList(state: PromptBrowserState, enabled = true, kind: "image" | "video" = "image") {
+/** `skipMine`: the prompts page shows 「我的」 through MyPromptsPanel, which loads its own list. */
+export function usePromptList(state: PromptBrowserState, enabled = true, kind: "image" | "video" = "image", skipMine = false) {
     const [debouncedKeyword, setDebouncedKeyword] = useState(state.keyword);
     useEffect(() => {
         const timer = setTimeout(() => setDebouncedKeyword(state.keyword), 300);
@@ -96,7 +98,7 @@ export function usePromptList(state: PromptBrowserState, enabled = true, kind: "
         queryFn: ({ pageParam }) => listMyPrompts(apiKey, { page: pageParam, page_size: MINE_PAGE_SIZE }),
         initialPageParam: 1,
         getNextPageParam: (lastPage, pages) => (pages.reduce((total, page) => total + page.items.length, 0) < lastPage.total ? pages.length + 1 : undefined),
-        enabled: enabled && Boolean(apiKey) && state.tab === "mine",
+        enabled: enabled && Boolean(apiKey) && state.tab === "mine" && !skipMine,
     });
     const mineItems = useMemo(() => mine.data?.pages.flatMap((page) => page.items.map(serverPromptToPrompt)) || [], [mine.data?.pages]);
 

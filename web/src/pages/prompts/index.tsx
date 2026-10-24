@@ -4,6 +4,7 @@ import { Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { AccountSyncBadge } from "@/components/layout/account-sync-badge";
+import { MyPromptsPanel } from "@/components/prompts/my-prompts-panel";
 import { PromptCard } from "@/components/prompts/prompt-card";
 import { PromptFilters } from "@/components/prompts/prompt-filters";
 import { usePromptActions } from "@/components/prompts/use-prompt-actions";
@@ -25,7 +26,7 @@ export default function PromptsPage() {
     const openEditor = useMyPromptEditorStore((s) => s.open);
     const openConfigDialog = useConfigStore((s) => s.openConfigDialog);
     const actions = usePromptActions();
-    const list = usePromptList(state);
+    const list = usePromptList(state, true, "image", true);
     const { active } = list;
     const favoriteKeys = new Set(favorites.map(promptKey));
     const mineTab = state.tab === "mine";
@@ -62,15 +63,10 @@ export default function PromptsPage() {
                             <AccountSyncBadge className="mt-1.5" />
                         </div>
                         <div className="flex items-center gap-2 text-sm text-stone-500 dark:text-stone-400" data-testid="prompt-total">
-                            {t("prompts.total", { count: list.total })}
+                            {mineTab ? null : t("prompts.total", { count: list.total })}
                             {state.tab === "recent" && list.recentCount ? (
                                 <Button type="link" size="small" onClick={clearRecent}>
                                     {t("prompts.clearRecent")}
-                                </Button>
-                            ) : null}
-                            {mineTab && list.apiKey ? (
-                                <Button type="primary" icon={<Plus className="size-4" />} onClick={() => openEditor({})} data-testid="my-prompt-create">
-                                    {t("myPrompts.create")}
                                 </Button>
                             ) : null}
                         </div>
@@ -96,6 +92,8 @@ export default function PromptsPage() {
                                 <Button onClick={() => openConfigDialog(false, "channels")}>{t("contestSubmit.openChannels")}</Button>
                             </div>
                         </Empty>
+                    ) : mineTab ? (
+                        <MyPromptsPanel apiKey={list.apiKey} keyword={state.keyword} scene={state.scene} onOpen={setSelectedPrompt} />
                     ) : list.loading ? (
                         <div className="flex h-60 items-center justify-center">
                             <Spin />

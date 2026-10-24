@@ -73,3 +73,69 @@ function cleanPrompt(text: string) {
         .replace(/^["“「]([\s\S]*)["”」]$/, "$1")
         .trim();
 }
+
+const SPLIT_INSTRUCTION = [
+    "用户粘贴了一段笔记，里面混着若干条 AI 生图 / 视频提示词，可能还有说明文字、日期、链接、聊天记录。",
+    "请把其中每一条完整的提示词找出来，输出 JSON 数组，每项是 {\"title\": 标题, \"prompt\": 提示词, \"tags\": [标签]}。",
+    "要求：",
+    "1. prompt 必须原样摘录，一个字都不改、不翻译、不扩写；一条提示词跨多行时保留换行。",
+    "2. 笔记里没有给标题时，用 4–10 个字概括画面作为 title。",
+    "3. tags 最多 3 个，从内容里概括（如 海报、头像、产品图），没有就给空数组。",
+    "4. 说明文字、日期、链接、聊天内容不是提示词，不要输出。",
+    "5. 只输出 JSON 数组本身，不要解释，不要代码块。",
+].join("\n");
+
+/** Longer notes are split in parts so each answer stays within the model's output limit. */
+const SPLIT_CHUNK_CHARS = 6000;
+
+export type SplitPrompt = { title: string; prompt: string; tags: string[] };
+
+function chunkText(text: string): string[] {
+    const chunks: string[] = [];
+    let current = "";
+    for (const block of text.split(/\n\s*\n/)) {
+        if (current && current.length + block.length > SPLIT_CHUNK_CHARS) {
+            chunks.push(current);
+            current = "";
+        }
+        current += (current ? "\n\n" : "") + block;
+    }
+    if (current) chunks.push(current);
+    return chunks;
+}
+
+/** Reads the model's JSON array, tolerating a code fence or text around it. */
+export function parseSplitAnswer(answer: string): SplitPrompt[] {
+    const start = answer.indexOf("[");
+    const end = answer.lastIndexOf("]");
+    if (start < 0 || end <= start) return [];
+    try {
+        const list = JSON.parse(answer.slice(start, end + 1)) as unknown[];
+        return list
+            .map((entry) => {
+                const record = (entry && typeof entry === "object" ? entry : {}) as Record<string, unknown>;
+                const tags = Array.isArray(record.tags) ? record.tags.map(String).map((tag) => tag.trim()).filter(Boolean).slice(0, 3) : [];
+                return { title: String(record.title || "").trim().slice(0, 60), prompt: String(record.prompt || "").trim().slice(0, 8000), tags };
+            })
+            .filter((item) => item.prompt.length >= 4);
+    } catch {
+        return [];
+    }
+}
+
+/** 「AI 拆分」: the text model picks the prompts out of a messy note (one call per ~6000 characters). */
+export async function splitPromptsWithAI(config: AiConfig, text: string, onProgress?: (done: number, total: number) => void, signal?: AbortSignal): Promise<SplitPrompt[]> {
+    const chunks = chunkText(text.trim());
+    const out: SplitPrompt[] = [];
+    for (let i = 0; i < chunks.length; i++) {
+        onProgress?.(i, chunks.length);
+        const messages: AiTextMessage[] = [
+            { role: "system", content: SPLIT_INSTRUCTION },
+            { role: "user", content: chunks[i] },
+        ];
+        const answer = await requestImageQuestion(promptAssistConfig(config), messages, () => undefined, { signal });
+        out.push(...parseSplitAnswer(answer));
+    }
+    onProgress?.(chunks.length, chunks.length);
+    return out;
+}

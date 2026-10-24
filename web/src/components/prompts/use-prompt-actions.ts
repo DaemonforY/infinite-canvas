@@ -4,14 +4,16 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
 import { useCopyText } from "@/hooks/use-copy-text";
+import { promptVariables } from "@/lib/prompt-variables";
 import { deleteMyPrompt } from "@/services/api/main-site-prompts";
 import type { Prompt } from "@/services/api/prompts";
 import { currentMainSiteKey, reportFavorite, reportUse } from "@/services/api/prompt-usage";
 import { useMyPromptEditorStore } from "@/stores/use-my-prompt-editor-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { usePromptLibraryStore } from "@/stores/use-prompt-library-store";
+import { usePromptVariableStore } from "@/stores/use-prompt-variable-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
-import { FOR_YOU_QUERY_KEY, MY_PROMPTS_QUERY_KEY } from "./use-prompt-list";
+import { FOR_YOU_QUERY_KEY, MY_PROMPTS_QUERY_KEY, PROMPT_FOLDERS_QUERY_KEY } from "./use-prompt-list";
 
 /** What a user can do with a library prompt: draw with it, copy it, favorite it, keep it, save it as their own. */
 export function usePromptActions() {
@@ -25,22 +27,32 @@ export function usePromptActions() {
     const toggleFavorite = usePromptLibraryStore((state) => state.toggleFavorite);
     const markUsed = usePromptLibraryStore((state) => state.markUsed);
 
+    // A template prompt ({主体}) asks for its values first; `filled` is the prompt with them filled in.
+    const askVariables = (item: Prompt, action: "draw" | "copy", filled?: string) => {
+        if (filled !== undefined || !promptVariables(item.prompt).length) return false;
+        usePromptVariableStore.getState().open({ item, action });
+        return true;
+    };
+
     return {
         /** Opens the image (or video) workbench with the prompt filled in; the user still clicks generate. */
-        draw: (item: Prompt) => {
+        draw: (item: Prompt, filled?: string) => {
+            if (askVariables(item, "draw", filled)) return;
             markUsed(item);
             reportUse(item);
             const video = item.traits.scenes[0] === "video";
-            if (video) useWorkbenchAgentStore.getState().dispatchVideo({ prompt: item.prompt, run: false });
-            else useWorkbenchAgentStore.getState().dispatchImage({ prompt: item.prompt, run: false });
+            const prompt = filled ?? item.prompt;
+            if (video) useWorkbenchAgentStore.getState().dispatchVideo({ prompt, run: false });
+            else useWorkbenchAgentStore.getState().dispatchImage({ prompt, run: false });
             navigate(video ? "/video" : "/image");
             if (item.traits.needsReference) message.info(t("prompts.needsReferenceHint"), 5);
             else message.success(t("prompts.filledIn"));
         },
-        copy: (item: Prompt) => {
+        copy: (item: Prompt, filled?: string) => {
+            if (askVariables(item, "copy", filled)) return;
             markUsed(item);
             reportUse(item);
-            copyText(item.prompt, t("common.promptCopied"));
+            copyText(filled ?? item.prompt, t("common.promptCopied"));
         },
         toggleFavorite: (item: Prompt) => {
             const added = toggleFavorite(item);
@@ -52,9 +64,9 @@ export function usePromptActions() {
             message.success(t("common.addedToAssets"));
         },
         /** Opens the editor: edits the user's own prompt, or starts a new one from a library prompt. */
-        saveMine: (item: Prompt) => {
+        saveMine: (item: Prompt, folderId?: number) => {
             if (item.mine) openEditor({ item });
-            else openEditor({ prompt: item.prompt, title: item.title, kind: item.traits.scenes[0] === "video" ? "video" : "image" });
+            else openEditor({ prompt: item.prompt, title: item.title, kind: item.traits.scenes[0] === "video" ? "video" : "image", folderId });
         },
         deleteMine: (item: Prompt) => {
             const key = currentMainSiteKey();
@@ -70,6 +82,7 @@ export function usePromptActions() {
                         await deleteMyPrompt(key, item.serverId!);
                         message.success(t("myPrompts.deleted"));
                         void queryClient.invalidateQueries({ queryKey: [MY_PROMPTS_QUERY_KEY] });
+                        void queryClient.invalidateQueries({ queryKey: [PROMPT_FOLDERS_QUERY_KEY] });
                         void queryClient.invalidateQueries({ queryKey: [FOR_YOU_QUERY_KEY] });
                     } catch (error) {
                         message.error(error instanceof Error ? error.message : String(error));

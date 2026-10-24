@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, App, Button, Form, Input, Modal, Select, Switch } from "antd";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ImagePlus, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -8,12 +8,13 @@ import { MAIN_SITE_NAME, mainSiteLink } from "@/constant/runtime-config";
 import { createImageThumbnail } from "@/lib/image-thumbnail";
 import { PROMPT_SCENES } from "@/lib/prompt-taxonomy";
 import { findMainSiteApiKey, loadImageBlob } from "@/services/api/main-site-contests";
-import { createMyPrompt, PROMPT_COVER_MAX_BYTES, updateMyPrompt, uploadPromptCover, type MyPromptInput } from "@/services/api/main-site-prompts";
+import { createMyPrompt, listPromptFolders, PROMPT_COVER_MAX_BYTES, updateMyPrompt, uploadPromptCover, type MyPromptInput } from "@/services/api/main-site-prompts";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useMyPromptEditorStore } from "@/stores/use-my-prompt-editor-store";
-import { FOR_YOU_QUERY_KEY, MY_PROMPTS_QUERY_KEY } from "./use-prompt-list";
+import { FOR_YOU_QUERY_KEY, MY_PROMPTS_QUERY_KEY, PROMPT_FOLDERS_QUERY_KEY } from "./use-prompt-list";
 
-type FormValues = { title: string; prompt: string; scenes: string[]; tags: string[]; share: boolean };
+/** folder: 0 = 未分类. */
+type FormValues = { title: string; prompt: string; scenes: string[]; tags: string[]; share: boolean; folder: number };
 
 /** Covers are shown on cards; 1280px on the long edge is plenty and keeps uploads small. */
 async function prepareCover(blob: Blob): Promise<Blob> {
@@ -44,6 +45,7 @@ export function MyPromptDialog() {
     const fileInput = useRef<HTMLInputElement>(null);
     const item = payload?.item;
     const open = Boolean(payload);
+    const folders = useQuery({ queryKey: [PROMPT_FOLDERS_QUERY_KEY, apiKey], queryFn: () => listPromptFolders(apiKey), enabled: open && Boolean(apiKey), staleTime: 30_000 });
 
     useEffect(() => {
         if (!payload) return;
@@ -54,6 +56,7 @@ export function MyPromptDialog() {
             scenes: current ? current.traits.scenes.filter((scene) => scene !== "other") : payload.kind === "video" ? ["video"] : [],
             tags: current?.curatedTags || [],
             share: current ? current.visibility === "public" : false,
+            folder: current ? current.folderId || 0 : payload.folderId || 0,
         });
         setCoverBlob(null);
         setCoverUrl(current?.coverPath || "");
@@ -108,10 +111,12 @@ export function MyPromptDialog() {
                 tags: values.tags,
                 cover_url: cover,
                 share: values.share,
+                folder_id: values.folder || 0,
             };
             if (item?.serverId) await updateMyPrompt(apiKey, item.serverId, input);
             else await createMyPrompt(apiKey, input);
             void queryClient.invalidateQueries({ queryKey: [MY_PROMPTS_QUERY_KEY] });
+            void queryClient.invalidateQueries({ queryKey: [PROMPT_FOLDERS_QUERY_KEY] });
             void queryClient.invalidateQueries({ queryKey: [FOR_YOU_QUERY_KEY] });
             message.success(values.share ? t("myPrompts.savedShared") : t("myPrompts.saved"), 4);
             close();
@@ -204,6 +209,13 @@ export function MyPromptDialog() {
                             <Select mode="tags" maxCount={8} tokenSeparators={[",", "，", " ", "#"]} placeholder={t("myPrompts.tagsPlaceholder")} open={false} suffixIcon={null} />
                         </Form.Item>
                     </div>
+                    <Form.Item name="folder" label={t("myPrompts.fieldFolder")}>
+                        <Select
+                            data-testid="my-prompt-folder"
+                            loading={folders.isLoading}
+                            options={[{ value: 0, label: t("myPrompts.unfiled") }, ...(folders.data?.folders || []).map((folder) => ({ value: folder.id, label: folder.name }))]}
+                        />
+                    </Form.Item>
                     <Form.Item name="share" valuePropName="checked" label={t("myPrompts.fieldShare")} extra={t("myPrompts.shareHint")} className="mb-0">
                         <Switch data-testid="my-prompt-share" />
                     </Form.Item>

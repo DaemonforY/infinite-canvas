@@ -1,5 +1,5 @@
-import { Copy, FileText, Flame, FolderPlus, ImagePlus, Pencil, Star, Trash2, Wand2 } from "lucide-react";
-import { useState } from "react";
+import { Check, Copy, FileText, Flame, FolderPlus, ImagePlus, Pencil, Pin, Star, Trash2, Wand2 } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { Button, Card, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -17,6 +17,8 @@ export function PromptCard({
     onSaveAsset,
     onEdit,
     onDelete,
+    selection,
+    extra,
     compact = false,
 }: {
     item: Prompt;
@@ -29,6 +31,10 @@ export function PromptCard({
     /** The user's own prompts: edit / delete instead of keeping as an asset. */
     onEdit?: () => void;
     onDelete?: () => void;
+    /** Multi-select in 「我的」: the whole card toggles, the actions are hidden. */
+    selection?: { selected: boolean; onToggle: () => void };
+    /** More actions (pin / move) after the regular ones. */
+    extra?: ReactNode;
     compact?: boolean;
 }) {
     const { t } = useTranslation();
@@ -36,15 +42,16 @@ export function PromptCard({
     const [failedCover, setFailedCover] = useState("");
     const showCover = Boolean(item.coverUrl) && failedCover !== item.coverUrl;
     const video = item.traits.scenes[0] === "video";
+    const open = selection ? selection.onToggle : onOpen;
 
     return (
         <Card
             hoverable
-            className={cn("group flex h-full flex-col overflow-hidden", compact && "cursor-pointer")}
+            className={cn("group flex h-full flex-col overflow-hidden", compact && "cursor-pointer", selection?.selected && "!border-sky-500 ring-2 ring-sky-500/40")}
             styles={{ body: { display: "flex", flex: 1, flexDirection: "column", padding: 0 } }}
             cover={
                 <div className="relative overflow-hidden">
-                    <button type="button" className="block w-full cursor-pointer text-left" onClick={onOpen} aria-label={item.title}>
+                    <button type="button" className="block w-full cursor-pointer text-left" onClick={open} aria-label={item.title}>
                         {showCover ? (
                             <img
                                 src={item.coverUrl}
@@ -72,7 +79,20 @@ export function PromptCard({
                             {t("prompts.needsReference")}
                         </span>
                     ) : null}
-                    {onFavorite ? (
+                    {selection ? (
+                        <button
+                            type="button"
+                            data-testid="prompt-select"
+                            aria-pressed={selection.selected}
+                            onClick={selection.onToggle}
+                            className={cn(
+                                "absolute right-2 top-2 grid size-7 place-items-center rounded-full border-2 text-white transition",
+                                selection.selected ? "border-sky-500 bg-sky-500" : "border-white/90 bg-black/30 backdrop-blur",
+                            )}
+                        >
+                            {selection.selected ? <Check className="size-4" /> : null}
+                        </button>
+                    ) : onFavorite ? (
                         <Tooltip title={favorite ? t("prompts.unfavorite") : t("prompts.favorite")}>
                             <button
                                 type="button"
@@ -95,9 +115,10 @@ export function PromptCard({
                 </div>
             }
         >
-            <button type="button" className="block w-full flex-1 cursor-pointer text-left" onClick={onOpen}>
+            <button type="button" className="block w-full flex-1 cursor-pointer text-left" onClick={open}>
                 <div className={compact ? "px-3 py-2.5" : "px-4 pb-2 pt-3"}>
                     <div className="flex items-center gap-2">
+                        {item.pinned ? <Pin className="size-3.5 shrink-0 fill-amber-400 text-amber-500" aria-label={t("myPrompts.pinned")} data-testid="prompt-pinned" /> : null}
                         <h2 className="line-clamp-1 min-w-0 flex-1 text-sm font-semibold text-stone-950 dark:text-stone-100">{item.title}</h2>
                         {item.useCount ? (
                             <span className="inline-flex shrink-0 items-center gap-0.5 text-[11px] text-stone-400" title={t("prompts.useCount", { count: item.useCount })} data-testid="prompt-use-count">
@@ -110,7 +131,7 @@ export function PromptCard({
                     <PromptBadges item={item} className={compact ? "mt-1.5" : "mt-2.5"} max={compact ? 2 : 3} />
                 </div>
             </button>
-            {!compact && (onDraw || onCopy || onSaveAsset || onEdit) ? (
+            {!compact && !selection && (onDraw || onCopy || onSaveAsset || onEdit) ? (
                 <div className="mt-auto flex items-center gap-1 px-4 pb-4 pt-1">
                     {onDraw ? (
                         <Button type="primary" size="small" icon={<Wand2 className="size-3.5" />} onClick={onDraw} data-testid="prompt-draw">
@@ -138,6 +159,7 @@ export function PromptCard({
                             <Button type="text" size="small" icon={<FolderPlus className="size-3.5" />} onClick={onSaveAsset} aria-label={t("common.addToAssets")} />
                         </Tooltip>
                     ) : null}
+                    {extra}
                 </div>
             ) : null}
         </Card>

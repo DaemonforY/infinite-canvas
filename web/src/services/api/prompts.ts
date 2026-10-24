@@ -28,6 +28,9 @@ export type Prompt = RawPrompt & {
     curatedTags?: string[];
     /** Cover as stored on the main site (coverUrl may be rewritten through the image proxy). */
     coverPath?: string;
+    /** 「我的」: folder id (undefined = 未分类) and pin. */
+    folderId?: number;
+    pinned?: boolean;
 };
 
 export const ALL_PROMPTS_OPTION = "all";
@@ -229,6 +232,8 @@ export function serverPromptToPrompt(item: ServerPrompt): Prompt {
         reviewNote: item.review_note || "",
         curatedTags: item.tags || [],
         coverPath: item.cover_url || "",
+        folderId: item.folder_id || undefined,
+        pinned: Boolean(item.pinned),
     };
 }
 

@@ -10,6 +10,8 @@ export type MyPromptEditorPayload = {
     /** A picture to use as the cover (e.g. the image just generated): data:, blob: or remote URL. */
     imageUrl?: string;
     kind?: "image" | "video";
+    /** Folder for a new prompt (the folder being viewed in 「我的」). */
+    folderId?: number;
 };
 
 type MyPromptEditorStore = {
