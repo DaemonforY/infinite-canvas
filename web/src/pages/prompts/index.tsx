@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { AccountSyncBadge } from "@/components/layout/account-sync-badge";
 import { MyPromptsPanel } from "@/components/prompts/my-prompts-panel";
+import { MarketPanel } from "@/components/market/market-panel";
 import { PromptCard } from "@/components/prompts/prompt-card";
 import { PromptFilters } from "@/components/prompts/prompt-filters";
 import { usePromptActions } from "@/components/prompts/use-prompt-actions";
@@ -63,7 +64,7 @@ export default function PromptsPage() {
                             <AccountSyncBadge className="mt-1.5" />
                         </div>
                         <div className="flex items-center gap-2 text-sm text-stone-500 dark:text-stone-400" data-testid="prompt-total">
-                            {mineTab ? null : t("prompts.total", { count: list.total })}
+                            {mineTab || state.tab === "market" ? null : t("prompts.total", { count: list.total })}
                             {state.tab === "recent" && list.recentCount ? (
                                 <Button type="link" size="small" onClick={clearRecent}>
                                     {t("prompts.clearRecent")}
@@ -73,7 +74,7 @@ export default function PromptsPage() {
                     </div>
 
                     <div className="-mx-4 mt-3 bg-background/95 px-4 pb-3 pt-3 backdrop-blur sm:sticky sm:-top-6 sm:z-10 lg:-top-8 sm:-mx-6 sm:px-6">
-                        <PromptFilters state={state} onChange={update} sources={list.sources} sceneCounts={list.sceneCounts} favoriteCount={list.favoriteCount} recentCount={list.recentCount} />
+                        <PromptFilters showMarket state={state} onChange={update} sources={list.sources} sceneCounts={list.sceneCounts} favoriteCount={list.favoriteCount} recentCount={list.recentCount} />
                     </div>
 
                     {forYouHint ? (
@@ -83,7 +84,9 @@ export default function PromptsPage() {
                     ) : null}
                     {mineTab ? <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">{t("myPrompts.intro")}</p> : null}
 
-                    {mineTab && !list.apiKey ? (
+                    {state.tab === "market" ? (
+                        <MarketPanel keyword={state.keyword} />
+                    ) : mineTab && !list.apiKey ? (
                         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} className="py-16" description={t("myPrompts.noKeyHint", { site: MAIN_SITE_NAME })} data-testid="my-prompts-connect">
                             <div className="flex justify-center gap-2">
                                 <Button type="primary" href={mainSiteLink("/keys", "my-prompts")} target="_blank" rel="noopener noreferrer">

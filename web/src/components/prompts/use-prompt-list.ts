@@ -13,7 +13,7 @@ export const PROMPT_PAGE_SIZE = 24;
 const FOR_YOU_LIMIT = 48;
 const MINE_PAGE_SIZE = 60;
 
-export type PromptTab = "all" | "forYou" | "mine" | "favorites" | "recent";
+export type PromptTab = "all" | "forYou" | "market" | "mine" | "favorites" | "recent";
 
 export type PromptBrowserState = {
     tab: PromptTab;

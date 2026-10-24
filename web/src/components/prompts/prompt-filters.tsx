@@ -1,4 +1,4 @@
-import { Clock3, Heart, Search, Sparkles, Star } from "lucide-react";
+import { Clock3, Heart, Search, Sparkles, Star, Store } from "lucide-react";
 import { Input, Segmented, Select, Tag } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -15,12 +15,15 @@ type Props = {
     favoriteCount: number;
     recentCount: number;
     compact?: boolean;
+    /** The prompts page adds 「市场」 (提示词交易); the picker dialog does not. */
+    showMarket?: boolean;
 };
 
 /** Tabs + search + scene chips + model / sort / source selectors shared by the page and the picker. */
-export function PromptFilters({ state, onChange, sources, sceneCounts, favoriteCount, recentCount, compact = false }: Props) {
+export function PromptFilters({ state, onChange, sources, sceneCounts, favoriteCount, recentCount, compact = false, showMarket = false }: Props) {
     const { t } = useTranslation();
     const remote = state.tab === "all";
+    const market = state.tab === "market";
     const scenes = PROMPT_SCENES.filter((scene) => !remote || (sceneCounts[scene] || 0) > 0 || state.scene === scene);
 
     return (
@@ -41,6 +44,19 @@ export function PromptFilters({ state, onChange, sources, sceneCounts, favoriteC
                                     </span>
                                 ),
                             },
+                            ...(showMarket
+                                ? [
+                                      {
+                                          value: "market" as PromptTab,
+                                          label: (
+                                              <span className="inline-flex items-center gap-1" data-testid="prompt-tab-market">
+                                                  <Store className="size-3.5" />
+                                                  {t("market.tab")}
+                                              </span>
+                                          ),
+                                      },
+                                  ]
+                                : []),
                             {
                                 value: "mine",
                                 label: (
@@ -82,6 +98,7 @@ export function PromptFilters({ state, onChange, sources, sceneCounts, favoriteC
                     placeholder={t("prompts.search")}
                     onChange={(event) => onChange({ keyword: event.target.value })}
                 />
+                {market ? null : (
                 <Select<PromptModelFilter>
                     className="min-w-32 flex-1 sm:w-40 sm:flex-none"
                     size={compact ? "middle" : "large"}
@@ -93,6 +110,7 @@ export function PromptFilters({ state, onChange, sources, sceneCounts, favoriteC
                         { value: "other", label: t("prompts.modelOther") },
                     ]}
                 />
+                )}
                 {remote ? (
                     <Select<PromptSort>
                         className="w-28"
@@ -120,7 +138,7 @@ export function PromptFilters({ state, onChange, sources, sceneCounts, favoriteC
                     </div>
                 ) : null}
             </div>
-            <div className={cn("thin-scrollbar flex gap-1.5 overflow-x-auto pb-1", compact ? "flex-nowrap" : "flex-nowrap sm:flex-wrap sm:overflow-visible")} data-testid="prompt-scene-chips">
+            <div className={cn("thin-scrollbar flex gap-1.5 overflow-x-auto pb-1", compact ? "flex-nowrap" : "flex-nowrap sm:flex-wrap sm:overflow-visible", market && "hidden")} data-testid="prompt-scene-chips">
                 <SceneChip active={state.scene === ALL_PROMPTS_OPTION} onClick={() => onChange({ scene: ALL_PROMPTS_OPTION })}>
                     {t("common.all")}
                 </SceneChip>

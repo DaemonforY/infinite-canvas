@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { App, Button, Dropdown, Empty, Input, Modal, Select, Spin, type MenuProps } from "antd";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { saveAs } from "file-saver";
-import { CheckSquare, Download, FolderInput, FolderPlus, Import, MoreHorizontal, Pin, PinOff, Plus, Trash2, X } from "lucide-react";
+import { CheckSquare, Download, FolderInput, FolderPlus, Import, MoreHorizontal, Pin, PinOff, Plus, Store, Trash2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { promptsToCsv, promptsToMarkdown, type ExportablePrompt } from "@/lib/prompt-export";
@@ -20,6 +20,7 @@ import {
 } from "@/services/api/main-site-prompts";
 import { promptKey, serverPromptToPrompt, type Prompt } from "@/services/api/prompts";
 import { useMyPromptEditorStore } from "@/stores/use-my-prompt-editor-store";
+import { useSellDialogStore } from "@/stores/use-sell-dialog-store";
 import { PromptCard } from "./prompt-card";
 import { PromptImportDialog } from "./prompt-import-dialog";
 import { usePromptActions } from "./use-prompt-actions";
@@ -43,6 +44,7 @@ export function MyPromptsPanel({ apiKey, keyword, scene, onOpen }: { apiKey: str
     const queryClient = useQueryClient();
     const actions = usePromptActions();
     const openEditor = useMyPromptEditorStore((state) => state.open);
+    const openSell = useSellDialogStore((state) => state.open);
     const [view, setView] = useState<FolderView>("all");
     const [sort, setSort] = useState<MyPromptSort>("latest");
     const [selecting, setSelecting] = useState(false);
@@ -259,6 +261,15 @@ export function MyPromptsPanel({ apiKey, keyword, scene, onOpen }: { apiKey: str
                             {t("myPrompts.export")}
                         </Button>
                     </Dropdown>
+                    <Button
+                        size="small"
+                        icon={<Store className="size-3.5" />}
+                        disabled={!selectedIds.length || selectedIds.length > 50}
+                        onClick={() => openSell({ picks: selectedItems.map((item) => ({ id: item.serverId!, title: item.title, prompt: item.prompt, coverUrl: item.coverPath })) })}
+                        data-testid="prompt-batch-sell"
+                    >
+                        {t("market.sellSelected")}
+                    </Button>
                     <Button size="small" danger icon={<Trash2 className="size-3.5" />} disabled={!selectedIds.length} onClick={() => confirmDelete(selectedIds)} data-testid="prompt-batch-delete">
                         {t("common.delete")}
                     </Button>

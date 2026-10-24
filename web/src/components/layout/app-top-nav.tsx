@@ -9,6 +9,7 @@ import { ContestSubmitModal } from "@/components/contest/contest-submit-modal";
 import { PublishWorkDialog } from "@/components/community/publish-work-dialog";
 import { MyPromptDialog } from "@/components/prompts/my-prompt-dialog";
 import { PromptVariableDialog } from "@/components/prompts/prompt-variable-dialog";
+import { SellDialog } from "@/components/market/sell-dialog";
 import { QuickStartDialog } from "@/components/onboarding/quick-start-dialog";
 import { SetupBanner } from "@/components/onboarding/setup-banner";
 import { MobileNavDrawer } from "@/components/layout/mobile-nav-drawer";
@@ -116,6 +117,7 @@ export function AppTopNav() {
             <PublishWorkDialog />
             <MyPromptDialog />
             <PromptVariableDialog />
+            <SellDialog />
             <QuickStartDialog />
         </>
     );
