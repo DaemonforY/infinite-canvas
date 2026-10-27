@@ -17,11 +17,19 @@ type ThemeStore = {
 export const useThemeStore = create<ThemeStore>()(
     persist(
         (set) => ({
-            theme: "dark",
+            theme: "light",
             skin: DEFAULT_SKIN_NAME,
             setTheme: (theme) => set({ theme }),
             setSkin: (skin) => set({ skin }),
         }),
-        { name: "infinite-canvas:theme_store" },
+        {
+            name: "infinite-canvas:theme_store",
+            // v0 stored "dark" for everyone, chosen or not; v1 starts everyone on light once so hints stay readable.
+            version: 1,
+            migrate: (persisted, version) => {
+                const state = (persisted ?? {}) as Partial<ThemeStore>;
+                return version < 1 ? { ...state, theme: "light" } : state;
+            },
+        },
     ),
 );
