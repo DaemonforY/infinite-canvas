@@ -21,6 +21,7 @@ export function PromptAssistPanel({
     references,
     onApply,
     onClose,
+    plain,
 }: {
     mode: PromptAssistMode;
     idea: string;
@@ -28,6 +29,8 @@ export function PromptAssistPanel({
     /** `reference` is set when the user also wants the analysed image as a reference. */
     onApply: (prompt: string, reference?: ReferenceImage) => void;
     onClose: () => void;
+    /** Inside a phone bottom sheet: no card of its own. */
+    plain?: boolean;
 }) {
     const { t } = useTranslation();
     const effectiveConfig = useEffectiveConfig();
@@ -98,11 +101,11 @@ export function PromptAssistPanel({
     const Icon = mode === "write" ? Wand2 : ScanText;
 
     return (
-        <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-xl dark:border-stone-700" data-testid={`assist-${mode}`}>
+        <div className={plain ? "pt-1" : "rounded-2xl border border-stone-200 bg-card p-4 shadow-xl dark:border-stone-700"} data-testid={`assist-${mode}`}>
             <div className="flex items-center gap-2">
                 <Icon className="size-4 text-(--skin-accent)" />
-                <span className="font-medium">{title}</span>
-                {mode === "write" && idea.trim() ? <span className="min-w-0 truncate text-xs text-stone-500">{t("studio.assist.youWrote", { idea: idea.trim() })}</span> : null}
+                <span className="shrink-0 whitespace-nowrap font-medium">{title}</span>
+                <span className="min-w-0 flex-1 truncate text-xs text-stone-500">{mode === "write" && idea.trim() ? t("studio.assist.youWrote", { idea: idea.trim() }) : null}</span>
                 <button type="button" className="ml-auto flex size-7 items-center justify-center rounded-md text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800" onClick={onClose} aria-label={t("common.cancel")}>
                     <X className="size-4" />
                 </button>

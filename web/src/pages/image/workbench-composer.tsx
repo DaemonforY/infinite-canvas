@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowRight, BookOpen, ChevronDown, History, ImagePlus, Panel
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
+import { BottomSheet } from "@/components/bottom-sheet";
 import { ImageSettingsPanel } from "@/components/image-settings-panel";
 import { ReferenceSizeBadge } from "@/components/image-tools/reference-image-tool";
 import { ModelPicker } from "@/components/model-picker";
@@ -12,6 +13,7 @@ import { useCanvasTheme } from "@/lib/canvas-theme";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
 import { formatDuration } from "@/lib/image-utils";
 import { computeMediaSize, inferMediaRatio, inferMediaScale } from "@/lib/media-size";
+import { useIsPhone } from "@/lib/use-is-phone";
 import { cn } from "@/lib/utils";
 import { previewUrlFor } from "@/services/image-storage";
 import type { AiConfig } from "@/stores/use-config-store";
@@ -100,6 +102,10 @@ export function WorkbenchComposer({
     const navigate = useNavigate();
     const [dragging, setDragging] = useState(false);
     const account = useMainAccountStore((state) => state.account);
+    const phone = useIsPhone();
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [moreOpen, setMoreOpen] = useState(false);
+    const [typing, setTyping] = useState(false);
 
     const size = config.size || "1:1";
     const ratio = inferMediaRatio(size);
@@ -111,7 +117,7 @@ export function WorkbenchComposer({
     const ratioUse = RATIOS.find((item) => item.value === ratio)?.use;
 
     const ratioPanel = (
-        <div className="w-[336px]">
+        <div className={phone ? "w-full" : "w-[336px]"}>
             <div className="mb-2 text-xs text-stone-500">{t("studio.params.ratio")}</div>
             <div className="grid grid-cols-4 gap-1.5">
                 {RATIOS.map((item) => (
@@ -120,7 +126,8 @@ export function WorkbenchComposer({
                         type="button"
                         onClick={() => setRatio(item.value)}
                         className={cn(
-                            "flex h-[68px] flex-col items-center justify-center gap-1 rounded-lg border text-xs transition",
+                            "flex flex-col items-center justify-center gap-1 rounded-lg border text-xs transition",
+                            phone ? "h-[72px]" : "h-[68px]",
                             ratio === item.value ? "border-(--skin-accent) bg-(--skin-accent)/10" : "border-stone-200 hover:border-stone-300 dark:border-stone-800 dark:hover:border-stone-700",
                         )}
                     >
@@ -138,7 +145,7 @@ export function WorkbenchComposer({
                         type="button"
                         disabled={ratio === "auto"}
                         onClick={() => setScale(value)}
-                        className={cn("h-8 rounded-md text-xs transition disabled:opacity-40", scale === value && ratio !== "auto" ? "bg-white shadow-sm dark:bg-stone-700" : "text-stone-500")}
+                        className={cn("rounded-md text-xs transition disabled:opacity-40", phone ? "h-10 text-sm" : "h-8", scale === value && ratio !== "auto" ? "bg-white shadow-sm dark:bg-stone-700" : "text-stone-500")}
                     >
                         {t(`studio.params.scales.${value}`)}
                     </button>
@@ -149,11 +156,16 @@ export function WorkbenchComposer({
     );
 
     const countPanel = (
-        <div className="w-[220px]">
+        <div className={phone ? "w-full" : "w-[220px]"}>
             <div className="mb-2 text-xs text-stone-500">{t("studio.params.count")}</div>
             <div className="grid grid-cols-3 gap-1 rounded-lg bg-stone-100 p-1 dark:bg-stone-900">
                 {COUNTS.map((value) => (
-                    <button key={value} type="button" onClick={() => updateConfig("count", String(value))} className={cn("h-8 rounded-md text-xs transition", count === value ? "bg-white shadow-sm dark:bg-stone-700" : "text-stone-500")}>
+                    <button
+                        key={value}
+                        type="button"
+                        onClick={() => updateConfig("count", String(value))}
+                        className={cn("rounded-md text-xs transition", phone ? "h-10 text-sm" : "h-8", count === value ? "bg-white shadow-sm dark:bg-stone-700" : "text-stone-500")}
+                    >
                         {t("studio.params.countValue", { count: value })}
                     </button>
                 ))}
@@ -167,7 +179,7 @@ export function WorkbenchComposer({
     );
 
     const advancedPanel = (
-        <div className="w-[340px] space-y-3">
+        <div className={cn("space-y-3", phone ? "w-full" : "w-[340px]")}>
             <div>
                 <div className="mb-1.5 text-xs text-stone-500">{t("workbench.model")}</div>
                 <ModelPicker config={config} value={model} onChange={(value) => updateConfig("imageModel", value)} capability="image" fullWidth onMissingConfig={() => openConfigDialog(false)} />
@@ -177,6 +189,171 @@ export function WorkbenchComposer({
     );
 
     const sizeLabel = ratio === "auto" ? t("settingsPanels.common.auto") : `${ratio}${ratioUse && ratioUse !== "auto" ? ` ${t(`studio.params.uses.${ratioUse}`)}` : ""}`;
+
+    const fileInput = (
+        <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(event) => {
+                onAddFiles(event.target.files);
+                event.target.value = "";
+            }}
+        />
+    );
+
+    if (phone) {
+        // Phones: one input row (参考图 inside it), one swipeable row of labelled tools with 生成 pinned at the thumb,
+        // and the settings and assistants in bottom sheets instead of desktop popovers.
+        const toolClass = "inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-[13px] transition active:scale-95";
+        const toolIdle = "border-stone-200 bg-stone-50 text-stone-700 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-200";
+        return (
+            <div className="relative w-full" data-testid="workbench-composer-phone">
+                <div className="rounded-2xl border border-stone-200 bg-card p-2 shadow-lg dark:border-stone-700" data-testid="workbench-composer">
+                    {references.length ? (
+                        <div className="hide-scrollbar flex items-center gap-1.5 overflow-x-auto px-0.5 pb-1.5 pt-0.5">
+                            {references.map((item, index) => (
+                                <div key={item.id} className="relative size-12 shrink-0 overflow-hidden rounded-lg border border-stone-200 dark:border-stone-700">
+                                    <img src={previewUrlFor(item.storageKey) || item.dataUrl} alt={item.name} className="size-full object-cover" onClick={() => onOpenReferenceTool(item)} />
+                                    <span className="pointer-events-none absolute bottom-0 left-0 rounded-tr bg-black/60 px-1 text-[9px] font-medium text-white">{imageReferenceLabel(index)}</span>
+                                    <button
+                                        type="button"
+                                        className="absolute right-0 top-0 flex size-5 items-center justify-center rounded-bl-lg bg-black/60 text-white"
+                                        onClick={() => setReferences((value) => value.filter((ref) => ref.id !== item.id))}
+                                        aria-label={t("imageWorkbench.removeReference")}
+                                        data-testid="reference-remove"
+                                    >
+                                        <X className="size-3" />
+                                    </button>
+                                </div>
+                            ))}
+                            <button
+                                type="button"
+                                className="flex size-12 shrink-0 items-center justify-center rounded-lg border border-dashed border-stone-300 text-stone-500 dark:border-stone-700"
+                                onClick={() => fileInputRef.current?.click()}
+                                aria-label={t("studio.composer.addReference")}
+                                data-testid="reference-add"
+                            >
+                                <ImagePlus className="size-5" />
+                            </button>
+                        </div>
+                    ) : null}
+                    <div className="flex items-end gap-1">
+                        {references.length ? null : (
+                            <button
+                                type="button"
+                                className="mb-0.5 flex size-9 shrink-0 items-center justify-center rounded-full text-stone-500 active:bg-stone-100 dark:active:bg-stone-800"
+                                onClick={() => fileInputRef.current?.click()}
+                                aria-label={t("studio.composer.addReference")}
+                                data-testid="reference-add"
+                            >
+                                <ImagePlus className="size-5" />
+                            </button>
+                        )}
+                        <Input.TextArea
+                            ref={textareaRef}
+                            value={prompt}
+                            onChange={(event) => onPromptChange(event.target.value)}
+                            onPaste={(event) => {
+                                const files = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
+                                if (!files.length) return;
+                                event.preventDefault();
+                                onAddFiles(files);
+                            }}
+                            onFocus={() => setTyping(true)}
+                            onBlur={(event) => {
+                                setTyping(false);
+                                // Collapsed to two lines, show the start of the prompt rather than wherever the caret was.
+                                event.currentTarget.scrollTop = 0;
+                            }}
+                            variant="borderless"
+                            // Two lines while looking at results, room to edit while typing.
+                            autoSize={{ minRows: 1, maxRows: typing ? 6 : 2 }}
+                            placeholder={references.length ? t("studio.composer.placeholderWithReference") : t("studio.composer.phonePlaceholder")}
+                            // 16px: iOS zooms the page into any smaller text field on focus.
+                            // Padding sits on the row, not the field, so no part of a hidden third line shows through it.
+                            className="!my-1.5 !px-1 !py-0 !text-[16px] !leading-6"
+                            data-testid="workbench-prompt"
+                        />
+                    </div>
+                    <div className="mt-1 flex items-center gap-2">
+                        <div className="hide-scrollbar -ml-0.5 flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-0.5 pl-0.5 pr-4 [mask-image:linear-gradient(to_right,black_85%,transparent)]">
+                            <button type="button" className={cn(toolClass, toolIdle)} onClick={() => setSettingsOpen(true)} data-testid="phone-settings">
+                                <RatioIcon ratio={ratio} className="scale-90" />
+                                {ratio === "auto" ? t("settingsPanels.common.auto") : ratio}
+                                {ratio !== "auto" && scale !== "auto" ? <span className="text-stone-400">· {t(`studio.params.scalesShort.${scale}`)}</span> : null}
+                                <span className="text-stone-400">· {t("studio.params.countValue", { count })}</span>
+                                {advancedChanged ? <span className="size-1.5 rounded-full bg-(--skin-accent)" /> : null}
+                            </button>
+                            <button type="button" className={cn(toolClass, assist === "write" ? "border-(--skin-accent) bg-(--skin-accent)/10" : toolIdle)} onClick={() => setAssist("write")}>
+                                <Wand2 className="size-4" />
+                                {t("studio.assist.write")}
+                            </button>
+                            <button type="button" className={cn(toolClass, assist === "describe" ? "border-(--skin-accent) bg-(--skin-accent)/10" : toolIdle)} onClick={() => setAssist("describe")}>
+                                <ScanText className="size-4" />
+                                {t("studio.assist.describe")}
+                            </button>
+                            <button type="button" className={cn(toolClass, toolIdle)} onClick={onOpenInspiration}>
+                                <BookOpen className="size-4" />
+                                {t("studio.composer.library")}
+                            </button>
+                            <button type="button" className={cn(toolClass, toolIdle)} onClick={() => navigate("/comic")}>
+                                <PanelsTopLeft className="size-4" />
+                                {t("studio.composer.comic")}
+                            </button>
+                            <button type="button" className={cn(toolClass, toolIdle)} onClick={onOpenLogs}>
+                                <History className="size-4" />
+                                {t("studio.composer.history")}
+                            </button>
+                        </div>
+                        <Button type="primary" className="!h-10 shrink-0 !rounded-full !px-4 !text-[15px]" icon={<Sparkles className="size-4" />} loading={running} disabled={!prompt.trim()} onClick={onGenerate} data-testid="workbench-generate">
+                            {running ? formatDuration(elapsedMs) : t("studio.composer.generate")}
+                        </Button>
+                    </div>
+                </div>
+                <BottomSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title={t("studio.composer.phoneSettings")} testId="phone-settings-sheet">
+                    <div className="space-y-5">
+                        {ratioPanel}
+                        {countPanel}
+                        <div>
+                            <button type="button" className="flex h-10 w-full items-center justify-between rounded-lg bg-stone-50 px-3 text-sm text-stone-600 dark:bg-stone-900 dark:text-stone-300" onClick={() => setMoreOpen((value) => !value)}>
+                                <span className="flex items-center gap-2">
+                                    <SlidersHorizontal className="size-4" />
+                                    {t("studio.composer.phoneMore")}
+                                    {advancedChanged ? <span className="size-1.5 rounded-full bg-(--skin-accent)" /> : null}
+                                </span>
+                                <ChevronDown className={cn("size-4 transition", moreOpen && "rotate-180")} />
+                            </button>
+                            {moreOpen ? <div className="mt-3">{advancedPanel}</div> : null}
+                        </div>
+                        <Button type="primary" block className="!h-11 !rounded-xl" onClick={() => setSettingsOpen(false)}>
+                            {t("studio.composer.phoneDone")}
+                        </Button>
+                    </div>
+                </BottomSheet>
+                <BottomSheet open={Boolean(assist)} onClose={() => setAssist(null)} testId="phone-assist-sheet">
+                    {assist ? (
+                        <PromptAssistPanel
+                            key={assist}
+                            plain
+                            mode={assist}
+                            idea={prompt}
+                            references={references}
+                            onClose={() => setAssist(null)}
+                            onApply={(text, reference) => {
+                                onPromptChange(text);
+                                if (reference) setReferences((value) => [...value, reference]);
+                                setAssist(null);
+                            }}
+                        />
+                    ) : null}
+                </BottomSheet>
+                {fileInput}
+            </div>
+        );
+    }
 
     return (
         <div className="relative mx-auto w-full max-w-[920px]">
@@ -364,17 +541,7 @@ export function WorkbenchComposer({
                     </Button>
                 </div>
             </div>
-            <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                className="hidden"
-                onChange={(event) => {
-                    onAddFiles(event.target.files);
-                    event.target.value = "";
-                }}
-            />
+            {fileInput}
         </div>
     );
 }
