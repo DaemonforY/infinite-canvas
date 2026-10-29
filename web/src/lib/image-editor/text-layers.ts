@@ -59,7 +59,17 @@ export type TextLayer = {
     rules?: boolean;
     /** Clockwise rotation in degrees around the centre of the block. */
     rotation?: number;
+    /** How the text mixes with the picture: multiply makes ink read as printed on the paper. */
+    blend?: TextBlend;
+    /** 飞白 / dry brush, 0–1: thin gaps along the strokes and specks, as if the brush ran dry. */
+    texture?: number;
+    /** 自然变化, 0–1: each character a little bigger or smaller, turned and off its line, like handwriting. */
+    jitter?: number;
+    /** Changes the brush marks and the variation (same seed → same result). */
+    seed?: number;
 };
+
+export type TextBlend = "normal" | "multiply" | "screen" | "overlay" | "soft-light";
 
 export const SEAL_RED = "#b3302a";
 
@@ -248,7 +258,7 @@ function layoutSeal(layer: TextLayer, left: number, top: number, fontPx: number)
 // Drawing
 // ---------------------------------------------------------------------------
 
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+function roundRect(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
     ctx.beginPath();
     ctx.moveTo(x + r, y);
     ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -272,70 +282,271 @@ export function canvasMeasure(ctx: CanvasRenderingContext2D, layer: TextLayer): 
     };
 }
 
+// ---------------------------------------------------------------------------
+// Texture and variation (deterministic per layer)
+// ---------------------------------------------------------------------------
+
+function hashString(text: string): number {
+    let h = 2166136261;
+    for (let i = 0; i < text.length; i++) {
+        h ^= text.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+}
+
+/** mulberry32: a small seeded random generator, 0 ≤ x < 1. */
+export function seededRandom(seed: number): () => number {
+    let a = seed >>> 0;
+    return () => {
+        a = (a + 0x6d2b79f5) >>> 0;
+        let t = a;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+export function layerSeed(layer: Pick<TextLayer, "id" | "seed">): number {
+    return hashString(`${layer.id}:${layer.seed ?? 0}`);
+}
+
+export type GlyphJitter = { scale: number; angle: number; dx: number; dy: number };
+
+/** Per-character variation: ±4 % size, ±2° turn, ±3 % of the size off the line, all times strength. */
+export function glyphJitters(seed: number, count: number, strength: number): GlyphJitter[] {
+    const rand = seededRandom(seed ^ 0x9e3779b9);
+    const k = Math.min(1, Math.max(0, strength));
+    return Array.from({ length: count }, () => {
+        const r = () => rand() * 2 - 1;
+        return { scale: 1 + r() * 0.04 * k, angle: r() * 2 * k, dx: r() * 0.03 * k, dy: r() * 0.03 * k };
+    });
+}
+
+export type TextureMark = { kind: "streak"; x: number; y: number; length: number; width: number; angle: number; alpha: number } | { kind: "speck"; x: number; y: number; r: number; alpha: number };
+
+/**
+ * 飞白 marks inside a block (pixels): streaks along the main stroke directions (near-horizontal rising strokes and
+ * near-vertical ones) where the dry brush leaves paper showing, plus small specks. Erased from the text.
+ */
+export function textureMarks(seed: number, box: { x: number; y: number; w: number; h: number }, fontPx: number, strength: number): TextureMark[] {
+    const k = Math.min(1, Math.max(0, strength));
+    if (k <= 0 || fontPx <= 0) return [];
+    const rand = seededRandom(seed);
+    const cells = Math.max(1, (box.w * box.h) / (fontPx * fontPx));
+    const marks: TextureMark[] = [];
+    // Groups of parallel hairlines (one dry stroke each), a little longer and fainter at random.
+    const groups = Math.round(cells * 2.2 * k);
+    for (let i = 0; i < groups; i++) {
+        const vertical = rand() < 0.45;
+        const angle = (vertical ? 88 : -8) + (rand() * 2 - 1) * 7;
+        const rad = (angle * Math.PI) / 180;
+        const nx = -Math.sin(rad);
+        const ny = Math.cos(rad);
+        const cx = box.x + rand() * box.w;
+        const cy = box.y + rand() * box.h;
+        const length = fontPx * (0.25 + rand() * 0.5);
+        const lines = 3 + Math.floor(rand() * 5);
+        const gap = fontPx * (0.022 + rand() * 0.02);
+        for (let l = 0; l < lines; l++) {
+            const off = (l - (lines - 1) / 2) * gap;
+            const along = (rand() * 2 - 1) * length * 0.2;
+            marks.push({
+                kind: "streak",
+                x: cx + nx * off + Math.cos(rad) * along,
+                y: cy + ny * off + Math.sin(rad) * along,
+                length: length * (0.45 + rand() * 0.55),
+                width: fontPx * (0.006 + rand() * 0.012) * (0.7 + k * 0.6),
+                angle: angle + (rand() * 2 - 1) * 1.5,
+                alpha: 0.6 + rand() * 0.4,
+            });
+        }
+    }
+    const specks = Math.round(cells * 28 * k);
+    for (let i = 0; i < specks; i++) {
+        marks.push({ kind: "speck", x: box.x + rand() * box.w, y: box.y + rand() * box.h, r: fontPx * (0.003 + rand() * 0.009), alpha: 0.3 + rand() * 0.5 });
+    }
+    return marks;
+}
+
+function makeCanvas(w: number, h: number): HTMLCanvasElement | OffscreenCanvas | null {
+    if (typeof OffscreenCanvas !== "undefined") return new OffscreenCanvas(w, h);
+    if (typeof document === "undefined") return null;
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    return c;
+}
+
+type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+
+function rotateAround(ctx: Ctx2D, layer: TextLayer, box: LayerLayout["box"]) {
+    if (!layer.rotation) return;
+    const cx = box.x + box.w / 2;
+    const cy = box.y + box.h / 2;
+    ctx.translate(cx, cy);
+    ctx.rotate((layer.rotation * Math.PI) / 180);
+    ctx.translate(-cx, -cy);
+}
+
+/** Calls draw for each glyph, with its natural variation applied (the same in painting and in the 飞白). */
+function eachGlyph(ctx: Ctx2D, layer: TextLayer, layout: LayerLayout, draw: (ch: string, x: number, y: number) => void) {
+    const jitters = layer.jitter ? glyphJitters(layerSeed(layer), layout.glyphs.length, layer.kind === "seal" ? layer.jitter * 0.4 : layer.jitter) : null;
+    layout.glyphs.forEach((g, i) => {
+        const j = jitters?.[i];
+        if (!j) {
+            draw(g.ch, g.x, g.y);
+            return;
+        }
+        ctx.save();
+        ctx.translate(g.x + j.dx * layout.fontPx, g.y + j.dy * layout.fontPx);
+        ctx.rotate((j.angle * Math.PI) / 180);
+        ctx.scale(j.scale, j.scale);
+        draw(g.ch, 0, 0);
+        ctx.restore();
+    });
+}
+
+/** Draws one layer's seal / rules / glyphs (in the current transform, at full opacity). */
+function paintLayer(ctx: Ctx2D, layer: TextLayer, layout: LayerLayout) {
+    ctx.font = `${layout.fontPx}px ${fontFamilyOf(layer.font)}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const glyphs = (draw: (ch: string, x: number, y: number) => void) => eachGlyph(ctx, layer, layout, draw);
+
+    if (layout.seal) {
+        const s = layout.seal;
+        if (layer.sealStyle === "white") {
+            ctx.fillStyle = SEAL_RED;
+            roundRect(ctx, s.x, s.y, s.w, s.h, s.radius);
+            ctx.fill();
+            ctx.fillStyle = layer.color || "#fbe9dc";
+        } else {
+            ctx.strokeStyle = SEAL_RED;
+            ctx.lineWidth = s.border;
+            roundRect(ctx, s.x + s.border / 2, s.y + s.border / 2, s.w - s.border, s.h - s.border, s.radius);
+            ctx.stroke();
+            ctx.fillStyle = SEAL_RED;
+        }
+        glyphs((ch, x, y) => ctx.fillText(ch, x, y));
+        return;
+    }
+
+    if (layer.effect === "shadow") {
+        ctx.shadowColor = hexAlpha(layer.effectColor, 0.6);
+        ctx.shadowBlur = layout.fontPx * 0.18;
+        ctx.shadowOffsetY = layout.fontPx * 0.04;
+    }
+    if (layer.effect === "stroke") {
+        ctx.strokeStyle = layer.effectColor;
+        ctx.lineWidth = Math.max(1, layout.fontPx * 0.09);
+        ctx.lineJoin = "round";
+        glyphs((ch, x, y) => ctx.strokeText(ch, x, y));
+    }
+    if (layout.rules) {
+        ctx.save();
+        ctx.shadowColor = "transparent";
+        ctx.strokeStyle = hexAlpha(layer.color, 0.45);
+        ctx.lineWidth = Math.max(1, layout.fontPx * 0.035);
+        const y0 = layout.box.y - layout.fontPx * 0.35;
+        const y1 = layout.box.y + layout.box.h + layout.fontPx * 0.35;
+        for (const x of layout.rules) {
+            ctx.beginPath();
+            ctx.moveTo(x, y0);
+            ctx.lineTo(x, y1);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+    ctx.fillStyle = layer.color;
+    glyphs((ch, x, y) => ctx.fillText(ch, x, y));
+}
+
+function eraseTexture(ctx: Ctx2D, layer: TextLayer, layout: LayerLayout) {
+    const margin = layout.fontPx * 0.4;
+    const box = { x: layout.box.x - margin, y: layout.box.y - margin, w: layout.box.w + margin * 2, h: layout.box.h + margin * 2 };
+    ctx.save();
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.lineCap = "round";
+    ctx.shadowColor = "transparent";
+    // Seals take only specks (印泥 that didn't print), lighter.
+    const strength = layer.kind === "seal" ? (layer.texture ?? 0) * 0.6 : layer.texture ?? 0;
+    if (layer.kind !== "seal" && strength > 0) {
+        // Broken, ragged stroke edges: the outline erased in random dashes.
+        const rand = seededRandom(layerSeed(layer) ^ 0x51ed27);
+        ctx.font = `${layout.fontPx}px ${fontFamilyOf(layer.font)}`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.lineWidth = layout.fontPx * (0.008 + 0.018 * strength);
+        ctx.lineJoin = "round";
+        ctx.globalAlpha = 0.35 + 0.35 * strength;
+        eachGlyph(ctx, layer, layout, (ch, x, y) => {
+            // Short bites with long untouched stretches between them.
+            ctx.setLineDash(Array.from({ length: 8 }, (_, i) => layout.fontPx * (i % 2 ? 0.08 + rand() * 0.3 : 0.01 + rand() * 0.04)));
+            ctx.lineDashOffset = rand() * layout.fontPx;
+            ctx.strokeText(ch, x, y);
+        });
+        ctx.setLineDash([]);
+    }
+    for (const m of textureMarks(layerSeed(layer), box, layout.fontPx, strength)) {
+        if (m.kind === "streak" && layer.kind === "seal") continue;
+        ctx.globalAlpha = m.alpha;
+        if (m.kind === "speck") {
+            ctx.beginPath();
+            ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            const a = (m.angle * Math.PI) / 180;
+            const dx = (Math.cos(a) * m.length) / 2;
+            const dy = (Math.sin(a) * m.length) / 2;
+            ctx.lineWidth = m.width;
+            ctx.beginPath();
+            ctx.moveTo(m.x - dx, m.y - dy);
+            ctx.lineTo(m.x + dx, m.y + dy);
+            ctx.stroke();
+        }
+    }
+    ctx.restore();
+}
+
 export function drawTextLayers(ctx: CanvasRenderingContext2D, layers: TextLayer[], imageW: number, imageH: number) {
     for (const layer of layers) {
         if (!layer.text.trim()) continue;
         const layout = layoutLayer(layer, imageW, imageH, canvasMeasure(ctx, layer));
-        ctx.save();
-        if (layer.rotation) {
+        const alpha = Math.min(1, Math.max(0, layer.opacity));
+        const blend = layer.blend && layer.blend !== "normal" ? layer.blend : null;
+
+        if ((layer.texture ?? 0) > 0) {
+            // Drawn on its own canvas around the block, the 飞白 erased there, then laid on the picture.
+            const pad = layout.fontPx * 1.2;
+            const half = Math.hypot(layout.box.w, layout.box.h) / 2 + pad;
             const cx = layout.box.x + layout.box.w / 2;
             const cy = layout.box.y + layout.box.h / 2;
-            ctx.translate(cx, cy);
-            ctx.rotate((layer.rotation * Math.PI) / 180);
-            ctx.translate(-cx, -cy);
-        }
-        ctx.globalAlpha = Math.min(1, Math.max(0, layer.opacity));
-        ctx.font = `${layout.fontPx}px ${fontFamilyOf(layer.font)}`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-
-        if (layout.seal) {
-            const s = layout.seal;
-            if (layer.sealStyle === "white") {
-                ctx.fillStyle = SEAL_RED;
-                roundRect(ctx, s.x, s.y, s.w, s.h, s.radius);
-                ctx.fill();
-                ctx.fillStyle = layer.color || "#fbe9dc";
-            } else {
-                ctx.strokeStyle = SEAL_RED;
-                ctx.lineWidth = s.border;
-                roundRect(ctx, s.x + s.border / 2, s.y + s.border / 2, s.w - s.border, s.h - s.border, s.radius);
-                ctx.stroke();
-                ctx.fillStyle = SEAL_RED;
+            const x0 = Math.max(0, Math.floor(cx - half));
+            const y0 = Math.max(0, Math.floor(cy - half));
+            const x1 = Math.min(imageW, Math.ceil(cx + half));
+            const y1 = Math.min(imageH, Math.ceil(cy + half));
+            const off = x1 > x0 && y1 > y0 ? makeCanvas(x1 - x0, y1 - y0) : null;
+            const octx = off?.getContext("2d") as Ctx2D | null | undefined;
+            if (off && octx) {
+                octx.translate(-x0, -y0);
+                rotateAround(octx, layer, layout.box);
+                paintLayer(octx, layer, layout);
+                eraseTexture(octx, layer, layout);
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                if (blend) ctx.globalCompositeOperation = blend;
+                ctx.drawImage(off as CanvasImageSource, x0, y0);
+                ctx.restore();
+                continue;
             }
-            for (const g of layout.glyphs) ctx.fillText(g.ch, g.x, g.y);
-            ctx.restore();
-            continue;
         }
 
-        if (layer.effect === "shadow") {
-            ctx.shadowColor = hexAlpha(layer.effectColor, 0.6);
-            ctx.shadowBlur = layout.fontPx * 0.18;
-            ctx.shadowOffsetY = layout.fontPx * 0.04;
-        }
-        if (layer.effect === "stroke") {
-            ctx.strokeStyle = layer.effectColor;
-            ctx.lineWidth = Math.max(1, layout.fontPx * 0.09);
-            ctx.lineJoin = "round";
-            for (const g of layout.glyphs) ctx.strokeText(g.ch, g.x, g.y);
-        }
-        if (layout.rules) {
-            ctx.save();
-            ctx.shadowColor = "transparent";
-            ctx.strokeStyle = hexAlpha(layer.color, 0.45);
-            ctx.lineWidth = Math.max(1, layout.fontPx * 0.035);
-            const y0 = layout.box.y - layout.fontPx * 0.35;
-            const y1 = layout.box.y + layout.box.h + layout.fontPx * 0.35;
-            for (const x of layout.rules) {
-                ctx.beginPath();
-                ctx.moveTo(x, y0);
-                ctx.lineTo(x, y1);
-                ctx.stroke();
-            }
-            ctx.restore();
-        }
-        ctx.fillStyle = layer.color;
-        for (const g of layout.glyphs) ctx.fillText(g.ch, g.x, g.y);
+        ctx.save();
+        rotateAround(ctx, layer, layout.box);
+        ctx.globalAlpha = alpha;
+        if (blend) ctx.globalCompositeOperation = blend;
+        paintLayer(ctx, layer, layout);
         ctx.restore();
     }
 }

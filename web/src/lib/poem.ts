@@ -9,7 +9,7 @@
  * Pure functions only (prompts, parsing, the blank-area finder, the text layout); the page does the I/O.
  */
 
-import { createSealLayer, createTextLayer, type TextFontId, type TextLayer } from "@/lib/image-editor/text-layers";
+import { createSealLayer, createTextLayer, layoutLayer, type TextFontId, type TextLayer } from "@/lib/image-editor/text-layers";
 import type { PoemEdits } from "@/lib/poem-edit";
 
 export type PoemSource = { id?: number; title: string; author: string; dynasty: string; content: string; collection?: string };
@@ -544,7 +544,17 @@ export type PosterLayoutInput = {
     /** 字号 (1 = 中). */
     scale?: number;
     palette?: PoemPalette;
+    /** 落款: where the author and seal sit by the title. */
+    signature?: PoemSignature;
 };
+
+/** 落款 beside the title (from its second character), under it, or with the seal pressed on the author's last character. */
+export type PoemSignature = "side" | "below" | "stamp";
+export const POEM_SIGNATURES: { value: PoemSignature; label: string }[] = [
+    { value: "side", label: "题旁" },
+    { value: "below", label: "题下" },
+    { value: "stamp", label: "印压字" },
+];
 
 const POSTER_BODY_LETTER = 0.16;
 const POSTER_BODY_LINE = 0.8;
@@ -568,17 +578,42 @@ function posterTitleLayers(input: PosterLayoutInput, scale: number, palette: Poe
     const layers: TextLayer[] = [
         createTextLayer({ id: "poem-title", text: title, font: input.titleFont, vertical: true, size: t, x: titleBox.x0, y: titleBox.y0, color: titleColor, letterSpacing: 0.04, lineSpacing: 0.15, wrapAt: titleCols > 1 ? titleRows : 0, effect: "shadow", effectColor: titleShadow }),
     ];
-    // The author beside the title, from its second character down (the top corner is often the moon or a
-    // peak); the seal under it.
     const a = Math.max(0.022, t * 0.24);
+    const author = input.author.trim();
+    const authorLen = Array.from(author).length;
+    const sealText = input.seal.trim();
+    const sealWidth = (size: number) => (Array.from(sealText).length <= 2 ? 1 : 2) * size * 1.08 + size * 0.64;
+    const signature = input.signature ?? "side";
+    const authorLayer = (x: number, y: number) =>
+        createTextLayer({ id: "poem-author", text: input.author, font: input.font, vertical: true, size: a, x, y, color: titleColor, letterSpacing: 0.12, lineSpacing: 0.2, effect: "shadow", effectColor: titleShadow });
+    if (signature === "below") {
+        // Under the title, centred on it, the seal after the name: one long column like a 落款.
+        // The title's own block (vertical text needs no measuring), in fractions of the height.
+        const tb = layoutLayer(layers[0], 1000, 1000 / aspect, () => 0).box;
+        const authorX = titleBox.x0 + titleW / 2 - a / 2;
+        const authorY = (tb.y + tb.h) / (1000 / aspect) + t * 0.02 * aspect;
+        if (author) layers.push(authorLayer(authorX, authorY));
+        if (sealText) {
+            const size = a * 0.85;
+            const y = authorY + ((author ? authorLen * a * 1.12 : 0) + a * 0.5) * aspect;
+            layers.push(createSealLayer({ id: "poem-seal", text: sealText, size, x: titleBox.x0 + titleW / 2 - sealWidth(size) / 2, y: Math.min(0.94, y) }));
+        }
+        return layers;
+    }
+    // The author beside the title, from its second character down (the top corner is often the moon or a
+    // peak); the seal under it, or pressed over the lower half of its last character.
     const authorX = titleBox.x0 + titleW + t * 0.12;
     const authorY = titleBox.y0 + t * aspect * (titleRows > 2 ? 1.15 : 0.6);
-    if (input.author.trim()) {
-        layers.push(createTextLayer({ id: "poem-author", text: input.author, font: input.font, vertical: true, size: a, x: authorX, y: authorY, color: titleColor, letterSpacing: 0.12, lineSpacing: 0.2, effect: "shadow", effectColor: titleShadow }));
-    }
-    if (input.seal.trim()) {
-        const authorLen = Array.from(input.author.trim()).length;
-        layers.push(createSealLayer({ id: "poem-seal", text: input.seal.trim(), size: a * 0.8, x: authorX - a * 0.1, y: authorY + (authorLen * a * 1.12 + a * 0.6) * aspect }));
+    if (author) layers.push(authorLayer(authorX, authorY));
+    if (sealText) {
+        if (signature === "stamp") {
+            // Over the lower third of the name's last character, off to its right, like a seal pressed after signing.
+            const size = a * 0.9;
+            const y = authorY + (Math.max(0, authorLen - 0.35) * a * 1.12) * aspect;
+            layers.push(createSealLayer({ id: "poem-seal", text: sealText, size, x: authorX + a * 0.45, y }));
+        } else {
+            layers.push(createSealLayer({ id: "poem-seal", text: sealText, size: a * 0.8, x: authorX - a * 0.1, y: authorY + (authorLen * a * 1.12 + a * 0.6) * aspect }));
+        }
     }
     return layers;
 }
@@ -632,6 +667,47 @@ export function posterLayers(input: PosterLayoutInput): TextLayer[] {
     return layers;
 }
 
+// ---------------------------------------------------------------------------------------------
+// 质感: how the set text sits on the picture.
+
+/** 干净: flat; 印在纸上: ink text and seals multiplied into the paper; 笔墨: also 飞白 and handwritten variation. */
+export type PoemFeel = "clean" | "print" | "brush";
+export const POEM_FEELS: { value: PoemFeel; label: string; desc: string }[] = [
+    { value: "clean", label: "干净", desc: "平整清晰" },
+    { value: "print", label: "印在纸上", desc: "墨色字和印章透出纸纹" },
+    { value: "brush", label: "笔墨", desc: "飞白、大小轻重有变化，像手写" },
+];
+
+function luminance(hex: string) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+    if (!m) return 1;
+    const n = parseInt(m[1], 16);
+    return (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+}
+
+export type FeelOptions = { texture?: number; jitter?: number; seed?: number };
+
+/** The layers with the 质感 applied: blend, 飞白 (texture) and variation (jitter); the lines get half of each. */
+export function feelLayers(layers: TextLayer[], feel: PoemFeel | undefined, options: FeelOptions = {}): TextLayer[] {
+    if (!feel || feel === "clean") return layers;
+    const brush = feel === "brush";
+    const texture = options.texture ?? 0.35;
+    const jitter = options.jitter ?? 0.6;
+    return layers.map((layer) => {
+        const next: TextLayer = { ...layer, seed: options.seed ?? 0 };
+        if (layer.kind === "seal") {
+            // Not multiplied: a red seal on a dark ground would go black. Specks of 印泥 that didn't print.
+            return { ...next, texture: brush ? Math.max(0.3, texture) : 0.3, jitter: brush ? jitter * 0.5 : 0 };
+        }
+        const half = layer.rules || layer.id === "poem-body" ? 0.5 : 1;
+        if (luminance(layer.color) < 0.45) {
+            Object.assign(next, { blend: "multiply", effect: "none", opacity: Math.min(layer.opacity, 0.92) });
+        }
+        if (brush) Object.assign(next, { texture: texture * half, jitter: jitter * half });
+        return next;
+    });
+}
+
 /** 〔清〕高鼎 */
 export function authorLine(poem: Pick<PoemSource, "author" | "dynasty">) {
     return poem.author ? `${poem.dynasty ? `〔${poem.dynasty}〕` : ""}${poem.author}` : "";
@@ -665,6 +741,13 @@ export type PoemProject = {
     textMode?: PoemTextMode;
     /** 字号: multiplies the fitted sizes of the font texts (1 = 中). */
     textScale?: number;
+    /** 质感 (older projects: clean), its 飞白 and 自然变化 strengths, and the brush seed (换个笔触). */
+    feel?: PoemFeel;
+    texture?: number;
+    jitter?: number;
+    feelSeed?: number;
+    /** 落款 (大标题 only). */
+    signature?: PoemSignature;
     poem: PoemSource;
     /** The lines set on the picture (and drawn): the whole poem, or the lines picked from a long one. */
     lines: string;

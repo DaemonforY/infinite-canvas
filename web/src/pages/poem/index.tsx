@@ -32,6 +32,11 @@ import {
     fontParts,
     layoutOfMode,
     pickPalette,
+    feelLayers,
+    POEM_FEELS,
+    POEM_SIGNATURES,
+    type PoemFeel,
+    type PoemSignature,
     SCENE_INSTRUCTION,
     sceneRequest,
     type PoemBox,
@@ -130,6 +135,7 @@ function newProject(poem: PoemSource): PoemProject {
         style: "xinzhongshi",
         ratio: "2:3",
         textMode: "ai_title",
+        feel: "print",
         scene: "",
         drawings: [],
         font: "lxgw-wenkai",
@@ -951,6 +957,7 @@ function PoemLetter({
                 titleInk: toneOf(titleBox),
                 bodyInk: tone,
                 seal: project.seal,
+                signature: project.signature,
             });
         }
         return poemLayers({
@@ -966,11 +973,15 @@ function PoemLetter({
             ink: tone,
             seal: project.seal,
         });
-    }, [auto, img, ink, place, project.font, project.lines, project.poem, project.seal, project.titleFont, project.ratio, layout, parts.body, parts.title, scale]);
+    }, [auto, img, ink, place, project.font, project.lines, project.poem, project.seal, project.signature, project.titleFont, project.ratio, layout, parts.body, parts.title, scale]);
 
     const aspect = img ? img.naturalWidth / img.naturalHeight : 1;
     // What is drawn and saved: the automatic layout with the user's edits on top.
-    const shown = useMemo(() => applyEdits(layers, edits, (layer) => fracBoxOf(layer, aspect)), [aspect, edits, layers]);
+    const felt = useMemo(
+        () => feelLayers(layers, project.feel, { texture: project.texture, jitter: project.jitter, seed: project.feelSeed }),
+        [layers, project.feel, project.texture, project.jitter, project.feelSeed],
+    );
+    const shown = useMemo(() => applyEdits(felt, edits, (layer) => fracBoxOf(layer, aspect)), [aspect, edits, felt]);
 
     const saveEdits = useCallback(
         (next: PoemEdits) => patch((p) => ({ ...p, drawings: p.drawings.map((d) => (d.id === picked.id ? { ...d, edits: next } : d)) })),
@@ -1243,6 +1254,42 @@ function PoemLetter({
                                         <Slider className="flex-1" min={0.6} max={1.5} step={0.05} value={scale} onChange={(value) => patch((p) => ({ ...p, textScale: value }))} tooltip={{ formatter: (v) => `${Math.round((v || 1) * 100)}%` }} />
                                     </div>
                                 </div>
+                                <div className="text-xs text-stone-500">
+                                    质感
+                                    <div className="mt-1">
+                                        <Segmented
+                                            size="small"
+                                            value={project.feel ?? "clean"}
+                                            onChange={(value) => patch((p) => ({ ...p, feel: value as PoemFeel }))}
+                                            options={POEM_FEELS.map((f) => ({ value: f.value, label: <span title={f.desc}>{f.label}</span> }))}
+                                            data-testid="poem-feel"
+                                        />
+                                    </div>
+                                    <div className="mt-1 text-stone-400">{POEM_FEELS.find((f) => f.value === (project.feel ?? "clean"))?.desc}</div>
+                                    {project.feel === "brush" ? (
+                                        <div className="mt-2 space-y-1">
+                                            <div className="flex items-center gap-2">
+                                                <span className="w-14 shrink-0">飞白</span>
+                                                <Slider className="flex-1" min={0} max={1} step={0.05} value={project.texture ?? 0.35} onChange={(value) => patch((p) => ({ ...p, texture: value }))} />
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="w-14 shrink-0">自然变化</span>
+                                                <Slider className="flex-1" min={0} max={1} step={0.05} value={project.jitter ?? 0.6} onChange={(value) => patch((p) => ({ ...p, jitter: value }))} />
+                                            </div>
+                                            <Button size="small" icon={<Dices className="size-3.5" />} onClick={() => patch((p) => ({ ...p, feelSeed: Math.floor(Math.random() * 1e9) }))} data-testid="poem-reseed">
+                                                换个笔触
+                                            </Button>
+                                        </div>
+                                    ) : null}
+                                </div>
+                                {parts.title && layout === "poster" ? (
+                                    <div className="text-xs text-stone-500">
+                                        落款
+                                        <div className="mt-1">
+                                            <Segmented size="small" value={project.signature ?? "side"} onChange={(value) => patch((p) => ({ ...p, signature: value as PoemSignature }))} options={POEM_SIGNATURES} data-testid="poem-signature" />
+                                        </div>
+                                    </div>
+                                ) : null}
                             </>
                         ) : null}
                         {parts.body ? (
