@@ -33,6 +33,8 @@ import {
     layoutOfMode,
     pickPalette,
     feelLayers,
+    erasePrompt,
+    fusePrompt,
     POEM_FEELS,
     POEM_SIGNATURES,
     type PoemFeel,
@@ -52,9 +54,9 @@ import {
 } from "@/lib/poem";
 import { applyEdits, isEdited, layerName, pushHistory, redoHistory, undoHistory, type EditHistory, type PoemEdit, type PoemEdits } from "@/lib/poem-edit";
 import { promptAssistConfig } from "@/lib/prompt-assist";
-import { requestGeneration, requestImageQuestion } from "@/services/api/image";
+import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { getPoem, poemCandidates, searchPoems, type MainSitePoem } from "@/services/api/main-site-poems";
-import { resolveImageUrl, uploadImage } from "@/services/image-storage";
+import { imageToDataUrl, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { usePublishWorkStore } from "@/stores/use-publish-work-store";
@@ -511,6 +513,17 @@ function PoemEditor({ id }: { id: string }) {
         }
     };
 
+    /** One picture edit on the user's image model (擦字 / AI 融合); null when no channel is set up. */
+    const editImage = async (prompt: string, dataUrl: string, ratio: PoemRatio) => {
+        if (!readyImage()) return null;
+        const config: AiConfig = { ...imageConfig, count: "1", size: imageSizePresets["1k"][ratio] || "1024x1536" };
+        // Sent as JPEG: about a sixth of the PNG, and uploads to the upstream are slow.
+        const jpeg = await asJpeg(dataUrl);
+        const [out] = await requestEdit(config, prompt, [{ id: nanoid(), name: "poem.jpg", type: "image/jpeg", dataUrl: jpeg }]);
+        if (!out) throw new Error("没有收到图片");
+        return out.dataUrl;
+    };
+
     if (project === undefined)
         return (
             <div className="flex h-full items-center justify-center">
@@ -713,6 +726,7 @@ function PoemEditor({ id }: { id: string }) {
                             if (mode) patch((p) => ({ ...p, textMode: mode }));
                             void draw(2);
                         }}
+                        editImage={editImage}
                     />
                 ) : null}
                 <TemplateEditor
@@ -840,6 +854,21 @@ function loadImage(url: string) {
     });
 }
 
+/** A picture as a 92 % JPEG data URL. */
+async function asJpeg(dataUrl: string) {
+    if (dataUrl.startsWith("data:image/jpeg")) return dataUrl;
+    const img = await loadImage(dataUrl);
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return dataUrl;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0);
+    return canvas.toDataURL("image/jpeg", 0.92);
+}
+
 /** The chosen picture with the poem set on it, at full size (for saving). */
 async function renderPoster(img: HTMLImageElement, layers: TextLayer[]) {
     await ensureLayerFonts(layers);
@@ -858,12 +887,14 @@ function PoemLetter({
     drawing: picked,
     patch,
     onRedraw,
+    editImage,
 }: {
     project: PoemProject;
     drawing: PoemDrawing;
     patch: (change: (current: PoemProject) => PoemProject) => void;
     /** Draws 2 more, with another 文字方案 when given. */
     onRedraw: (mode?: PoemTextMode) => void;
+    editImage: (prompt: string, dataUrl: string, ratio: PoemRatio) => Promise<string | null>;
 }) {
     const { message } = App.useApp();
     const drawing = picked.image;
@@ -1052,11 +1083,63 @@ function PoemLetter({
         return () => window.removeEventListener("keydown", onKey);
     }, [aspect, commit, committed, redo, selected, undo]);
 
-    const storePoster = async (dataUrl: string) => {
+    const storePoster = async (dataUrl: string, from?: PoemProject["posterFrom"]) => {
         const stored = await uploadImage(dataUrl);
         const poster: PoemImage = { url: stored.url, ...(stored.storageKey ? { storageKey: stored.storageKey } : {}), width: stored.width, height: stored.height, mimeType: stored.mimeType };
-        patch((p) => ({ ...p, poster, layers: shown }));
+        patch((p) => ({ ...p, poster, posterFrom: from, layers: shown }));
         return { stored, poster };
+    };
+
+    // 擦掉 AI 写的字: a new drawing without the model's text, set in fonts (大标题) and chosen.
+    const [erasing, setErasing] = useState(false);
+    const eraseText = async () => {
+        setErasing(true);
+        try {
+            const src = await imageToDataUrl(picked.image);
+            const prompt = erasePrompt(project.ratio);
+            const out = await editImage(prompt, src, project.ratio);
+            if (!out) return;
+            const stored = await uploadImage(out);
+            const id = nanoid();
+            patch((p) => ({
+                ...p,
+                drawings: [
+                    { id, image: { url: stored.url, ...(stored.storageKey ? { storageKey: stored.storageKey } : {}), width: stored.width, height: stored.height, mimeType: stored.mimeType }, prompt, createdAt: Date.now(), textMode: "font_poster", erasedFrom: picked.id },
+                    ...p.drawings,
+                ],
+                chosen: id,
+                poster: undefined,
+                posterFrom: undefined,
+            }));
+            message.success("已擦掉 AI 写的字，现在用字体排，字一定对");
+        } catch (error) {
+            message.error(errorText(error, "擦字失败，请重试"));
+        } finally {
+            setErasing(false);
+        }
+    };
+
+    // AI 融合 (experimental): the composed poster redrawn by the model; compared side by side before use.
+    const [fusing, setFusing] = useState(false);
+    const [fused, setFused] = useState<{ before: string; after: string; texts: string[] } | null>(null);
+    const fuseTexts = () => {
+        const texts = shown.map((l) => l.text.replace(/\n/g, ""));
+        if (!parts.title && pictureMode.startsWith("ai")) texts.unshift(displayTitle(project.poem.title), project.poem.author);
+        return Array.from(new Set(texts.filter((t) => t.trim())));
+    };
+    const fuse = async () => {
+        if (!img) return;
+        setFusing(true);
+        try {
+            const before = await renderPoster(img, shown);
+            const texts = fuseTexts();
+            const after = await editImage(fusePrompt(project.ratio, texts), before, project.ratio);
+            if (after) setFused({ before, after, texts });
+        } catch (error) {
+            message.error(errorText(error, "融合失败，请重试"));
+        } finally {
+            setFusing(false);
+        }
     };
 
     /** The finished poster: the one saved from the editor, else the picture with the current layers. */
@@ -1116,7 +1199,13 @@ function PoemLetter({
 
     return (
         <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_20rem]">
-            <div className="flex justify-center overflow-x-clip rounded-xl bg-stone-100 p-3 dark:bg-stone-800/60">
+            <div className="relative flex justify-center overflow-x-clip rounded-xl bg-stone-100 p-3 dark:bg-stone-800/60">
+                {erasing || fusing ? (
+                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-xl bg-white/60 text-sm text-stone-600 backdrop-blur-[1px] dark:bg-black/40 dark:text-stone-200" data-testid="poem-working">
+                        <Spin />
+                        {erasing ? "正在擦掉 AI 写的字，约 1 分钟…" : "正在 AI 融合，约 1 分钟…"}
+                    </div>
+                ) : null}
                 {project.poster && posterUrl ? (
                     <img src={posterUrl} alt="" className="max-h-[78vh] max-w-full rounded shadow-sm" data-testid="poem-poster" />
                 ) : img ? (
@@ -1156,6 +1245,9 @@ function PoemLetter({
                     <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
                         <div className="font-medium">AI 写错了字，可以：</div>
                         <div className="mt-2 flex flex-wrap gap-2">
+                            <Button size="small" type="primary" loading={erasing} onClick={() => void eraseText()} data-testid="poem-erase-wrong">
+                                擦掉 AI 的字，改用字体（不重画）
+                            </Button>
                             <Button size="small" onClick={() => onRedraw()}>
                                 再画 2 张
                             </Button>
@@ -1172,8 +1264,8 @@ function PoemLetter({
                 ) : null}
                 {project.poster ? (
                     <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-                        这是在编辑器里调整过的成品。
-                        <button type="button" className="ml-1 underline" onClick={() => patch((p) => ({ ...p, poster: undefined }))}>
+                        {project.posterFrom === "fuse" ? "这是 AI 融合后的成品。" : "这是在编辑器里调整过的成品。"}
+                        <button type="button" className="ml-1 underline" onClick={() => patch((p) => ({ ...p, poster: undefined, posterFrom: undefined }))}>
                             重新自动排版
                         </button>
                     </div>
@@ -1224,6 +1316,12 @@ function PoemLetter({
                         ) : null}
                         <div className="text-xs text-stone-500">
                             文字方案：<span className="text-stone-700 dark:text-stone-200">{POEM_TEXT_MODES.find((m) => m.value === pictureMode)?.label}</span>
+                            {picked.erasedFrom ? <span className="ml-1 text-stone-400">（已擦掉 AI 写的字）</span> : null}
+                            {pictureMode.startsWith("ai") && picked.check !== "wrong" ? (
+                                <button type="button" className="ml-2 text-violet-600 underline disabled:opacity-50" disabled={erasing} onClick={() => void eraseText()} data-testid="poem-erase">
+                                    {erasing ? "正在擦字…" : "擦掉 AI 写的字，改用字体"}
+                                </button>
+                            ) : null}
                             {pictureMode === "font_poster" || pictureMode === "font_compact" ? (
                                 <div className="mt-1">
                                     <Segmented
@@ -1330,6 +1428,17 @@ function PoemLetter({
                         </Button>
                     </>
                 )}
+                {!project.poster && shown.length ? (
+                    <div className="rounded-lg border border-dashed border-violet-300 p-3 text-xs text-stone-500 dark:border-violet-800" data-testid="poem-fuse-box">
+                        <div className="font-medium text-stone-700 dark:text-stone-200">
+                            AI 融合 <span className="font-normal text-violet-600">实验</span>
+                        </div>
+                        <div className="mt-1 leading-relaxed">让 AI 把排好的字处理成画里的墨迹。会用你的 Key 再画一张（一张图的费用）；字形可能被改动，画好后并排对比，你确认了才用。</div>
+                        <Button size="small" className="mt-2" icon={<Sparkles className="size-3.5" />} loading={fusing} onClick={() => void fuse()} data-testid="poem-fuse">
+                            {fusing ? "正在融合，约 1 分钟" : "试试 AI 融合"}
+                        </Button>
+                    </div>
+                ) : null}
                 <div className="space-y-2 border-t border-stone-200 pt-4 dark:border-stone-700">
                     <Button type="primary" block loading={busy} onClick={() => void saveFile()} data-testid="poem-save">
                         保存图片
@@ -1357,12 +1466,55 @@ function PoemLetter({
                             reader.onerror = () => reject(new Error("read"));
                             reader.readAsDataURL(result.blob);
                         });
-                        await storePoster(dataUrl);
+                        await storePoster(dataUrl, "editor");
                         setEditing(false);
                         message.success("已保存调整");
                     }}
                 />
             ) : null}
+            <Modal
+                open={!!fused}
+                onCancel={() => setFused(null)}
+                title="AI 融合：对比一下"
+                width={880}
+                footer={
+                    <div className="flex justify-end gap-2">
+                        <Button onClick={() => setFused(null)}>不用，保留原来的</Button>
+                        <Button
+                            type="primary"
+                            onClick={() =>
+                                fused &&
+                                void run(async () => {
+                                    await storePoster(fused.after, "fuse");
+                                    setFused(null);
+                                    message.success("已用融合后的作为成品");
+                                })
+                            }
+                            data-testid="poem-fuse-use"
+                        >
+                            字都对，用融合后的
+                        </Button>
+                    </div>
+                }
+            >
+                {fused ? (
+                    <div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <figure className="text-center text-xs text-stone-500">
+                                <img src={fused.before} alt="" className="mx-auto max-h-[60vh] rounded" />
+                                <figcaption className="mt-1">原来的</figcaption>
+                            </figure>
+                            <figure className="text-center text-xs text-stone-500">
+                                <img src={fused.after} alt="" className="mx-auto max-h-[60vh] rounded" data-testid="poem-fuse-after" />
+                                <figcaption className="mt-1">融合后</figcaption>
+                            </figure>
+                        </div>
+                        <div className="mt-3 rounded-lg bg-amber-50 p-3 text-xs leading-relaxed text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                            AI 重画时可能改动字形，请逐字核对：<span className="whitespace-pre-line">{fused.texts.map((t) => `「${t}」`).join(" ")}</span>
+                        </div>
+                    </div>
+                ) : null}
+            </Modal>
             {overlay}
         </div>
     );

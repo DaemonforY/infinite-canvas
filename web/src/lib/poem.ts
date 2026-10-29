@@ -708,6 +708,36 @@ export function feelLayers(layers: TextLayer[], feel: PoemFeel | undefined, opti
     });
 }
 
+// ---------------------------------------------------------------------------------------------
+// Picture edits on the user's image model (one image each).
+
+/** 擦掉 AI 写的字: the same picture without any text or seal, ready for the lines to be set in a font. */
+export function erasePrompt(ratio: PoemRatio) {
+    return [
+        `【画幅】${ORIENTATION[ratio]}。`,
+        "把这张图里所有的文字、书法、标题、题款、诗句和印章都去掉，用周围的景物、天空、云雾或纸色自然补全被遮住的地方，看不出擦过的痕迹。",
+        "画面其余部分保持完全不变：构图、景物、人物、颜色、画风和明暗都和原图一样。",
+        "不要添加任何新的文字、印章或签名。",
+    ].join("\n");
+}
+
+/**
+ * AI 融合 (experimental): the poster with the set text, redrawn so the text reads as ink brushed into the painting.
+ * texts are what must stay character for character.
+ */
+export function fusePrompt(ratio: PoemRatio, texts: string[]) {
+    const words = texts.map((t) => t.replace(/\s+/g, " ").trim()).filter(Boolean);
+    return [
+        `【画幅】${ORIENTATION[ratio]}。`,
+        "这是一张已经排好文字的诗画。保持画面的构图、景物、颜色和画风不变，也保持每一个字的字形、写法、位置和大小不变。",
+        "只把这些文字处理成画家亲手题写在画上的书法墨迹：笔画有墨色浓淡和自然的飞白，边缘有轻微的墨晕，与纸面和后面的景物融为一体，不像贴上去的字。浅色字保持浅色，墨色字保持墨色，印章保持朱红。",
+        words.length ? `画面上的文字必须逐字保持：${words.map((w) => `「${w}」`).join("、")}。` : "",
+        "不要增加、删除、替换或改动任何一个字，不要添加新的文字、印章或签名。",
+    ]
+        .filter(Boolean)
+        .join("\n");
+}
+
 /** 〔清〕高鼎 */
 export function authorLine(poem: Pick<PoemSource, "author" | "dynasty">) {
     return poem.author ? `${poem.dynasty ? `〔${poem.dynasty}〕` : ""}${poem.author}` : "";
@@ -729,6 +759,8 @@ export type PoemDrawing = {
     check?: "ok" | "wrong";
     /** 配诗: what the user moved, resized, turned, retyped or hid, over the automatic layout. */
     edits?: PoemEdits;
+    /** Made from this drawing by erasing the text the model wrote (擦掉 AI 写的字). */
+    erasedFrom?: string;
 };
 
 export type PoemProject = {
@@ -763,6 +795,8 @@ export type PoemProject = {
     layers?: TextLayer[];
     /** The finished poster (picture + poem), when saved. */
     poster?: PoemImage;
+    /** Where the poster came from: the image editor, or AI 融合. */
+    posterFrom?: "editor" | "fuse";
     createdAt: number;
     updatedAt: number;
 };

@@ -91,3 +91,18 @@ describe("落款", () => {
         expect(layoutLayer(s2, W, H, measure).box.y).toBeGreaterThan(layoutLayer(a2, W, H, measure).box.y + layoutLayer(a2, W, H, measure).box.h);
     });
 });
+
+describe("picture edits", () => {
+    test("擦字 keeps the picture and asks for no new text; 融合 lists the words to keep", async () => {
+        const { erasePrompt, fusePrompt } = await import("./poem");
+        const e = erasePrompt("3:2");
+        expect(e.startsWith("【画幅】横版构图，画幅宽:高 = 3:2。")).toBe(true);
+        expect(e).toContain("印章都去掉");
+        expect(e).toContain("不要添加任何新的文字");
+        const f = fusePrompt("2:3", ["村居", "草长莺飞二月天，\n拂堤杨柳醉春烟。", " "]);
+        expect(f).toContain("「村居」、「草长莺飞二月天， 拂堤杨柳醉春烟。」");
+        expect(f).not.toContain("「 」");
+        expect(f).toContain("不要增加、删除、替换或改动任何一个字");
+        expect(fusePrompt("1:1", [])).not.toContain("逐字保持");
+    });
+});
