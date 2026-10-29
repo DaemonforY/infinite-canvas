@@ -110,9 +110,22 @@ export function cleanScene(text: string) {
         .trim();
 }
 
-/** The image prompt: style, the text rules (no text, a blank area), the scene. */
+const ORIENTATION: Record<PoemRatio, string> = {
+    "2:3": "竖版构图，画幅宽:高 = 2:3",
+    "3:4": "竖版构图，画幅宽:高 = 3:4",
+    "9:16": "竖版构图，画幅宽:高 = 9:16（手机全屏）",
+    "1:1": "方形构图，画幅宽:高 = 1:1",
+    "3:2": "横版构图，画幅宽:高 = 3:2",
+};
+
+/**
+ * The image prompt: orientation, style, the text rules (no text, a blank area), the scene. The
+ * orientation is spelled out because the upstream treats the requested size as a hint (portrait
+ * requests came back landscape on 2026-10-29).
+ */
 export function poemImagePrompt(style: PoemStyleId, scene: string, ratio: PoemRatio) {
     return [
+        `【画幅】${ORIENTATION[ratio]}。`,
         poemStyle(style).prompt,
         `【文字与版式】画面中不要出现任何文字、书法、印章、落款、题跋或伪文字。${blankArea(ratio)}，后期会用书法写上诗句。`,
         `主题：${scene.trim()}`,

@@ -44,6 +44,7 @@ import { deletePoem, listPoems, readPoem, savePoem } from "./poem-store";
 
 // 诗画 (/poem): 选诗 → 画面 → 生成 → 配诗. Poems come from the main site's corpus (or are pasted in); every model
 // call runs on the user's own channel. The poem is set on the picture as text layers, never drawn by the model.
+// The style cards show the same 村居 scene drawn in each style with poemImagePrompt (web/public/poem-styles).
 
 const DYNASTIES = ["先秦", "汉", "魏晋", "南北朝", "隋", "唐", "五代", "宋", "金", "元", "明", "清"];
 const LETTER_FONTS: TextFontId[] = ["ma-shan-zheng", "zhi-mang-xing", "long-cang", "zcool-xiaowei", "noto-serif-sc"];
@@ -167,6 +168,8 @@ function PoemHome() {
     const [picks, setPicks] = useState<{ poem: MainSitePoem; reason: string }[]>([]);
     const [paste, setPaste] = useState({ title: "", author: "", dynasty: "", content: "" });
     const opened = useRef(false);
+    // Opened from 用这首诗生图: a loading state until the new project opens (not the empty start page).
+    const [openingPoem, setOpeningPoem] = useState(() => Boolean(Number(searchParams.get("poem"))));
 
     const start = useCallback(
         async (poem: PoemSource) => {
@@ -186,6 +189,7 @@ function PoemHome() {
             .then((poem) => start(toSource(poem)))
             .catch((error) => {
                 message.error(errorText(error, "没能打开这首诗"));
+                setOpeningPoem(false);
                 setSearchParams({}, { replace: true });
             });
     }, [message, searchParams, setSearchParams, start]);
@@ -240,7 +244,13 @@ function PoemHome() {
         setProjects(await listPoems());
     };
 
-    if (searchParams.get("poem") && !opened.current) return null;
+    if (openingPoem)
+        return (
+            <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-stone-500" data-testid="poem-opening">
+                <Spin />
+                正在打开这首诗…
+            </div>
+        );
 
     return (
         <div className="h-full overflow-y-auto">
@@ -529,11 +539,7 @@ function PoemEditor({ id }: { id: string }) {
                                             className={`rounded-xl border p-3 text-left transition ${project.style === style.id ? "border-(--skin-accent) ring-2 ring-(--skin-accent)/30" : "border-stone-200 hover:border-stone-300 dark:border-stone-700"}`}
                                             data-testid={`poem-style-${style.id}`}
                                         >
-                                            <div className="flex gap-1">
-                                                {style.swatch.map((color) => (
-                                                    <span key={color} className="h-3 w-6 rounded-sm" style={{ background: color }} />
-                                                ))}
-                                            </div>
+                                            <img src={`/poem-styles/${style.id}.webp`} alt={style.name} loading="lazy" draggable={false} className="aspect-[16/9] w-full rounded-lg object-cover object-bottom" style={{ background: style.swatch[3] }} />
                                             <div className="mt-2 text-sm font-medium text-stone-900 dark:text-stone-100">{style.name}</div>
                                             <div className="mt-0.5 text-xs text-stone-500">{style.desc}</div>
                                         </button>

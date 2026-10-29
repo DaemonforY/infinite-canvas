@@ -9,6 +9,8 @@ describe("prompts", () => {
     test("the image prompt asks for no text and a blank area, with the scene", () => {
         const p = poemImagePrompt("xinzhongshi", "早春河堤，孩子放风筝", "2:3");
         expect(p).toContain("新中式细线设色");
+        expect(p.startsWith("【画幅】竖版构图")).toBe(true);
+        expect(poemImagePrompt("shuimo", "x", "3:2")).toContain("横版构图");
         expect(p).toContain("不要出现任何文字");
         expect(p).toContain("右上方保留");
         expect(p).toContain("主题：早春河堤，孩子放风筝");
