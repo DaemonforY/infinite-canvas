@@ -7,6 +7,7 @@ import { MAIN_SITE_API_BASE_URL, MAIN_SITE_NAME, PARTNER_SITES, isMainSiteBaseUr
 import { defaultBaseUrlForApiFormat, guessCapability, normalizeChannelModels, type ApiCallFormat, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import { ModelScriptEditor } from "./model-script-editor";
 import { ModelSelectModal } from "./model-select-modal";
+import { SecretInput } from "@/components/ui/secret-input";
 
 type ScriptTarget = { name: string; capability: ModelCapability; value: string };
 
@@ -104,7 +105,7 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
                 ) : null}
                 <label className="block md:col-span-2">
                     <span className="mb-1 block text-sm font-medium">API Key</span>
-                    <Input.Password value={draft.apiKey} onChange={(event) => patch({ apiKey: event.target.value })} placeholder="sk-..." />
+                    <SecretInput value={draft.apiKey} onChange={(event) => patch({ apiKey: event.target.value })} placeholder="sk-..." />
                 </label>
                 {missingMainSiteKey ? (
                     <Alert

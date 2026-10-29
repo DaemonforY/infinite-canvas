@@ -7,6 +7,7 @@ import { MAIN_SITE_API_BASE_URL, MAIN_SITE_NAME, mainSiteLink } from "@/constant
 import { createConnectState, openConnectPopup, parseConnectMessage, prefersRedirectSignIn, startConnectRedirect, testApiKey } from "@/services/api/main-site-connect";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useMainAccountStore } from "@/stores/use-main-account-store";
+import { SecretInput } from "@/components/ui/secret-input";
 
 /**
  * First-run setup: shown instead of the full configuration dialog while no channel has an API key.
@@ -150,7 +151,7 @@ export function QuickStartDialog() {
                         {t("quickStart.pasteLabel")}
                     </label>
                     <div className="flex gap-2">
-                        <Input.Password
+                        <SecretInput
                             id="quick-start-key"
                             value={pasted}
                             onChange={(event) => setPasted(event.target.value)}

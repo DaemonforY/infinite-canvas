@@ -5,6 +5,7 @@ import { Copy, KeyRound, Link2, PlugZap } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
+import { SecretInput } from "@/components/ui/secret-input";
 
 const AGENT_PLUGIN_REMOVE_COMMAND = "codex plugin remove infinite-canvas";
 const AGENT_MCP_REMOVE_COMMAND = "codex mcp remove infinite-canvas";
@@ -134,7 +135,7 @@ export function AgentConnectView({
                                 {t("agent.connect.token")}
                                 <span className="font-normal opacity-70">Connect token</span>
                             </span>
-                            <Input.Password
+                            <SecretInput
                                 size="large"
                                 prefix={<KeyRound className="mr-1 size-4" style={{ color: theme.node.faint }} />}
                                 value={token}
