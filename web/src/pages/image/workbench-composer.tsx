@@ -1,4 +1,4 @@
-import { useRef, useState, type Dispatch, type ReactNode, type Ref, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type ReactNode, type Ref, type SetStateAction } from "react";
 import { Button, Input, InputNumber, Popover, Tooltip } from "antd";
 import type { TextAreaRef } from "antd/es/input/TextArea";
 import { ArrowLeft, ArrowRight, BookOpen, ChevronDown, Feather, History, ImagePlus, PanelsTopLeft, ScanText, SlidersHorizontal, Sparkles, Wand2, X } from "lucide-react";
@@ -21,12 +21,13 @@ import { useMainAccountStore } from "@/stores/use-main-account-store";
 import type { ReferenceImage } from "@/types/image";
 import { PromptAssistPanel, type PromptAssistMode } from "./prompt-assist-panel";
 
-const PROMPT_HEIGHT_KEY = "workbench-prompt-height";
-const PROMPT_MIN_HEIGHT = 56;
+// Phones and computers keep their own prompt height: a box sized for a desktop screen would swallow a phone's.
+const promptHeightSetting = (phone: boolean) => (phone ? { key: "workbench-prompt-height-phone", min: 24, maxShare: 0.5 } : { key: "workbench-prompt-height", min: 56, maxShare: 0.6 });
 
-function readPromptHeight() {
-    const value = Number(localStorage.getItem(PROMPT_HEIGHT_KEY));
-    return value >= PROMPT_MIN_HEIGHT ? value : null;
+function readPromptHeight(phone: boolean) {
+    const { key, min } = promptHeightSetting(phone);
+    const value = Number(localStorage.getItem(key));
+    return value >= min ? value : null;
 }
 
 type UpdateConfig = <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
@@ -114,8 +115,10 @@ export function WorkbenchComposer({
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [moreOpen, setMoreOpen] = useState(false);
     const [typing, setTyping] = useState(false);
-    const [promptHeight, setPromptHeight] = useState<number | null>(readPromptHeight);
-    const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
+    const [promptHeight, setPromptHeight] = useState<number | null>(() => readPromptHeight(phone));
+    const resizeRef = useRef<{ startY: number; startHeight: number; moved: boolean } | null>(null);
+    const lastTapRef = useRef(0);
+    useEffect(() => setPromptHeight(readPromptHeight(phone)), [phone]);
 
     const size = config.size || "1:1";
     const ratio = inferMediaRatio(size);
@@ -125,6 +128,72 @@ export function WorkbenchComposer({
     const setScale = (value: string) => updateConfig("size", computeMediaSize(value, ratio === "auto" ? "1:1" : ratio));
     const advancedChanged = (config.quality && config.quality !== "auto") || config.background === "transparent";
     const ratioUse = RATIOS.find((item) => item.value === ratio)?.use;
+
+    const resetPromptHeight = () => {
+        localStorage.removeItem(promptHeightSetting(phone).key);
+        setPromptHeight(null);
+    };
+    // Drag the composer's top edge to make the prompt box taller or shorter; a double click (double tap) goes back to
+    // fitting the text.
+    const resizeBar = (
+        <div
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label={t("studio.composer.resizeHint")}
+            className={cn("group/resize absolute inset-x-0 z-10 flex cursor-ns-resize touch-none items-center justify-center", phone ? "-top-3 h-6" : "-top-2 h-4")}
+            onPointerDown={(event) => {
+                const textarea = (textareaRef as { current: TextAreaRef | null }).current?.resizableTextArea?.textArea;
+                if (!textarea) return;
+                event.preventDefault();
+                event.currentTarget.setPointerCapture(event.pointerId);
+                resizeRef.current = { startY: event.clientY, startHeight: textarea.offsetHeight, moved: false };
+            }}
+            onPointerMove={(event) => {
+                const drag = resizeRef.current;
+                if (!drag) return;
+                const delta = drag.startY - event.clientY;
+                if (!drag.moved && Math.abs(delta) < 4) return;
+                drag.moved = true;
+                const { min, maxShare } = promptHeightSetting(phone);
+                const max = Math.max(min, Math.round(window.innerHeight * maxShare));
+                setPromptHeight(Math.min(max, Math.max(min, drag.startHeight + delta)));
+            }}
+            onPointerUp={() => {
+                const drag = resizeRef.current;
+                if (!drag) return;
+                resizeRef.current = null;
+                if (!drag.moved) {
+                    // Touch screens don't reliably send dblclick, so two quick taps count as one.
+                    const now = Date.now();
+                    if (now - lastTapRef.current < 350) {
+                        lastTapRef.current = 0;
+                        resetPromptHeight();
+                    } else lastTapRef.current = now;
+                    return;
+                }
+                setPromptHeight((value) => {
+                    if (value) localStorage.setItem(promptHeightSetting(phone).key, String(value));
+                    return value;
+                });
+            }}
+            onPointerCancel={() => (resizeRef.current = null)}
+            data-testid="prompt-resize"
+        >
+            <span
+                className={cn(
+                    "h-1 rounded-full bg-stone-300 transition group-hover/resize:bg-(--skin-accent) group-hover/resize:opacity-100 group-active/resize:bg-(--skin-accent) dark:bg-stone-600",
+                    phone ? "w-9" : "w-10 opacity-60 group-hover/resize:w-14",
+                )}
+            />
+        </div>
+    );
+    const resizeHandle = phone ? (
+        resizeBar
+    ) : (
+        <Tooltip title={t("studio.composer.resizeHint")} mouseEnterDelay={0.6}>
+            {resizeBar}
+        </Tooltip>
+    );
 
     const ratioPanel = (
         <div className={phone ? "w-full" : "w-[336px]"}>
@@ -221,7 +290,8 @@ export function WorkbenchComposer({
         const toolIdle = "border-stone-200 bg-stone-50 text-stone-700 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-200";
         return (
             <div className="relative w-full" data-testid="workbench-composer-phone">
-                <div className="rounded-2xl border border-stone-200 bg-card p-2 shadow-lg dark:border-stone-700" data-testid="workbench-composer">
+                <div className="relative rounded-2xl border border-stone-200 bg-card p-2 shadow-lg dark:border-stone-700" data-testid="workbench-composer">
+                    {resizeHandle}
                     {references.length ? (
                         <div className="hide-scrollbar flex items-center gap-1.5 overflow-x-auto px-0.5 pb-1.5 pt-0.5">
                             {references.map((item, index) => (
@@ -280,7 +350,8 @@ export function WorkbenchComposer({
                             }}
                             variant="borderless"
                             // Two lines while looking at results, room to edit while typing.
-                            autoSize={{ minRows: 1, maxRows: typing ? 6 : 2 }}
+                            autoSize={promptHeight ? false : { minRows: 1, maxRows: typing ? 6 : 2 }}
+                            style={promptHeight ? { height: promptHeight, resize: "none", transition: "none" } : undefined}
                             placeholder={references.length ? t("studio.composer.placeholderWithReference") : t("studio.composer.phonePlaceholder")}
                             // 16px: iOS zooms the page into any smaller text field on focus.
                             // Padding sits on the row, not the field, so no part of a hidden third line shows through it.
@@ -403,42 +474,7 @@ export function WorkbenchComposer({
                 }}
                 data-testid="workbench-composer"
             >
-                {/* Drag the top edge to make the prompt box taller or shorter; double-click goes back to fitting the text. */}
-                <Tooltip title={t("studio.composer.resizeHint")} mouseEnterDelay={0.6}>
-                    <div
-                        role="separator"
-                        aria-orientation="horizontal"
-                        className="group/resize absolute inset-x-0 -top-2 z-10 flex h-4 cursor-ns-resize touch-none items-center justify-center"
-                        onPointerDown={(event) => {
-                            const textarea = (textareaRef as { current: TextAreaRef | null }).current?.resizableTextArea?.textArea;
-                            if (!textarea) return;
-                            event.preventDefault();
-                            event.currentTarget.setPointerCapture(event.pointerId);
-                            resizeRef.current = { startY: event.clientY, startHeight: textarea.offsetHeight };
-                        }}
-                        onPointerMove={(event) => {
-                            const drag = resizeRef.current;
-                            if (!drag) return;
-                            const max = Math.max(PROMPT_MIN_HEIGHT, Math.round(window.innerHeight * 0.6));
-                            setPromptHeight(Math.min(max, Math.max(PROMPT_MIN_HEIGHT, drag.startHeight + drag.startY - event.clientY)));
-                        }}
-                        onPointerUp={() => {
-                            if (!resizeRef.current) return;
-                            resizeRef.current = null;
-                            setPromptHeight((value) => {
-                                if (value) localStorage.setItem(PROMPT_HEIGHT_KEY, String(value));
-                                return value;
-                            });
-                        }}
-                        onDoubleClick={() => {
-                            localStorage.removeItem(PROMPT_HEIGHT_KEY);
-                            setPromptHeight(null);
-                        }}
-                        data-testid="prompt-resize"
-                    >
-                        <span className="h-1 w-10 rounded-full bg-stone-300 opacity-60 transition group-hover/resize:w-14 group-hover/resize:bg-(--skin-accent) group-hover/resize:opacity-100 dark:bg-stone-600" />
-                    </div>
-                </Tooltip>
+                {resizeHandle}
                 <div className="flex items-center gap-2 overflow-x-auto pb-2">
                     {references.map((item, index) => (
                         <div key={item.id} className="group relative size-14 shrink-0 overflow-hidden rounded-lg border border-stone-200 dark:border-stone-700">
@@ -507,7 +543,7 @@ export function WorkbenchComposer({
                     }}
                     variant="borderless"
                     autoSize={promptHeight ? false : { minRows: 2, maxRows: 8 }}
-                    style={promptHeight ? { height: promptHeight, resize: "none" } : undefined}
+                    style={promptHeight ? { height: promptHeight, resize: "none", transition: "none" } : undefined}
                     placeholder={references.length ? t("studio.composer.placeholderWithReference") : t("imageWorkbench.promptPlaceholder")}
                     className="!px-0.5 !text-[15px] !leading-relaxed"
                     data-testid="workbench-prompt"
