@@ -1,7 +1,7 @@
 import { useRef, useState, type Dispatch, type ReactNode, type Ref, type SetStateAction } from "react";
 import { Button, Input, InputNumber, Popover, Tooltip } from "antd";
 import type { TextAreaRef } from "antd/es/input/TextArea";
-import { ArrowLeft, ArrowRight, BookOpen, ChevronDown, History, ImagePlus, PanelsTopLeft, ScanText, SlidersHorizontal, Sparkles, Wand2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, ChevronDown, Feather, History, ImagePlus, PanelsTopLeft, ScanText, SlidersHorizontal, Sparkles, Wand2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
@@ -303,6 +303,10 @@ export function WorkbenchComposer({
                                 <PanelsTopLeft className="size-4" />
                                 {t("studio.composer.comic")}
                             </button>
+                            <button type="button" className={cn(toolClass, toolIdle)} onClick={() => navigate("/poem")}>
+                                <Feather className="size-4" />
+                                {t("studio.composer.poem")}
+                            </button>
                             <button type="button" className={cn(toolClass, toolIdle)} onClick={onOpenLogs}>
                                 <History className="size-4" />
                                 {t("studio.composer.history")}
@@ -520,6 +524,14 @@ export function WorkbenchComposer({
                                 <Chip onClick={() => navigate("/comic")}>
                                     <PanelsTopLeft className="size-3.5" />
                                     <span className="max-md:hidden">{t("studio.composer.comic")}</span>
+                                </Chip>
+                            </span>
+                        </Tooltip>
+                        <Tooltip title={t("studio.composer.poemTip")}>
+                            <span>
+                                <Chip onClick={() => navigate("/poem")}>
+                                    <Feather className="size-3.5" />
+                                    <span className="max-md:hidden">{t("studio.composer.poem")}</span>
                                 </Chip>
                             </span>
                         </Tooltip>

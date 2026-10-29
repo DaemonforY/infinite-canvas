@@ -18,6 +18,7 @@ import PromptsPage from "@/pages/prompts";
 import ToolsPage from "@/pages/tools";
 import VideoPage from "@/pages/video";
 import ComicPage from "@/pages/comic";
+import PoemPage from "@/pages/poem";
 import ExplorePage from "@/pages/explore";
 import WorkPage from "@/pages/work";
 import UserPage from "@/pages/user";
@@ -49,6 +50,8 @@ export const router = createBrowserRouter([
             { path: "/image", element: <ImagePage /> },
             { path: "/comic", element: <ComicPage /> },
             { path: "/comic/:id", element: <ComicPage /> },
+            { path: "/poem", element: <PoemPage /> },
+            { path: "/poem/:id", element: <PoemPage /> },
             { path: "/video", element: <VideoPage /> },
             { path: "/animation", element: <AnimationPage /> },
             { path: "/assets", element: <AssetsPage /> },

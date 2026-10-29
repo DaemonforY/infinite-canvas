@@ -12,7 +12,8 @@ import { TextLayerPanel } from "@/components/image-editor/text-layer-panel";
 
 export type ImageEditorResult = { blob: Blob; width: number; height: number };
 
-type Tab = "adjust" | "filter" | "crop" | "text" | "ai";
+export type ImageEditorTab = "adjust" | "filter" | "crop" | "text" | "ai";
+type Tab = ImageEditorTab;
 
 const PREVIEW_LONG_EDGE = 1100;
 const THUMB_LONG_EDGE = 120;
@@ -30,6 +31,8 @@ export function ImageEditorDialog({
     onSave,
     onAiEdit,
     onMaskEdit,
+    initialLayers,
+    initialTab,
 }: {
     open: boolean;
     src: string;
@@ -39,6 +42,9 @@ export function ImageEditorDialog({
     onAiEdit?: (input: { instruction: string; image: ImageEditorResult }) => Promise<void> | void;
     /** Opens the host's mask (inpainting) editor on the original image. */
     onMaskEdit?: () => void;
+    /** Text layers already placed (e.g. 诗画's poem), and the tab to open on. */
+    initialLayers?: TextLayer[];
+    initialTab?: Tab;
 }) {
     const { t } = useTranslation();
     const { message } = App.useApp();
@@ -69,15 +75,16 @@ export function ImageEditorDialog({
     // Reset whenever a new image is opened.
     useEffect(() => {
         if (!open) return;
-        setTab("adjust");
+        setTab(initialTab || "adjust");
         setBaseSrc(src);
         setGeometry(IDENTITY_GEOMETRY);
         setAdjustments(NEUTRAL_ADJUSTMENTS);
         setPresetId("original");
         setAiText("");
-        setLayers([]);
+        setLayers(initialLayers ? initialLayers.map((layer) => ({ ...layer })) : []);
         setSelectedLayerId("");
         setLoadError(false);
+        // Only opening (or a new image) resets the editor; the initial props are read then.
     }, [open, src]);
 
     // Fetch the font chunks for the characters in use, then redraw with the real faces.
