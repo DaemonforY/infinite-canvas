@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { layoutLayer } from "./image-editor/text-layers";
-import { authorLine, blankHint, buildPoemPrompt, calmBox, defaultLines, displayTitle, parseKeywords, parsePicks, poemColumns, poemLayers, sceneRequest, type PoemCandidate } from "./poem";
+import { authorLine, blankHint, buildPoemPrompt, posterLayers, titleArea, calmBox, defaultLines, displayTitle, parseKeywords, parsePicks, poemColumns, poemLayers, sceneRequest, type PoemCandidate } from "./poem";
 
 const cunju = { id: 627041, title: "村居", author: "高鼎", dynasty: "清", content: "草长莺飞二月天，拂堤杨柳醉春烟。\n儿童散学归来早，忙趁东风放纸鸢。" };
 
@@ -98,6 +98,47 @@ describe("配诗", () => {
         expect(boxes[3].y).toBeGreaterThan(boxes[2].y + boxes[2].h - 1);
         // Larger characters in four half-line columns beat two long columns here; nothing is lost or reordered.
         expect(layers[2].text.replace(/\n/g, "")).toBe(cunju.content.replace("\n", ""));
+    });
+
+    test("大标题: a large title in the title area, the author beside it, ruled lines in the body area", () => {
+        const aspect = 2 / 3;
+        const W = 1000;
+        const H = W / aspect;
+        const measure = () => 10;
+        const titleBox = titleArea("2:3");
+        const bodyBox = { x0: 0.55, y0: 0.04, x1: 0.96, y1: 0.46 };
+        const lines = "空山新雨后，天气晚来秋。\n明月松间照，清泉石上流。\n竹喧归浣女，莲动下渔舟。\n随意春芳歇，王孙自可留。";
+        const layers = posterLayers({ title: "山居秋暝", author: "王维", lines, titleBox, bodyBox, aspect, font: "lxgw-wenkai", titleFont: "ma-shan-zheng", titleInk: "light", bodyInk: "ink", seal: "诗画" });
+        expect(layers.map((l) => l.kind)).toEqual(["text", "text", "seal", "text"]);
+        const [title, author, , body] = layers;
+        expect(title.size).toBeGreaterThan(body.size * 3);
+        expect(title.color).toBe("#f6eedc");
+        expect(body.rules).toBe(true);
+        expect(body.color).toBe("#2b2622");
+        const tb = layoutLayer(title, W, H, measure).box;
+        expect(tb.x + tb.w).toBeLessThanOrEqual(titleBox.x1 * W + 1);
+        expect(tb.y + tb.h).toBeLessThanOrEqual(titleBox.y1 * H + 1);
+        const ab = layoutLayer(author, W, H, measure).box;
+        expect(ab.x).toBeGreaterThan(tb.x + tb.w - 1);
+        const bb = layoutLayer(body, W, H, measure);
+        expect(bb.box.x).toBeGreaterThanOrEqual(bodyBox.x0 * W - 1);
+        expect(bb.box.x + bb.box.w).toBeLessThanOrEqual(bodyBox.x1 * W + 1);
+        expect(bb.box.y + bb.box.h).toBeLessThanOrEqual(bodyBox.y1 * H + 1);
+        expect(bb.rules?.length).toBe(body.text.split("\n").length + 1);
+
+        // A long title takes two columns; 「·」 is dropped.
+        const long = posterLayers({ title: "八归·芳莲坠粉", author: "史达祖", lines, titleBox, bodyBox, aspect, font: "lxgw-wenkai", titleFont: "ma-shan-zheng", titleInk: "light", bodyInk: "ink", seal: "" });
+        expect(long[0].text).toBe("八归芳莲坠粉");
+        expect(long.map((l) => l.kind)).toEqual(["text", "text", "text"]);
+        const seven = posterLayers({ title: "春夜喜雨好雨知时", author: "杜甫", lines, titleBox, bodyBox, aspect, font: "lxgw-wenkai", titleFont: "ma-shan-zheng", titleInk: "light", bodyInk: "ink", seal: "" });
+        expect(seven[0].wrapAt).toBe(4);
+    });
+
+    test("the 大标题 prompt asks for a dark title area and a light area for the lines", () => {
+        const p = buildPoemPrompt({ style: "xinzhongshi", ratio: "2:3", layout: "poster", poem: cunju });
+        expect(p).toContain("左上方约占画面宽 30%、高 55% 放深色");
+        expect(p).toContain("右上方保留一块约占画面宽 38%、高 40% 的连续浅色留白");
+        expect(buildPoemPrompt({ style: "xinzhongshi", ratio: "2:3", layout: "compact", poem: cunju })).not.toContain("大字标题");
     });
 
     test("finds the blank area the prompt left", () => {

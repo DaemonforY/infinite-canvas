@@ -6,7 +6,7 @@
  * downsampled preview and on the full-resolution export.
  */
 
-export type TextFontId = "ma-shan-zheng" | "zhi-mang-xing" | "long-cang" | "zcool-xiaowei" | "noto-serif-sc" | "zcool-qingke-huangyou" | "system-sans";
+export type TextFontId = "ma-shan-zheng" | "zhi-mang-xing" | "long-cang" | "zcool-xiaowei" | "noto-serif-sc" | "lxgw-wenkai" | "zcool-qingke-huangyou" | "system-sans";
 
 export type TextFont = { id: TextFontId; family: string; /** Hosted in /fonts/fonts.css; system fonts need no download. */ webfont: boolean };
 
@@ -15,6 +15,7 @@ export const TEXT_FONTS: TextFont[] = [
     { id: "zhi-mang-xing", family: "Zhi Mang Xing", webfont: true },
     { id: "long-cang", family: "Long Cang", webfont: true },
     { id: "noto-serif-sc", family: "Noto Serif SC", webfont: true },
+    { id: "lxgw-wenkai", family: "LXGW WenKai", webfont: true },
     { id: "zcool-xiaowei", family: "ZCOOL XiaoWei", webfont: true },
     { id: "zcool-qingke-huangyou", family: "ZCOOL QingKe HuangYou", webfont: true },
     { id: "system-sans", family: "PingFang SC", webfont: false },
@@ -54,6 +55,8 @@ export type TextLayer = {
     opacity: number;
     /** Seals only: 白文 (light text on a red block) or 朱文 (red text in a red frame). */
     sealStyle: SealStyle;
+    /** Vertical text only: thin rules between and beside the columns, like ruled paper (诗画). */
+    rules?: boolean;
 };
 
 export const SEAL_RED = "#b3302a";
@@ -157,7 +160,14 @@ export function splitLines(text: string, wrapAt: number): string[][] {
 }
 
 export type Glyph = { ch: string; x: number; y: number };
-export type LayerLayout = { glyphs: Glyph[]; box: { x: number; y: number; w: number; h: number }; fontPx: number; seal?: { x: number; y: number; w: number; h: number; radius: number; border: number } };
+export type LayerLayout = {
+    glyphs: Glyph[];
+    box: { x: number; y: number; w: number; h: number };
+    fontPx: number;
+    seal?: { x: number; y: number; w: number; h: number; radius: number; border: number };
+    /** x of each column rule (vertical text with rules), from top to the bottom of the block. */
+    rules?: number[];
+};
 
 /** Width of one character at the given pixel size; the canvas measures it, tests pass a stub. */
 export type MeasureChar = (ch: string, fontPx: number) => number;
@@ -189,7 +199,9 @@ export function layoutLayer(layer: TextLayer, imageW: number, imageH: number, me
             const cx = left + blockW - fontPx / 2 - col * lineStep;
             line.forEach((ch, i) => glyphs.push({ ch: verticalForm(ch), x: cx, y: top + offset + i * step + fontPx / 2 }));
         });
-        return { glyphs, box: { x: left, y: top, w: blockW, h: blockH }, fontPx };
+        // Rules halfway between columns, and one beside each outer column.
+        const rules = layer.rules && lines.length ? Array.from({ length: lines.length + 1 }, (_, i) => left + blockW + (lineStep - fontPx) / 2 - i * lineStep) : undefined;
+        return { glyphs, box: { x: left, y: top, w: blockW, h: blockH }, fontPx, ...(rules ? { rules } : {}) };
     }
 
     const spacing = fontPx * layer.letterSpacing;
@@ -297,6 +309,21 @@ export function drawTextLayers(ctx: CanvasRenderingContext2D, layers: TextLayer[
             ctx.lineWidth = Math.max(1, layout.fontPx * 0.09);
             ctx.lineJoin = "round";
             for (const g of layout.glyphs) ctx.strokeText(g.ch, g.x, g.y);
+        }
+        if (layout.rules) {
+            ctx.save();
+            ctx.shadowColor = "transparent";
+            ctx.strokeStyle = hexAlpha(layer.color, 0.45);
+            ctx.lineWidth = Math.max(1, layout.fontPx * 0.035);
+            const y0 = layout.box.y - layout.fontPx * 0.35;
+            const y1 = layout.box.y + layout.box.h + layout.fontPx * 0.35;
+            for (const x of layout.rules) {
+                ctx.beginPath();
+                ctx.moveTo(x, y0);
+                ctx.lineTo(x, y1);
+                ctx.stroke();
+            }
+            ctx.restore();
         }
         ctx.fillStyle = layer.color;
         for (const g of layout.glyphs) ctx.fillText(g.ch, g.x, g.y);

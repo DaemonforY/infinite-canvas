@@ -77,7 +77,18 @@ export function poemStyle(id: PoemStyleId | string | undefined): PoemStyle {
 }
 
 /** Portrait and square pictures keep the top right blank; landscape ones a band on the left. */
-function blankArea(ratio: PoemRatio) {
+/**
+ * 版式: 大标题 (poster) puts a large title on a dark area at the left and the lines on a light blank area at
+ * the top right; 竖排题诗 (compact) sets title, author and lines together in one blank area.
+ */
+export type PoemLayoutKind = "poster" | "compact";
+
+function blankArea(ratio: PoemRatio, layout: PoemLayoutKind = "poster") {
+    if (layout === "poster") {
+        return ratio === "3:2"
+            ? "画面最左侧约占画面宽 14% 放一条深色或高对比的连续色面（山体、树荫、夜空或深色云层），用来写大字标题；其右侧约占画面宽 30% 保留一条连续的浅色留白（淡天空、云气或水面），留白内不要任何景物"
+            : "画面左上方约占画面宽 30%、高 55% 放深色或高对比的连续色面（山体、树荫、夜空或深色云层），用来写大字标题；画面右上方保留一块约占画面宽 38%、高 40% 的连续浅色留白（淡天空、云气或水面），留白内不要任何景物";
+    }
     return ratio === "3:2"
         ? "画面左侧保留一条约占画面宽 35% 的竖向连续留白（淡天空、云气、水面或素净地面），留白内不要任何景物"
         : "画面右上方保留一块约占画面宽 40%、高 45% 的连续留白（淡天空、云气或水面），留白内不要任何景物";
@@ -93,10 +104,10 @@ export const SCENE_INSTRUCTION = [
     "4. 只输出画面描述正文，120–220 字，不写画风，不写需要画出的文字，不要解释、标题或引号。",
 ].join("\n");
 
-export function sceneRequest(poem: PoemSource, ratio: PoemRatio, lines?: string) {
+export function sceneRequest(poem: PoemSource, ratio: PoemRatio, lines?: string, layout: PoemLayoutKind = "poster") {
     const parts = [`篇名：${poem.title}`, `作者：${poem.dynasty ? `${poem.dynasty} ` : ""}${poem.author}`];
     parts.push(lines && lines.trim() !== poem.content.trim() ? `画这几句：\n${lines.trim()}\n\n全文供理解：\n${poem.content}` : `原文：\n${poem.content}`);
-    parts.push(`构图：${ratio === "3:2" ? "横版" : ratio === "1:1" ? "方形" : "竖版"}，${blankArea(ratio)}，用来之后写诗；主体放在其余位置。`);
+    parts.push(`构图：${ratio === "3:2" ? "横版" : ratio === "1:1" ? "方形" : "竖版"}，${blankArea(ratio, layout)}，用来之后写诗；主体放在其余位置。`);
     return parts.join("\n");
 }
 
@@ -129,7 +140,7 @@ const ORIENTATION: Record<PoemRatio, string> = {
 export const POEM_TEMPLATE_VARS = [
     { key: "画幅", desc: "竖版构图，画幅宽:高 = 2:3（随比例变）" },
     { key: "画风", desc: "所选画风的描述" },
-    { key: "留白", desc: "给诗句留的空白位置（随比例变）" },
+    { key: "留白", desc: "给标题和诗句留的位置（随比例和版式变）" },
     { key: "篇名", desc: "诗的标题" },
     { key: "作者", desc: "作者" },
     { key: "朝代", desc: "朝代" },
@@ -149,7 +160,7 @@ export type PoemTemplate = { id: string; name: string; text: string };
 export const DEFAULT_TEMPLATE_ID = "default";
 export const DEFAULT_TEMPLATE: PoemTemplate = { id: DEFAULT_TEMPLATE_ID, name: "默认模板", text: DEFAULT_POEM_TEMPLATE };
 
-export type PoemPromptInput = { template?: string; style: PoemStyleId; ratio: PoemRatio; poem: PoemSource; lines?: string; scene?: string };
+export type PoemPromptInput = { template?: string; style: PoemStyleId; ratio: PoemRatio; poem: PoemSource; lines?: string; scene?: string; layout?: PoemLayoutKind };
 
 /** The image prompt: the template with its variables filled; the AI scene goes last when the template doesn't place it. */
 export function buildPoemPrompt(input: PoemPromptInput) {
@@ -160,7 +171,7 @@ export function buildPoemPrompt(input: PoemPromptInput) {
     const values: Record<string, string> = {
         画幅: ORIENTATION[input.ratio],
         画风: poemStyle(input.style).prompt.replace(/^画风[:：]\s*/, ""),
-        留白: blankArea(input.ratio),
+        留白: blankArea(input.ratio, input.layout),
         篇名: input.poem.title,
         作者: input.poem.author,
         朝代: input.poem.dynasty,
@@ -250,8 +261,14 @@ export function parsePicks(text: string, candidates: PoemCandidate[], count: num
 export type PoemBox = { x0: number; y0: number; x1: number; y1: number };
 
 /** Where to look for the blank area the prompt asked for. */
-export function blankHint(ratio: PoemRatio): PoemBox {
+export function blankHint(ratio: PoemRatio, layout: PoemLayoutKind = "compact"): PoemBox {
+    if (layout === "poster") return ratio === "3:2" ? { x0: 0.14, y0: 0, x1: 0.5, y1: 1 } : { x0: 0.5, y0: 0, x1: 1, y1: 0.5 };
     return ratio === "3:2" ? { x0: 0, y0: 0, x1: 0.5, y1: 1 } : { x0: 0.4, y0: 0, x1: 1, y1: 0.62 };
+}
+
+/** 大标题: where the title goes (the dark area the prompt asked for). */
+export function titleArea(ratio: PoemRatio): PoemBox {
+    return ratio === "3:2" ? { x0: 0.025, y0: 0.06, x1: 0.14, y1: 0.85 } : { x0: 0.045, y0: 0.035, x1: 0.33, y1: 0.6 };
 }
 
 function boxBlur(src: Float32Array, w: number, h: number): Float32Array {
@@ -432,6 +449,93 @@ export function poemLayers(input: PoemLayoutInput): TextLayer[] {
     return layers;
 }
 
+export type PosterLayoutInput = {
+    title: string;
+    author: string;
+    lines: string;
+    titleBox: PoemBox;
+    bodyBox: PoemBox;
+    /** Picture width / height. */
+    aspect: number;
+    font: TextFontId;
+    titleFont: TextFontId;
+    titleInk: PoemInk;
+    bodyInk: PoemInk;
+    seal: string;
+};
+
+const POSTER_BODY_LETTER = 0.16;
+const POSTER_BODY_LINE = 0.8;
+
+/**
+ * 大标题: a large vertical title filling the title area (two columns when it is long), the author small
+ * beside it with the seal under it, and the lines in ruled columns at the right of the body area.
+ * Sizes are fractions of the picture width, positions of its width / height.
+ */
+export function posterLayers(input: PosterLayoutInput): TextLayer[] {
+    const { aspect, titleBox, bodyBox } = input;
+    const title = displayTitle(input.title).replace(/[·・]/g, "");
+    const n = Math.max(1, Array.from(title).length);
+    const titleCols = n > 6 ? 2 : 1;
+    const titleRows = Math.ceil(n / titleCols);
+    const tW = titleBox.x1 - titleBox.x0;
+    const tH = (titleBox.y1 - titleBox.y0) / aspect;
+    // Characters stacked a little tighter than their size; two columns sit 0.15 apart.
+    const t = Math.min(0.2, tH / (titleRows * 1.04), tW / (titleCols + (titleCols - 1) * 0.15));
+    const titleColor = input.titleInk === "light" ? "#f6eedc" : "#2a2420";
+    const titleShadow = input.titleInk === "light" ? "#0b1520" : "#f4ecd8";
+    const titleW = t * (titleCols + (titleCols - 1) * 0.15);
+    const layers: TextLayer[] = [
+        createTextLayer({ text: title, font: input.titleFont, vertical: true, size: t, x: titleBox.x0, y: titleBox.y0, color: titleColor, letterSpacing: 0.04, lineSpacing: 0.15, wrapAt: titleCols > 1 ? titleRows : 0, effect: "shadow", effectColor: titleShadow }),
+    ];
+    // The author beside the title, from its second character down (the top corner is often the moon or a
+    // peak); the seal under it.
+    const a = Math.max(0.022, t * 0.24);
+    const authorX = titleBox.x0 + titleW + t * 0.12;
+    const authorY = titleBox.y0 + t * aspect * (titleRows > 2 ? 1.15 : 0.6);
+    if (input.author.trim()) {
+        layers.push(createTextLayer({ text: input.author, font: input.font, vertical: true, size: a, x: authorX, y: authorY, color: titleColor, letterSpacing: 0.12, lineSpacing: 0.2, effect: "shadow", effectColor: titleShadow }));
+    }
+    if (input.seal.trim()) {
+        const authorLen = Array.from(input.author.trim()).length;
+        layers.push(createSealLayer({ text: input.seal.trim(), size: a * 0.8, x: authorX - a * 0.1, y: authorY + (authorLen * a * 1.12 + a * 0.6) * aspect }));
+    }
+    // The lines: the largest size whose ruled columns fit the body area.
+    const bW = bodyBox.x1 - bodyBox.x0;
+    const bH = (bodyBox.y1 - bodyBox.y0) / aspect;
+    let fit: { f: number; columns: string[] } | null = null;
+    for (let f = Math.min(bW, bH) / 3; f >= 0.01; f *= 0.95) {
+        const rows = Math.max(2, Math.floor(bH / (f * (1 + POSTER_BODY_LETTER))));
+        const columns = poemColumns(input.lines, rows);
+        const width = (columns.length - 1) * f * (1 + POSTER_BODY_LINE) + f + f * POSTER_BODY_LINE;
+        if (columns.length && width <= bW) {
+            fit = { f: Math.min(f, 0.048), columns };
+            break;
+        }
+    }
+    const f = fit?.f ?? 0.014;
+    const columns = fit?.columns ?? poemColumns(input.lines, 16);
+    const blockW = (columns.length - 1) * f * (1 + POSTER_BODY_LINE) + f;
+    const bodyColor = input.bodyInk === "ink" ? "#2b2622" : "#f6ecd6";
+    layers.push(
+        createTextLayer({
+            text: columns.join("\n"),
+            font: input.font,
+            vertical: true,
+            size: f,
+            // Hug the right of the area, leaving room for the outer rule.
+            x: bodyBox.x1 - blockW - f * POSTER_BODY_LINE * 0.5,
+            y: bodyBox.y0 + f * aspect * 0.4,
+            color: bodyColor,
+            letterSpacing: POSTER_BODY_LETTER,
+            lineSpacing: POSTER_BODY_LINE,
+            effect: "none",
+            rules: true,
+        }),
+    );
+    return layers;
+}
+
 /** 〔清〕高鼎 */
 export function authorLine(poem: Pick<PoemSource, "author" | "dynasty">) {
     return poem.author ? `${poem.dynasty ? `〔${poem.dynasty}〕` : ""}${poem.author}` : "";
@@ -448,6 +552,8 @@ export type PoemProject = {
     id: string;
     /** The prompt template's id (DEFAULT_TEMPLATE_ID or one of the user's). */
     templateId?: string;
+    /** 版式 (older projects: compact). */
+    layout?: PoemLayoutKind;
     poem: PoemSource;
     /** The lines set on the picture (and drawn): the whole poem, or the lines picked from a long one. */
     lines: string;

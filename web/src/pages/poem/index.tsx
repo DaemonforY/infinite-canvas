@@ -25,12 +25,15 @@ import {
     DEFAULT_TEMPLATE_ID,
     POEM_TEMPLATE_VARS,
     poemLayers,
+    posterLayers,
+    titleArea,
     SCENE_INSTRUCTION,
     sceneRequest,
     type PoemBox,
     type PoemCandidate,
     type PoemImage,
     type PoemInk,
+    type PoemLayoutKind,
     type PoemProject,
     type PoemRatio,
     type PoemSource,
@@ -52,8 +55,14 @@ import { deletePoem, deleteTemplate, listPoems, listTemplates, readPoem, savePoe
 // from a template (DEFAULT_POEM_TEMPLATE or the user's own); the AI scene is optional and goes last.
 
 const DYNASTIES = ["先秦", "汉", "魏晋", "南北朝", "隋", "唐", "五代", "宋", "金", "元", "明", "清"];
-const LETTER_FONTS: TextFontId[] = ["ma-shan-zheng", "zhi-mang-xing", "long-cang", "zcool-xiaowei", "noto-serif-sc"];
-const FONT_NAMES: Record<string, string> = { "ma-shan-zheng": "马善政楷书", "zhi-mang-xing": "志莽行书", "long-cang": "龙藏行书", "zcool-xiaowei": "站酷小薇", "noto-serif-sc": "思源宋体" };
+const LETTER_FONTS: TextFontId[] = ["ma-shan-zheng", "zhi-mang-xing", "long-cang", "lxgw-wenkai", "zcool-xiaowei", "noto-serif-sc"];
+const FONT_NAMES: Record<string, string> = { "ma-shan-zheng": "马善政楷书", "zhi-mang-xing": "志莽行书", "long-cang": "龙藏行书", "lxgw-wenkai": "霞鹜文楷", "zcool-xiaowei": "站酷小薇", "noto-serif-sc": "思源宋体" };
+const LAYOUTS: { value: PoemLayoutKind; label: string; desc: string }[] = [
+    { value: "poster", label: "大标题海报", desc: "左边大字标题，右上方竖排诗句加格线，更有冲击力" },
+    { value: "compact", label: "竖排题诗", desc: "标题、作者、诗句一起写在一块留白里，清雅" },
+];
+/** Projects from before 版式 existed were drawn for 竖排题诗. */
+const layoutOf = (project: PoemProject): PoemLayoutKind => project.layout || "compact";
 const PLACES = ["auto", "topRight", "topLeft", "right", "left"] as const;
 type Place = (typeof PLACES)[number];
 const PLACE_NAMES: Record<Place, string> = { auto: "自动找留白", topRight: "右上", topLeft: "左上", right: "右侧", left: "左侧" };
@@ -109,10 +118,11 @@ function newProject(poem: PoemSource): PoemProject {
         lines: defaultLines(poem.content),
         style: "xinzhongshi",
         ratio: "2:3",
+        layout: "poster",
         scene: "",
         drawings: [],
-        font: "ma-shan-zheng",
-        titleFont: "zhi-mang-xing",
+        font: "lxgw-wenkai",
+        titleFont: "ma-shan-zheng",
         seal: "诗画",
         createdAt: now,
         updatedAt: now,
@@ -430,7 +440,7 @@ function PoemEditor({ id }: { id: string }) {
                 promptAssistConfig(effectiveConfig),
                 [
                     { role: "system", content: SCENE_INSTRUCTION },
-                    { role: "user", content: sceneRequest(current.poem, current.ratio, current.lines) },
+                    { role: "user", content: sceneRequest(current.poem, current.ratio, current.lines, layoutOf(current)) },
                 ],
                 (text) => patch((p) => ({ ...p, scene: cleanScene(text) })),
             );
@@ -453,7 +463,7 @@ function PoemEditor({ id }: { id: string }) {
     }, [reloadTemplates]);
     const templateOf = (current: PoemProject) => templates.find((t) => t.id === (current.templateId || DEFAULT_TEMPLATE_ID)) || DEFAULT_TEMPLATE;
     const promptOf = (current: PoemProject) =>
-        buildPoemPrompt({ template: templateOf(current).text, style: current.style, ratio: current.ratio, poem: current.poem, lines: current.lines, scene: current.scene });
+        buildPoemPrompt({ template: templateOf(current).text, style: current.style, ratio: current.ratio, layout: layoutOf(current), poem: current.poem, lines: current.lines, scene: current.scene });
 
     const draw = async (count = 2) => {
         const current = projectRef.current;
@@ -558,6 +568,11 @@ function PoemEditor({ id }: { id: string }) {
                             <div className="flex flex-wrap items-center gap-3">
                                 <span className="text-sm font-medium text-stone-800 dark:text-stone-200">比例</span>
                                 <Segmented value={project.ratio} onChange={(value) => patch((p) => ({ ...p, ratio: value as PoemRatio }))} options={POEM_RATIOS.map((r) => ({ value: r, label: r === "2:3" ? "2:3 竖版" : r === "3:4" ? "3:4 小红书" : r === "9:16" ? "9:16 手机" : r === "1:1" ? "1:1 方图" : "3:2 横版" }))} />
+                            </div>
+                            <div className="flex flex-wrap items-center gap-3">
+                                <span className="text-sm font-medium text-stone-800 dark:text-stone-200">版式</span>
+                                <Segmented value={layoutOf(project)} onChange={(value) => patch((p) => ({ ...p, layout: value as PoemLayoutKind }))} options={LAYOUTS.map((l) => ({ value: l.value, label: l.label }))} data-testid="poem-layout" />
+                                <span className="text-xs text-stone-400">{LAYOUTS.find((l) => l.value === layoutOf(project))?.desc}，生成时会让画面留出对应的位置</span>
                             </div>
                             <div>
                                 <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -819,26 +834,44 @@ function PoemLetter({ project, drawing, patch }: { project: PoemProject; drawing
         const gh = Math.round((96 * img.naturalHeight) / img.naturalWidth);
         const gray = grayGrid(img, gw, gh);
         if (!gray) return null;
-        const found = calmBox(gray, gw, gh, blankHint(project.ratio));
-        const box = found || (project.ratio === "3:2" ? PLACE_BOXES.left : PLACE_BOXES.topRight);
-        return { box, gray, gw, gh };
-    }, [img, project.ratio]);
+        const poster = layoutOf(project) === "poster";
+        const found = calmBox(gray, gw, gh, blankHint(project.ratio, layoutOf(project)));
+        const fallback = poster ? (project.ratio === "3:2" ? { x0: 0.16, y0: 0.06, x1: 0.46, y1: 0.9 } : { x0: 0.55, y0: 0.04, x1: 0.96, y1: 0.46 }) : project.ratio === "3:2" ? PLACE_BOXES.left : PLACE_BOXES.topRight;
+        return { box: found || fallback, gray, gw, gh };
+        // layoutOf(project) depends on project.layout only.
+    }, [img, project.ratio, project.layout]);
 
     const layers = useMemo(() => {
         if (!img || !auto) return [];
         const box = place === "auto" ? auto.box : PLACE_BOXES[place];
-        let tone: PoemInk = "ink";
-        if (ink !== "auto") tone = ink;
-        else {
+        // Dark ground → light text.
+        const toneOf = (b: PoemBox): PoemInk => {
             let sum = 0;
             let n = 0;
-            for (let y = Math.floor(box.y0 * auto.gh); y < Math.ceil(box.y1 * auto.gh); y++) {
-                for (let x = Math.floor(box.x0 * auto.gw); x < Math.ceil(box.x1 * auto.gw); x++) {
+            for (let y = Math.floor(b.y0 * auto.gh); y < Math.ceil(b.y1 * auto.gh); y++) {
+                for (let x = Math.floor(b.x0 * auto.gw); x < Math.ceil(b.x1 * auto.gw); x++) {
                     sum += auto.gray[y * auto.gw + x] || 0;
                     n++;
                 }
             }
-            tone = n && sum / n < 135 ? "light" : "ink";
+            return n && sum / n < 135 ? "light" : "ink";
+        };
+        const tone: PoemInk = ink !== "auto" ? ink : toneOf(box);
+        if (layoutOf(project) === "poster") {
+            const titleBox = titleArea(project.ratio);
+            return posterLayers({
+                title: project.poem.title,
+                author: project.poem.author,
+                lines: project.lines || project.poem.content,
+                titleBox,
+                bodyBox: box,
+                aspect: img.naturalWidth / img.naturalHeight,
+                font: project.font,
+                titleFont: project.titleFont,
+                titleInk: toneOf(titleBox),
+                bodyInk: tone,
+                seal: project.seal,
+            });
         }
         return poemLayers({
             title: project.poem.title,
@@ -851,7 +884,8 @@ function PoemLetter({ project, drawing, patch }: { project: PoemProject; drawing
             ink: tone,
             seal: project.seal,
         });
-    }, [auto, img, ink, place, project.font, project.lines, project.poem, project.seal, project.titleFont]);
+        // layoutOf(project) depends on project.layout only.
+    }, [auto, img, ink, place, project.font, project.lines, project.poem, project.seal, project.titleFont, project.layout, project.ratio]);
 
     // Preview: the picture at ~900 px with the layers drawn on it.
     useEffect(() => {
@@ -957,6 +991,12 @@ function PoemLetter({ project, drawing, patch }: { project: PoemProject; drawing
                     </div>
                 ) : (
                     <>
+                        <div className="text-xs text-stone-500">
+                            版式
+                            <div className="mt-1">
+                                <Segmented size="small" value={layoutOf(project)} onChange={(value) => patch((p) => ({ ...p, layout: value as PoemLayoutKind }))} options={LAYOUTS.map((l) => ({ value: l.value, label: l.label }))} />
+                            </div>
+                        </div>
                         <label className="block text-xs text-stone-500">
                             正文字体
                             <Select className="mt-1 w-full" value={project.font} onChange={(value) => patch((p) => ({ ...p, font: value }))} options={fontOptions} data-testid="poem-font" />
