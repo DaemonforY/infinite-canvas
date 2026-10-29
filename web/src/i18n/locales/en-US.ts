@@ -750,6 +750,7 @@ export default {
             addReference: "Image",
             referenceEmpty: "Drag, paste or upload reference images",
             referenceHint: 'Write "Image 1", "Image 2" in the prompt to say which one to use',
+            resizeHint: "Drag to resize, double-click to auto-fit",
             placeholderWithReference: "Say how to use the reference, e.g. turn the person in Image 1 into an anime avatar, keep the face",
             library: "Prompt library",
             comic: "Comic",

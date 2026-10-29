@@ -742,6 +742,7 @@ export default {
             addReference: "参考图",
             referenceEmpty: "可以拖进来、粘贴，或点左边上传",
             referenceHint: "在提示词里写「图片1」「图片2」指定用哪张",
+            resizeHint: "拖动可调高度，双击恢复自动",
             placeholderWithReference: "说说想怎么用参考图，例如：把图片1的人物画成日系插画头像，保留五官",
             library: "提示词库",
             comic: "画漫画",

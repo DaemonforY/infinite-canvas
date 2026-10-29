@@ -21,6 +21,14 @@ import { useMainAccountStore } from "@/stores/use-main-account-store";
 import type { ReferenceImage } from "@/types/image";
 import { PromptAssistPanel, type PromptAssistMode } from "./prompt-assist-panel";
 
+const PROMPT_HEIGHT_KEY = "workbench-prompt-height";
+const PROMPT_MIN_HEIGHT = 56;
+
+function readPromptHeight() {
+    const value = Number(localStorage.getItem(PROMPT_HEIGHT_KEY));
+    return value >= PROMPT_MIN_HEIGHT ? value : null;
+}
+
 type UpdateConfig = <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
 
 // Ratios by what people make with them; 21:9 / 9:21 stay in 全部设置.
@@ -106,6 +114,8 @@ export function WorkbenchComposer({
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [moreOpen, setMoreOpen] = useState(false);
     const [typing, setTyping] = useState(false);
+    const [promptHeight, setPromptHeight] = useState<number | null>(readPromptHeight);
+    const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
 
     const size = config.size || "1:1";
     const ratio = inferMediaRatio(size);
@@ -378,7 +388,7 @@ export function WorkbenchComposer({
                 </div>
             ) : null}
             <div
-                className={cn("rounded-2xl border bg-card px-3 pb-2.5 pt-3 shadow-lg transition sm:px-4", dragging ? "border-(--skin-accent)" : "border-stone-200 dark:border-stone-700")}
+                className={cn("relative rounded-2xl border bg-card px-3 pb-2.5 pt-3 shadow-lg transition sm:px-4", dragging ? "border-(--skin-accent)" : "border-stone-200 dark:border-stone-700")}
                 onDragOver={(event) => {
                     if (!event.dataTransfer.types.includes("Files")) return;
                     event.preventDefault();
@@ -393,6 +403,42 @@ export function WorkbenchComposer({
                 }}
                 data-testid="workbench-composer"
             >
+                {/* Drag the top edge to make the prompt box taller or shorter; double-click goes back to fitting the text. */}
+                <Tooltip title={t("studio.composer.resizeHint")} mouseEnterDelay={0.6}>
+                    <div
+                        role="separator"
+                        aria-orientation="horizontal"
+                        className="group/resize absolute inset-x-0 -top-2 z-10 flex h-4 cursor-ns-resize touch-none items-center justify-center"
+                        onPointerDown={(event) => {
+                            const textarea = (textareaRef as { current: TextAreaRef | null }).current?.resizableTextArea?.textArea;
+                            if (!textarea) return;
+                            event.preventDefault();
+                            event.currentTarget.setPointerCapture(event.pointerId);
+                            resizeRef.current = { startY: event.clientY, startHeight: textarea.offsetHeight };
+                        }}
+                        onPointerMove={(event) => {
+                            const drag = resizeRef.current;
+                            if (!drag) return;
+                            const max = Math.max(PROMPT_MIN_HEIGHT, Math.round(window.innerHeight * 0.6));
+                            setPromptHeight(Math.min(max, Math.max(PROMPT_MIN_HEIGHT, drag.startHeight + drag.startY - event.clientY)));
+                        }}
+                        onPointerUp={() => {
+                            if (!resizeRef.current) return;
+                            resizeRef.current = null;
+                            setPromptHeight((value) => {
+                                if (value) localStorage.setItem(PROMPT_HEIGHT_KEY, String(value));
+                                return value;
+                            });
+                        }}
+                        onDoubleClick={() => {
+                            localStorage.removeItem(PROMPT_HEIGHT_KEY);
+                            setPromptHeight(null);
+                        }}
+                        data-testid="prompt-resize"
+                    >
+                        <span className="h-1 w-10 rounded-full bg-stone-300 opacity-60 transition group-hover/resize:w-14 group-hover/resize:bg-(--skin-accent) group-hover/resize:opacity-100 dark:bg-stone-600" />
+                    </div>
+                </Tooltip>
                 <div className="flex items-center gap-2 overflow-x-auto pb-2">
                     {references.map((item, index) => (
                         <div key={item.id} className="group relative size-14 shrink-0 overflow-hidden rounded-lg border border-stone-200 dark:border-stone-700">
@@ -460,7 +506,8 @@ export function WorkbenchComposer({
                         }
                     }}
                     variant="borderless"
-                    autoSize={{ minRows: 2, maxRows: 8 }}
+                    autoSize={promptHeight ? false : { minRows: 2, maxRows: 8 }}
+                    style={promptHeight ? { height: promptHeight, resize: "none" } : undefined}
                     placeholder={references.length ? t("studio.composer.placeholderWithReference") : t("imageWorkbench.promptPlaceholder")}
                     className="!px-0.5 !text-[15px] !leading-relaxed"
                     data-testid="workbench-prompt"
