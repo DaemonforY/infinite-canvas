@@ -83,6 +83,31 @@ export function poemStyle(id: PoemStyleId | string | undefined): PoemStyle {
  */
 export type PoemLayoutKind = "poster" | "compact";
 
+/**
+ * 文字方案: who writes which text. AI 题字 (default): the model writes the title and the author with a
+ * seal into the picture (short, reliable: 0 wrong in 10 checked 课本诗画 titles), the lines are set in a
+ * font. 全部 AI 写: the model writes everything (best looking, but long texts get wrong characters). The
+ * two 字体 modes set every text in fonts, as 大标题 or 竖排题诗.
+ */
+export type PoemTextMode = "ai_title" | "ai_all" | "font_poster" | "font_compact";
+
+export const POEM_TEXT_MODES: { value: PoemTextMode; label: string; desc: string }[] = [
+    { value: "ai_title", label: "AI 题字", desc: "标题和作者由 AI 写进画里，和画面融为一体；诗句用字体排，一字不错" },
+    { value: "ai_all", label: "全部 AI 写", desc: "标题、作者、诗句都由 AI 写，最有书法感；容易写错字，适合绝句等短诗，画完要核对" },
+    { value: "font_poster", label: "字体·大标题", desc: "全部用字体排：左边大字标题，右上方竖排诗句加格线" },
+    { value: "font_compact", label: "字体·竖排题诗", desc: "全部用字体排：标题、作者、诗句写在一块留白里，清雅" },
+];
+
+/** The layout of a mode: the 竖排题诗 one, or 大标题 (title at the left, lines at the top right). */
+export function layoutOfMode(mode: PoemTextMode): PoemLayoutKind {
+    return mode === "font_compact" ? "compact" : "poster";
+}
+
+/** What the program sets in a mode (the rest the model draws). */
+export function fontParts(mode: PoemTextMode) {
+    return { title: mode === "font_poster" || mode === "font_compact", body: mode !== "ai_all" };
+}
+
 function blankArea(ratio: PoemRatio, layout: PoemLayoutKind = "poster") {
     if (layout === "poster") {
         return ratio === "3:2"
@@ -140,6 +165,7 @@ const ORIENTATION: Record<PoemRatio, string> = {
 export const POEM_TEMPLATE_VARS = [
     { key: "画幅", desc: "竖版构图，画幅宽:高 = 2:3（随比例变）" },
     { key: "画风", desc: "所选画风的描述" },
+    { key: "文字要求", desc: "按「文字方案」生成的【文字与版式】：AI 写哪些字、写在哪，给字体留哪块空白" },
     { key: "留白", desc: "给标题和诗句留的位置（随比例和版式变）" },
     { key: "篇名", desc: "诗的标题" },
     { key: "作者", desc: "作者" },
@@ -148,19 +174,41 @@ export const POEM_TEMPLATE_VARS = [
     { key: "画面描述", desc: "AI 写的画面描述（可选，留空就去掉）" },
 ] as const;
 
-export const DEFAULT_POEM_TEMPLATE = [
-    "【画幅】{画幅}。",
-    "画风：{画风}",
-    "【文字与版式】画面中不要出现任何文字、书法、印章、落款、题跋或伪文字。{留白}，后期会用书法写上诗句。",
-    "主题：{篇名} {诗句}",
-    "出图",
-].join("\n");
+export const DEFAULT_POEM_TEMPLATE = ["【画幅】{画幅}。", "画风：{画风}", "{文字要求}", "主题：{篇名} {诗句}", "出图"].join("\n");
+
+/**
+ * {文字要求}: the 【文字与版式】 rules of a 文字方案 — what the model writes (exactly, in quotes) and where,
+ * and the blank area left for what the program sets.
+ */
+export function textRules(mode: PoemTextMode, ratio: PoemRatio, poem: Pick<PoemSource, "title" | "author">, lines: string) {
+    const landscape = ratio === "3:2";
+    const title = displayTitle(poem.title);
+    const author = poem.author.trim();
+    const titlePlace = landscape ? "画面最左侧约占画面宽 14% 的深色或高对比景物（山体、松枝、树荫、夜空或深色云层）之间" : "画面左上方的深色或高对比景物（山体、松枝、树荫、夜空或深色云层）之间";
+    const titleRule = `${titlePlace}，用大幅暖白色中文书法竖排写主标题「${title}」，笔触自然、有飞白和轻重变化，与枝叶山石前后穿插、融为一体，边缘干净无立体发光特效`;
+    const authorRule = author ? `；标题旁偏下用小号端正楷体竖排写作者「${author}」，配一枚小朱印` : "";
+    if (mode === "ai_title") {
+        const blank = landscape
+            ? "标题右侧约占画面宽 30% 保留一条连续的浅色留白（淡天空、云气或水面），留白内不要任何景物和文字"
+            : "画面右上方保留一块约占画面宽 38%、高 40% 的连续浅色留白（淡天空、云气或水面），留白内不要任何景物和文字";
+        return `【文字与版式】画面中只允许出现主标题${author ? "和作者" : ""}两处文字：${titleRule}${authorRule}。除此之外不要任何其它文字、印章、落款、题跋或伪文字。${blank}（后期排诗句）。`;
+    }
+    if (mode === "ai_all") {
+        const bodyPlace = landscape ? "标题右侧的连续浅色留白（淡天空、云气或水面）上" : "画面右上方约占画面宽 38%、高 40% 的连续浅色留白（淡天空、云气或水面）上";
+        const text = lines.trim().split("\n").map((l) => l.trim()).filter(Boolean).join(" / ");
+        return (
+            `【文字与版式】文字与插画一体生成：${titleRule}${authorRule}；${bodyPlace}用端正清晰的小楷竖排写诗句，每句一列、从右往左，列间有细线，末尾一枚小朱印。文字笔画完整清晰，不遮挡核心主体，除此之外不要任何其它文字。\n` +
+            `【画面文字（必须逐字准确，不得增字、漏字、改字）】主标题「${title}」${author ? `；作者「${author}」` : ""}；诗句「${text}」`
+        );
+    }
+    return `【文字与版式】画面中不要出现任何文字、书法、印章、落款、题跋或伪文字。${blankArea(ratio, layoutOfMode(mode))}，后期会用书法写上诗句。`;
+}
 
 export type PoemTemplate = { id: string; name: string; text: string };
 export const DEFAULT_TEMPLATE_ID = "default";
 export const DEFAULT_TEMPLATE: PoemTemplate = { id: DEFAULT_TEMPLATE_ID, name: "默认模板", text: DEFAULT_POEM_TEMPLATE };
 
-export type PoemPromptInput = { template?: string; style: PoemStyleId; ratio: PoemRatio; poem: PoemSource; lines?: string; scene?: string; layout?: PoemLayoutKind };
+export type PoemPromptInput = { template?: string; style: PoemStyleId; ratio: PoemRatio; poem: PoemSource; lines?: string; scene?: string; mode?: PoemTextMode };
 
 /** The image prompt: the template with its variables filled; the AI scene goes last when the template doesn't place it. */
 export function buildPoemPrompt(input: PoemPromptInput) {
@@ -171,14 +219,15 @@ export function buildPoemPrompt(input: PoemPromptInput) {
     const values: Record<string, string> = {
         画幅: ORIENTATION[input.ratio],
         画风: poemStyle(input.style).prompt.replace(/^画风[:：]\s*/, ""),
-        留白: blankArea(input.ratio, input.layout),
+        留白: blankArea(input.ratio, layoutOfMode(input.mode || "font_poster")),
+        文字要求: textRules(input.mode || "font_poster", input.ratio, input.poem, (input.lines || input.poem.content).trim()),
         篇名: input.poem.title,
         作者: input.poem.author,
         朝代: input.poem.dynasty,
         诗句: (input.lines || input.poem.content).trim(),
         画面描述: scene,
     };
-    let prompt = template.replace(/\{(画幅|画风|留白|篇名|作者|朝代|诗句|画面描述)\}/g, (_, key: string) => values[key] ?? "");
+    let prompt = template.replace(/\{(画幅|画风|文字要求|留白|篇名|作者|朝代|诗句|画面描述)\}/g, (_, key: string) => values[key] ?? "");
     if (scene && !template.includes("{画面描述}")) {
         const lines = prompt.split("\n");
         const last = lines.length - 1;
@@ -373,6 +422,29 @@ export function poemColumns(text: string, rows: number): string[] {
 
 export type PoemInk = "ink" | "light";
 
+/** Text colours taken from the picture: its light warm tone and its deep ink, eased toward paper and ink. */
+export type PoemPalette = { light: string; dark: string };
+export const DEFAULT_PALETTE: PoemPalette = { light: "#f6eedc", dark: "#2b2622" };
+
+function hex(rgb: number[]) {
+    return `#${rgb.map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** From RGBA pixels (a downscaled picture): the mean of the lightest and of the darkest 8 %. */
+export function pickPalette(data: Uint8ClampedArray | number[]): PoemPalette {
+    const px: [number, number, number, number][] = [];
+    for (let i = 0; i + 3 < data.length; i += 4) px.push([data[i], data[i + 1], data[i + 2], 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]]);
+    if (px.length < 10) return DEFAULT_PALETTE;
+    px.sort((a, b) => a[3] - b[3]);
+    const k = Math.max(1, Math.floor(px.length * 0.08));
+    const mean = (list: typeof px) => [0, 1, 2].map((c) => list.reduce((sum, p) => sum + p[c], 0) / list.length);
+    const mix = (a: number[], b: number[], t: number) => a.map((v, i) => v * (1 - t) + b[i] * t);
+    const light = mix(mean(px.slice(-k)), [255, 250, 238], 0.45);
+    const dark = mix(mean(px.slice(0, k)), [30, 24, 20], 0.55);
+    const lum = (c: number[]) => 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+    return { light: lum(light) > 205 ? hex(light) : DEFAULT_PALETTE.light, dark: lum(dark) < 70 ? hex(dark) : DEFAULT_PALETTE.dark };
+}
+
 export type PoemLayoutInput = {
     title: string;
     author: string; // "〔清〕高鼎"
@@ -384,6 +456,9 @@ export type PoemLayoutInput = {
     titleFont: TextFontId;
     ink: PoemInk;
     seal: string;
+    /** 字号 (1 = the fitted size). */
+    scale?: number;
+    palette?: PoemPalette;
 };
 
 const TITLE_SCALE = 1.5;
@@ -415,10 +490,11 @@ export function poemLayers(input: PoemLayoutInput): TextLayer[] {
             break;
         }
     }
-    const f = best?.f ?? 0.012;
+    const f = (best?.f ?? 0.012) * (input.scale ?? 1);
     const columns = best?.columns ?? poemColumns(input.lines, 20);
-    const color = input.ink === "ink" ? "#2b2622" : "#f6ecd6";
-    const effectColor = input.ink === "ink" ? "#f4ecd8" : "#0c1620";
+    const palette = input.palette || DEFAULT_PALETTE;
+    const color = input.ink === "ink" ? palette.dark : palette.light;
+    const effectColor = input.ink === "ink" ? palette.light : palette.dark;
     const titleF = f * TITLE_SCALE;
     const authorF = f * AUTHOR_SCALE;
     const bodyW = Math.max(0, columns.length - 1) * f * (1 + BODY_LINE) + f;
@@ -462,28 +538,31 @@ export type PosterLayoutInput = {
     titleInk: PoemInk;
     bodyInk: PoemInk;
     seal: string;
+    /** False when the model wrote the title (AI 题字): only the lines are set. */
+    withTitle?: boolean;
+    /** 字号 (1 = 中). */
+    scale?: number;
+    palette?: PoemPalette;
 };
 
 const POSTER_BODY_LETTER = 0.16;
 const POSTER_BODY_LINE = 0.8;
 
-/**
- * 大标题: a large vertical title filling the title area (two columns when it is long), the author small
- * beside it with the seal under it, and the lines in ruled columns at the right of the body area.
- * Sizes are fractions of the picture width, positions of its width / height.
- */
-export function posterLayers(input: PosterLayoutInput): TextLayer[] {
-    const { aspect, titleBox, bodyBox } = input;
+/** 大标题's title, author and seal. */
+function posterTitleLayers(input: PosterLayoutInput, scale: number, palette: PoemPalette): TextLayer[] {
+    const { aspect, titleBox } = input;
     const title = displayTitle(input.title).replace(/[·・]/g, "");
     const n = Math.max(1, Array.from(title).length);
     const titleCols = n > 6 ? 2 : 1;
     const titleRows = Math.ceil(n / titleCols);
     const tW = titleBox.x1 - titleBox.x0;
     const tH = (titleBox.y1 - titleBox.y0) / aspect;
-    // Characters stacked a little tighter than their size; two columns sit 0.15 apart.
-    const t = Math.min(0.2, tH / (titleRows * 1.04), tW / (titleCols + (titleCols - 1) * 0.15));
-    const titleColor = input.titleInk === "light" ? "#f6eedc" : "#2a2420";
-    const titleShadow = input.titleInk === "light" ? "#0b1520" : "#f4ecd8";
+    // About 28 % of the picture's height (not the whole area: a title that fills everything loses its air),
+    // within the area; characters stacked a little tighter than their size; two columns sit 0.15 apart.
+    const fitted = Math.min(0.28 / aspect / (titleRows * 1.04), tH / (titleRows * 1.04), tW / (titleCols + (titleCols - 1) * 0.15));
+    const t = Math.min(0.2, fitted * scale);
+    const titleColor = input.titleInk === "light" ? palette.light : palette.dark;
+    const titleShadow = input.titleInk === "light" ? palette.dark : palette.light;
     const titleW = t * (titleCols + (titleCols - 1) * 0.15);
     const layers: TextLayer[] = [
         createTextLayer({ text: title, font: input.titleFont, vertical: true, size: t, x: titleBox.x0, y: titleBox.y0, color: titleColor, letterSpacing: 0.04, lineSpacing: 0.15, wrapAt: titleCols > 1 ? titleRows : 0, effect: "shadow", effectColor: titleShadow }),
@@ -500,6 +579,19 @@ export function posterLayers(input: PosterLayoutInput): TextLayer[] {
         const authorLen = Array.from(input.author.trim()).length;
         layers.push(createSealLayer({ text: input.seal.trim(), size: a * 0.8, x: authorX - a * 0.1, y: authorY + (authorLen * a * 1.12 + a * 0.6) * aspect }));
     }
+    return layers;
+}
+
+/**
+ * 大标题: a large vertical title filling the title area (two columns when it is long), the author small
+ * beside it with the seal under it, and the lines in ruled columns at the right of the body area.
+ * Sizes are fractions of the picture width, positions of its width / height.
+ */
+export function posterLayers(input: PosterLayoutInput): TextLayer[] {
+    const { aspect, titleBox, bodyBox } = input;
+    const scale = input.scale ?? 1;
+    const palette = input.palette || DEFAULT_PALETTE;
+    const layers: TextLayer[] = input.withTitle === false ? [] : posterTitleLayers(input, scale, palette);
     // The lines: the largest size whose ruled columns fit the body area.
     const bW = bodyBox.x1 - bodyBox.x0;
     const bH = (bodyBox.y1 - bodyBox.y0) / aspect;
@@ -509,14 +601,14 @@ export function posterLayers(input: PosterLayoutInput): TextLayer[] {
         const columns = poemColumns(input.lines, rows);
         const width = (columns.length - 1) * f * (1 + POSTER_BODY_LINE) + f + f * POSTER_BODY_LINE;
         if (columns.length && width <= bW) {
-            fit = { f: Math.min(f, 0.048), columns };
+            fit = { f: Math.min(f, 0.042), columns };
             break;
         }
     }
-    const f = fit?.f ?? 0.014;
+    const f = (fit?.f ?? 0.014) * scale;
     const columns = fit?.columns ?? poemColumns(input.lines, 16);
     const blockW = (columns.length - 1) * f * (1 + POSTER_BODY_LINE) + f;
-    const bodyColor = input.bodyInk === "ink" ? "#2b2622" : "#f6ecd6";
+    const bodyColor = input.bodyInk === "ink" ? palette.dark : palette.light;
     layers.push(
         createTextLayer({
             text: columns.join("\n"),
@@ -530,6 +622,8 @@ export function posterLayers(input: PosterLayoutInput): TextLayer[] {
             letterSpacing: POSTER_BODY_LETTER,
             lineSpacing: POSTER_BODY_LINE,
             effect: "none",
+            // Ink a touch transparent, so it reads as printed on the paper.
+            opacity: input.bodyInk === "ink" ? 0.9 : 1,
             rules: true,
         }),
     );
@@ -546,14 +640,27 @@ export function authorLine(poem: Pick<PoemSource, "author" | "dynasty">) {
 
 export type PoemImage = { url: string; storageKey?: string; width: number; height: number; mimeType?: string };
 
-export type PoemDrawing = { id: string; image: PoemImage; prompt: string; createdAt: number };
+export type PoemDrawing = {
+    id: string;
+    image: PoemImage;
+    prompt: string;
+    createdAt: number;
+    /** The 文字方案 it was drawn for (older drawings: from the project's layout). */
+    textMode?: PoemTextMode;
+    /** The user's check of the text the model wrote. */
+    check?: "ok" | "wrong";
+};
 
 export type PoemProject = {
     id: string;
     /** The prompt template's id (DEFAULT_TEMPLATE_ID or one of the user's). */
     templateId?: string;
-    /** 版式 (older projects: compact). */
+    /** 版式 (older projects: compact); replaced by textMode. */
     layout?: PoemLayoutKind;
+    /** 文字方案 (older projects: from layout). */
+    textMode?: PoemTextMode;
+    /** 字号: multiplies the fitted sizes of the font texts (1 = 中). */
+    textScale?: number;
     poem: PoemSource;
     /** The lines set on the picture (and drawn): the whole poem, or the lines picked from a long one. */
     lines: string;

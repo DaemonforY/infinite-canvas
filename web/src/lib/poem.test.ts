@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { layoutLayer } from "./image-editor/text-layers";
-import { authorLine, blankHint, buildPoemPrompt, posterLayers, titleArea, calmBox, defaultLines, displayTitle, parseKeywords, parsePicks, poemColumns, poemLayers, sceneRequest, type PoemCandidate } from "./poem";
+import { authorLine, blankHint, buildPoemPrompt, pickPalette, posterLayers, textRules, titleArea, calmBox, defaultLines, displayTitle, parseKeywords, parsePicks, poemColumns, poemLayers, sceneRequest, type PoemCandidate } from "./poem";
 
 const cunju = { id: 627041, title: "村居", author: "高鼎", dynasty: "清", content: "草长莺飞二月天，拂堤杨柳醉春烟。\n儿童散学归来早，忙趁东风放纸鸢。" };
 
@@ -111,7 +111,7 @@ describe("配诗", () => {
         const layers = posterLayers({ title: "山居秋暝", author: "王维", lines, titleBox, bodyBox, aspect, font: "lxgw-wenkai", titleFont: "ma-shan-zheng", titleInk: "light", bodyInk: "ink", seal: "诗画" });
         expect(layers.map((l) => l.kind)).toEqual(["text", "text", "seal", "text"]);
         const [title, author, , body] = layers;
-        expect(title.size).toBeGreaterThan(body.size * 3);
+        expect(title.size).toBeGreaterThan(body.size * 2);
         expect(title.color).toBe("#f6eedc");
         expect(body.rules).toBe(true);
         expect(body.color).toBe("#2b2622");
@@ -135,10 +135,52 @@ describe("配诗", () => {
     });
 
     test("the 大标题 prompt asks for a dark title area and a light area for the lines", () => {
-        const p = buildPoemPrompt({ style: "xinzhongshi", ratio: "2:3", layout: "poster", poem: cunju });
+        const p = buildPoemPrompt({ style: "xinzhongshi", ratio: "2:3", mode: "font_poster", poem: cunju });
         expect(p).toContain("左上方约占画面宽 30%、高 55% 放深色");
         expect(p).toContain("右上方保留一块约占画面宽 38%、高 40% 的连续浅色留白");
-        expect(buildPoemPrompt({ style: "xinzhongshi", ratio: "2:3", layout: "compact", poem: cunju })).not.toContain("大字标题");
+        expect(buildPoemPrompt({ style: "xinzhongshi", ratio: "2:3", mode: "font_compact", poem: cunju })).not.toContain("大字标题");
+    });
+
+    test("文字方案: AI 题字 names the title and author exactly and leaves the top right blank; 全部 AI 写 lists every line", () => {
+        const aiTitle = textRules("ai_title", "2:3", cunju, cunju.content);
+        expect(aiTitle).toContain("主标题「村居」");
+        expect(aiTitle).toContain("作者「高鼎」");
+        expect(aiTitle).toContain("右上方保留");
+        expect(aiTitle).not.toContain("草长莺飞");
+        const all = textRules("ai_all", "2:3", cunju, cunju.content);
+        expect(all).toContain("必须逐字准确");
+        expect(all).toContain("诗句「草长莺飞二月天，拂堤杨柳醉春烟。 / 儿童散学归来早，忙趁东风放纸鸢。」");
+        expect(textRules("font_poster", "2:3", cunju, cunju.content)).toContain("不要出现任何文字");
+        expect(textRules("ai_title", "3:2", cunju, cunju.content)).toContain("最左侧");
+        // The default template carries the rules of the project's 文字方案 (default: 字体·大标题 when unset).
+        expect(buildPoemPrompt({ style: "xinzhongshi", ratio: "2:3", mode: "ai_title", poem: cunju })).toContain("主标题「村居」");
+        expect(buildPoemPrompt({ style: "xinzhongshi", ratio: "2:3", poem: cunju })).toContain("不要出现任何文字");
+    });
+
+    test("AI 题字 sets only the lines; 字号 scales the sizes; colours come from the palette", () => {
+        const base = { title: "山居秋暝", author: "王维", lines: "空山新雨后，天气晚来秋。", titleBox: titleArea("2:3"), bodyBox: { x0: 0.55, y0: 0.04, x1: 0.96, y1: 0.46 }, aspect: 2 / 3, font: "lxgw-wenkai" as const, titleFont: "ma-shan-zheng" as const, titleInk: "light" as const, bodyInk: "ink" as const, seal: "诗画" };
+        const only = posterLayers({ ...base, withTitle: false });
+        expect(only).toHaveLength(1);
+        expect(only[0].rules).toBe(true);
+        const mid = posterLayers(base);
+        const big = posterLayers({ ...base, scale: 1.25 });
+        expect(big[0].size).toBeCloseTo(Math.min(0.2, mid[0].size * 1.25), 5);
+        expect(big[3].size).toBeCloseTo(mid[3].size * 1.25, 5);
+        // The title takes about 28 % of the height, not the whole area.
+        expect(mid[0].size * 4 * 1.04 * (2 / 3)).toBeLessThan(0.3);
+        const tinted = posterLayers({ ...base, palette: { light: "#f8efd9", dark: "#1f2a2e" } });
+        expect(tinted[0].color).toBe("#f8efd9");
+        expect(tinted[3].color).toBe("#1f2a2e");
+        expect(tinted[3].opacity).toBe(0.9);
+    });
+
+    test("the palette is the picture's light and ink, eased toward paper and ink", () => {
+        const data: number[] = [];
+        for (let i = 0; i < 100; i++) data.push(...(i < 10 ? [20, 40, 50, 255] : i > 89 ? [250, 230, 190, 255] : [120, 140, 110, 255]));
+        const p = pickPalette(data);
+        expect(p.light).toMatch(/^#f/);
+        expect(p.dark).toMatch(/^#[0-2]/);
+        expect(pickPalette([1, 2, 3, 255])).toEqual({ light: "#f6eedc", dark: "#2b2622" });
     });
 
     test("finds the blank area the prompt left", () => {
