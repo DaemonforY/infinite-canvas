@@ -1,20 +1,43 @@
 import { describe, expect, test } from "bun:test";
 
 import { layoutLayer } from "./image-editor/text-layers";
-import { authorLine, blankHint, calmBox, defaultLines, displayTitle, parseKeywords, parsePicks, poemColumns, poemImagePrompt, poemLayers, sceneRequest, type PoemCandidate } from "./poem";
+import { authorLine, blankHint, buildPoemPrompt, calmBox, defaultLines, displayTitle, parseKeywords, parsePicks, poemColumns, poemLayers, sceneRequest, type PoemCandidate } from "./poem";
 
 const cunju = { id: 627041, title: "村居", author: "高鼎", dynasty: "清", content: "草长莺飞二月天，拂堤杨柳醉春烟。\n儿童散学归来早，忙趁东风放纸鸢。" };
 
 describe("prompts", () => {
-    test("the image prompt asks for no text and a blank area, with the scene", () => {
-        const p = poemImagePrompt("xinzhongshi", "早春河堤，孩子放风筝", "2:3");
-        expect(p).toContain("新中式细线设色");
-        expect(p.startsWith("【画幅】竖版构图")).toBe(true);
-        expect(poemImagePrompt("shuimo", "x", "3:2")).toContain("横版构图");
-        expect(p).toContain("不要出现任何文字");
-        expect(p).toContain("右上方保留");
-        expect(p).toContain("主题：早春河堤，孩子放风筝");
-        expect(poemImagePrompt("shuimo", "x", "3:2")).toContain("左侧保留");
+    test("the default template: 画幅, 画风, the text rules, then 主题 = title + space + lines", () => {
+        const bagui = { title: "八归·芳莲坠粉", author: "史达祖", dynasty: "宋", content: "芳莲坠粉，蔬桐吹绿，庭院暗雨乍歇。\n无端抱影销魂处，还见筱墙萤暗，藓阶蛩切。" };
+        const p = buildPoemPrompt({ style: "xinzhongshi", ratio: "2:3", poem: bagui });
+        const lines = p.split("\n");
+        expect(lines[0]).toBe("【画幅】竖版构图，画幅宽:高 = 2:3。");
+        expect(lines[1].startsWith("画风：新中式细线设色装饰插画海报")).toBe(true);
+        expect(lines[1]).not.toContain("画风：画风");
+        expect(lines[2]).toContain("【文字与版式】画面中不要出现任何文字");
+        expect(lines[2]).toContain("右上方保留");
+        expect(lines[3]).toBe("主题：八归·芳莲坠粉 芳莲坠粉，蔬桐吹绿，庭院暗雨乍歇。");
+        expect(lines[4]).toBe("无端抱影销魂处，还见筱墙萤暗，藓阶蛩切。");
+        expect(lines[lines.length - 1]).toBe("出图");
+        expect(p).not.toContain("画面参考");
+        expect(buildPoemPrompt({ style: "shuimo", ratio: "3:2", poem: bagui })).toContain("横版构图");
+    });
+
+    test("the AI scene is lowest priority: appended before 出图, or where the template puts it", () => {
+        const withScene = buildPoemPrompt({ style: "xinzhongshi", ratio: "2:3", poem: cunju, scene: "早春河堤，孩子放风筝" });
+        const lines = withScene.split("\n");
+        expect(lines[lines.length - 2]).toBe("画面参考（次要）：早春河堤，孩子放风筝");
+        expect(lines[lines.length - 1]).toBe("出图");
+
+        const own = "{画幅}\n画面：{画面描述}\n诗：{篇名}（{朝代}·{作者}）{诗句}";
+        expect(buildPoemPrompt({ template: own, style: "xinzhongshi", ratio: "1:1", poem: cunju, scene: "春天" })).toBe(`方形构图，画幅宽:高 = 1:1\n画面：春天\n诗：村居（清·高鼎）${cunju.content}`);
+        expect(buildPoemPrompt({ template: own, style: "xinzhongshi", ratio: "1:1", poem: cunju })).toBe(`方形构图，画幅宽:高 = 1:1\n诗：村居（清·高鼎）${cunju.content}`);
+        expect(buildPoemPrompt({ template: "  ", style: "xinzhongshi", ratio: "2:3", poem: cunju })).toContain("主题：村居 草长莺飞");
+    });
+
+    test("only the picked lines are used", () => {
+        const p = buildPoemPrompt({ style: "xinzhongshi", ratio: "2:3", poem: cunju, lines: "儿童散学归来早，忙趁东风放纸鸢。" });
+        expect(p).toContain("主题：村居 儿童散学归来早");
+        expect(p).not.toContain("草长莺飞");
     });
 
     test("the scene request has the poem, and the picked lines when they differ", () => {

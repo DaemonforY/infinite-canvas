@@ -113,24 +113,70 @@ export function cleanScene(text: string) {
 const ORIENTATION: Record<PoemRatio, string> = {
     "2:3": "竖版构图，画幅宽:高 = 2:3",
     "3:4": "竖版构图，画幅宽:高 = 3:4",
-    "9:16": "竖版构图，画幅宽:高 = 9:16（手机全屏）",
+    "9:16": "竖版构图，画幅宽:高 = 9:16",
     "1:1": "方形构图，画幅宽:高 = 1:1",
     "3:2": "横版构图，画幅宽:高 = 3:2",
 };
 
-/**
- * The image prompt: orientation, style, the text rules (no text, a blank area), the scene. The
- * orientation is spelled out because the upstream treats the requested size as a hint (portrait
- * requests came back landscape on 2026-10-29).
- */
-export function poemImagePrompt(style: PoemStyleId, scene: string, ratio: PoemRatio) {
-    return [
-        `【画幅】${ORIENTATION[ratio]}。`,
-        poemStyle(style).prompt,
-        `【文字与版式】画面中不要出现任何文字、书法、印章、落款、题跋或伪文字。${blankArea(ratio)}，后期会用书法写上诗句。`,
-        `主题：${scene.trim()}`,
-        "出图",
-    ].join("\n");
+// ---------------------------------------------------------------------------------------------
+// The image prompt comes from a template. The default follows the operator's own structure: 画幅, 画风,
+// the text rules (no text, a blank area for the poem), then 主题 = the title, a space and the lines. The
+// orientation is spelled out because the upstream treats the requested size as a hint. Users can keep
+// their own templates. The AI scene is optional and lowest priority: appended at the end as 画面参考
+// unless a template places {画面描述} itself.
+
+/** Template variables (shown to users as chips). */
+export const POEM_TEMPLATE_VARS = [
+    { key: "画幅", desc: "竖版构图，画幅宽:高 = 2:3（随比例变）" },
+    { key: "画风", desc: "所选画风的描述" },
+    { key: "留白", desc: "给诗句留的空白位置（随比例变）" },
+    { key: "篇名", desc: "诗的标题" },
+    { key: "作者", desc: "作者" },
+    { key: "朝代", desc: "朝代" },
+    { key: "诗句", desc: "要画的诗句（一行一句）" },
+    { key: "画面描述", desc: "AI 写的画面描述（可选，留空就去掉）" },
+] as const;
+
+export const DEFAULT_POEM_TEMPLATE = [
+    "【画幅】{画幅}。",
+    "画风：{画风}",
+    "【文字与版式】画面中不要出现任何文字、书法、印章、落款、题跋或伪文字。{留白}，后期会用书法写上诗句。",
+    "主题：{篇名} {诗句}",
+    "出图",
+].join("\n");
+
+export type PoemTemplate = { id: string; name: string; text: string };
+export const DEFAULT_TEMPLATE_ID = "default";
+export const DEFAULT_TEMPLATE: PoemTemplate = { id: DEFAULT_TEMPLATE_ID, name: "默认模板", text: DEFAULT_POEM_TEMPLATE };
+
+export type PoemPromptInput = { template?: string; style: PoemStyleId; ratio: PoemRatio; poem: PoemSource; lines?: string; scene?: string };
+
+/** The image prompt: the template with its variables filled; the AI scene goes last when the template doesn't place it. */
+export function buildPoemPrompt(input: PoemPromptInput) {
+    let template = (input.template ?? "").trim() || DEFAULT_POEM_TEMPLATE;
+    const scene = (input.scene || "").trim();
+    // Without a scene, a line that only holds {画面描述} (e.g. 「画面：{画面描述}」) is dropped.
+    if (!scene) template = template.replace(/^[^\n{}]{0,12}\{画面描述\}[ \t]*\n?/gm, "");
+    const values: Record<string, string> = {
+        画幅: ORIENTATION[input.ratio],
+        画风: poemStyle(input.style).prompt.replace(/^画风[:：]\s*/, ""),
+        留白: blankArea(input.ratio),
+        篇名: input.poem.title,
+        作者: input.poem.author,
+        朝代: input.poem.dynasty,
+        诗句: (input.lines || input.poem.content).trim(),
+        画面描述: scene,
+    };
+    let prompt = template.replace(/\{(画幅|画风|留白|篇名|作者|朝代|诗句|画面描述)\}/g, (_, key: string) => values[key] ?? "");
+    if (scene && !template.includes("{画面描述}")) {
+        const lines = prompt.split("\n");
+        const last = lines.length - 1;
+        // Before a closing 「出图 / 生图」, else at the very end.
+        const at = /^\s*(出图|生图)[。.]?\s*$/.test(lines[last]) ? last : lines.length;
+        lines.splice(at, 0, `画面参考（次要）：${scene}`);
+        prompt = lines.join("\n");
+    }
+    return prompt.trim();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -400,6 +446,8 @@ export type PoemDrawing = { id: string; image: PoemImage; prompt: string; create
 
 export type PoemProject = {
     id: string;
+    /** The prompt template's id (DEFAULT_TEMPLATE_ID or one of the user's). */
+    templateId?: string;
     poem: PoemSource;
     /** The lines set on the picture (and drawn): the whole poem, or the lines picked from a long one. */
     lines: string;

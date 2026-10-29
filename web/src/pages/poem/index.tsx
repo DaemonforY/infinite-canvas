@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { App, Button, Input, Popconfirm, Segmented, Select, Spin, Switch } from "antd";
-import { ArrowLeft, BookOpenText, Check, Dices, ImagePlus, LoaderCircle, PenLine, RefreshCw, Search, Send, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { App, Button, Input, Modal, Popconfirm, Segmented, Select, Spin, Switch } from "antd";
+import { ArrowLeft, BookOpenText, Check, ChevronDown, Copy, Dices, ImagePlus, LoaderCircle, PenLine, RefreshCw, Search, Send, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { nanoid } from "nanoid";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
@@ -20,7 +20,10 @@ import {
     pickRequest,
     POEM_RATIOS,
     POEM_STYLES,
-    poemImagePrompt,
+    buildPoemPrompt,
+    DEFAULT_TEMPLATE,
+    DEFAULT_TEMPLATE_ID,
+    POEM_TEMPLATE_VARS,
     poemLayers,
     SCENE_INSTRUCTION,
     sceneRequest,
@@ -31,6 +34,7 @@ import {
     type PoemProject,
     type PoemRatio,
     type PoemSource,
+    type PoemTemplate,
 } from "@/lib/poem";
 import { promptAssistConfig } from "@/lib/prompt-assist";
 import { requestGeneration, requestImageQuestion } from "@/services/api/image";
@@ -40,11 +44,12 @@ import { useAssetStore } from "@/stores/use-asset-store";
 import { useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { usePublishWorkStore } from "@/stores/use-publish-work-store";
 import { useSaveImage } from "../image/use-save-image";
-import { deletePoem, listPoems, readPoem, savePoem } from "./poem-store";
+import { deletePoem, deleteTemplate, listPoems, listTemplates, readPoem, savePoem, saveTemplate } from "./poem-store";
 
 // 诗画 (/poem): 选诗 → 画面 → 生成 → 配诗. Poems come from the main site's corpus (or are pasted in); every model
 // call runs on the user's own channel. The poem is set on the picture as text layers, never drawn by the model.
-// The style cards show the same 村居 scene drawn in each style with poemImagePrompt (web/public/poem-styles).
+// The style cards show the same 村居 scene drawn in each style (web/public/poem-styles). The image prompt comes
+// from a template (DEFAULT_POEM_TEMPLATE or the user's own); the AI scene is optional and goes last.
 
 const DYNASTIES = ["先秦", "汉", "魏晋", "南北朝", "隋", "唐", "五代", "宋", "金", "元", "明", "清"];
 const LETTER_FONTS: TextFontId[] = ["ma-shan-zheng", "zhi-mang-xing", "long-cang", "zcool-xiaowei", "noto-serif-sc"];
@@ -438,20 +443,24 @@ function PoemEditor({ id }: { id: string }) {
         // readyText and effectiveConfig change identity on every render; the latest are read when called.
     }, [effectiveConfig, message, patch, readyText]);
 
-    // A new project writes its scene right away (when a channel is ready).
-    const autoWrote = useRef(false);
+    // Prompt templates: the built-in default and the user's own.
+    const [templates, setTemplates] = useState<PoemTemplate[]>([DEFAULT_TEMPLATE]);
+    const [templateEdit, setTemplateEdit] = useState<PoemTemplate | null>(null);
+    const [sceneOpen, setSceneOpen] = useState(false);
+    const reloadTemplates = useCallback(async () => setTemplates([DEFAULT_TEMPLATE, ...(await listTemplates())]), []);
     useEffect(() => {
-        if (!project || autoWrote.current || project.scene || project.drawings.length) return;
-        autoWrote.current = true;
-        if (useConfigStore.getState().isAiConfigReady(promptAssistConfig(effectiveConfig), promptAssistConfig(effectiveConfig).model)) void writeScene();
-    }, [effectiveConfig, project, writeScene]);
+        void reloadTemplates();
+    }, [reloadTemplates]);
+    const templateOf = (current: PoemProject) => templates.find((t) => t.id === (current.templateId || DEFAULT_TEMPLATE_ID)) || DEFAULT_TEMPLATE;
+    const promptOf = (current: PoemProject) =>
+        buildPoemPrompt({ template: templateOf(current).text, style: current.style, ratio: current.ratio, poem: current.poem, lines: current.lines, scene: current.scene });
 
     const draw = async (count = 2) => {
         const current = projectRef.current;
-        if (!current || !current.scene.trim() || !readyImage()) return;
+        if (!current || !(current.lines || current.poem.content).trim() || !readyImage()) return;
         setStep("draw");
         setDrawing((n) => n + count);
-        const prompt = poemImagePrompt(current.style, current.scene, current.ratio);
+        const prompt = promptOf(current);
         // One image per request, in parallel: the upstream gives up after about two minutes, and two images in
         // one request take longer than one.
         const config: AiConfig = { ...imageConfig, count: "1", size: imageSizePresets["1k"][current.ratio] || "1024x1536" };
@@ -551,18 +560,53 @@ function PoemEditor({ id }: { id: string }) {
                                 <Segmented value={project.ratio} onChange={(value) => patch((p) => ({ ...p, ratio: value as PoemRatio }))} options={POEM_RATIOS.map((r) => ({ value: r, label: r === "2:3" ? "2:3 竖版" : r === "3:4" ? "3:4 小红书" : r === "9:16" ? "9:16 手机" : r === "1:1" ? "1:1 方图" : "3:2 横版" }))} />
                             </div>
                             <div>
-                                <div className="mb-2 flex items-center gap-2">
-                                    <span className="text-sm font-medium text-stone-800 dark:text-stone-200">画面描述</span>
-                                    <Button size="small" icon={writing ? <LoaderCircle className="size-3.5 animate-spin" /> : <PenLine className="size-3.5" />} disabled={writing} onClick={() => void writeScene()} data-testid="poem-write-scene">
-                                        {project.scene ? "AI 重写" : "AI 写画面"}
+                                <div className="mb-2 flex flex-wrap items-center gap-2">
+                                    <span className="text-sm font-medium text-stone-800 dark:text-stone-200">提示词模板</span>
+                                    <Select
+                                        size="small"
+                                        className="min-w-40"
+                                        value={templateOf(project).id}
+                                        onChange={(value) => patch((p) => ({ ...p, templateId: value }))}
+                                        options={templates.map((t) => ({ value: t.id, label: t.name }))}
+                                        data-testid="poem-template"
+                                    />
+                                    <Button size="small" icon={<PenLine className="size-3.5" />} onClick={() => setTemplateEdit({ ...templateOf(project) })} data-testid="poem-template-edit">
+                                        {templateOf(project).id === DEFAULT_TEMPLATE_ID ? "改成我的模板" : "编辑模板"}
                                     </Button>
-                                    <span className="text-xs text-stone-400">AI 读诗写出季节、人物和意象，可以直接改</span>
                                 </div>
-                                <Input.TextArea value={project.scene} onChange={(event) => patch((p) => ({ ...p, scene: event.target.value }))} autoSize={{ minRows: 4, maxRows: 10 }} placeholder={writing ? "AI 正在读诗…" : "画什么：季节、时辰、人物、景物……"} data-testid="poem-scene-text" />
+                                <div className="relative rounded-lg border border-stone-200 bg-stone-50 p-3 pr-10 dark:border-stone-700 dark:bg-stone-800/50">
+                                    <pre className="max-h-56 overflow-y-auto whitespace-pre-wrap break-words font-sans text-xs leading-relaxed text-stone-700 dark:text-stone-300" data-testid="poem-prompt">
+                                        {promptOf(project)}
+                                    </pre>
+                                    <Button
+                                        type="text"
+                                        size="small"
+                                        className="!absolute right-1.5 top-1.5"
+                                        icon={<Copy className="size-3.5" />}
+                                        aria-label="复制提示词"
+                                        onClick={() => void navigator.clipboard.writeText(promptOf(project)).then(() => message.success("已复制提示词"))}
+                                    />
+                                </div>
+                                <div className="mt-1 text-xs text-stone-400">这就是发给生图模型的完整提示词；画风、比例、诗句改了会自动更新。</div>
                             </div>
-                            <Button type="primary" size="large" icon={<ImagePlus className="size-4" />} disabled={!project.scene.trim() || writing} onClick={() => void draw(2)} data-testid="poem-generate">
+                            <Button type="primary" size="large" icon={<ImagePlus className="size-4" />} disabled={!(project.lines || project.poem.content).trim() || writing} onClick={() => void draw(2)} data-testid="poem-generate">
                                 生成 2 张
                             </Button>
+                            <div className="rounded-lg border border-dashed border-stone-200 p-3 dark:border-stone-700">
+                                <button type="button" className="flex w-full items-center gap-1.5 text-left text-sm text-stone-600 dark:text-stone-300" onClick={() => setSceneOpen((v) => !v)} data-testid="poem-scene-toggle">
+                                    <ChevronDown className={`size-4 transition ${sceneOpen || project.scene ? "" : "-rotate-90"}`} />
+                                    AI 画面描述（可选）
+                                    <span className="text-xs text-stone-400">优先级最低：写了会加在提示词最后作参考</span>
+                                </button>
+                                {sceneOpen || project.scene ? (
+                                    <div className="mt-2 space-y-2">
+                                        <Button size="small" icon={writing ? <LoaderCircle className="size-3.5 animate-spin" /> : <PenLine className="size-3.5" />} disabled={writing} onClick={() => void writeScene()} data-testid="poem-write-scene">
+                                            {project.scene ? "AI 重写" : "AI 写画面"}
+                                        </Button>
+                                        <Input.TextArea value={project.scene} onChange={(event) => patch((p) => ({ ...p, scene: event.target.value }))} autoSize={{ minRows: 3, maxRows: 8 }} placeholder={writing ? "AI 正在读诗…" : "可以留空。想补充画面细节时写在这里：季节、时辰、人物、景物……"} data-testid="poem-scene-text" />
+                                    </div>
+                                ) : null}
+                            </div>
                         </div>
                     </div>
                 ) : null}
@@ -608,8 +652,104 @@ function PoemEditor({ id }: { id: string }) {
                 ) : null}
 
                 {step === "letter" && chosen ? <PoemLetter project={project} drawing={chosen.image} patch={patch} /> : null}
+                <TemplateEditor
+                    template={templateEdit}
+                    onClose={() => setTemplateEdit(null)}
+                    onSaved={async (saved) => {
+                        await reloadTemplates();
+                        patch((p) => ({ ...p, templateId: saved.id }));
+                        setTemplateEdit(null);
+                    }}
+                    onDeleted={async () => {
+                        await reloadTemplates();
+                        patch((p) => ({ ...p, templateId: DEFAULT_TEMPLATE_ID }));
+                        setTemplateEdit(null);
+                    }}
+                />
             </div>
         </div>
+    );
+}
+
+/** Edits a prompt template. The built-in default can't be changed; saving it makes a copy (我的模板). */
+function TemplateEditor({ template, onClose, onSaved, onDeleted }: { template: PoemTemplate | null; onClose: () => void; onSaved: (t: PoemTemplate) => void; onDeleted: () => void }) {
+    const { message } = App.useApp();
+    const [name, setName] = useState("");
+    const [text, setText] = useState("");
+    const areaRef = useRef<HTMLTextAreaElement | null>(null);
+    const isDefault = template?.id === DEFAULT_TEMPLATE_ID;
+    useEffect(() => {
+        if (!template) return;
+        setName(isDefault ? "我的模板" : template.name);
+        setText(template.text);
+    }, [isDefault, template]);
+
+    const insert = (key: string) => {
+        const el = areaRef.current;
+        const token = `{${key}}`;
+        if (!el) return setText((t) => t + token);
+        const start = el.selectionStart ?? text.length;
+        const end = el.selectionEnd ?? text.length;
+        setText(text.slice(0, start) + token + text.slice(end));
+        window.setTimeout(() => {
+            el.focus();
+            el.setSelectionRange(start + token.length, start + token.length);
+        });
+    };
+
+    const save = async (asNew: boolean) => {
+        if (!text.trim()) return message.warning("模板不能是空的");
+        const saved: PoemTemplate = { id: asNew || isDefault || !template ? nanoid() : template.id, name: name.trim() || "我的模板", text };
+        await saveTemplate(saved);
+        message.success("模板已保存");
+        onSaved(saved);
+    };
+
+    return (
+        <Modal
+            open={Boolean(template)}
+            title={isDefault ? "改成我的模板" : "编辑模板"}
+            width={760}
+            onCancel={onClose}
+            footer={
+                <div className="flex flex-wrap justify-end gap-2">
+                    {!isDefault && template ? (
+                        <Popconfirm title="删除这个模板？" okText="删除" cancelText="取消" onConfirm={() => void deleteTemplate(template.id).then(onDeleted)}>
+                            <Button danger className="mr-auto">
+                                删除
+                            </Button>
+                        </Popconfirm>
+                    ) : null}
+                    <Button onClick={onClose}>取消</Button>
+                    {!isDefault ? <Button onClick={() => void save(true)}>另存为新模板</Button> : null}
+                    <Button type="primary" onClick={() => void save(false)} data-testid="poem-template-save">
+                        {isDefault ? "保存为我的模板" : "保存"}
+                    </Button>
+                </div>
+            }
+        >
+            <div className="space-y-3">
+                <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="模板名称" maxLength={20} />
+                <div className="flex flex-wrap gap-1.5">
+                    {POEM_TEMPLATE_VARS.map((v) => (
+                        <button key={v.key} type="button" title={v.desc} onClick={() => insert(v.key)} className="rounded-full bg-black/5 px-2 py-0.5 text-xs text-stone-600 hover:bg-black/10 dark:bg-white/10 dark:text-stone-300">
+                            {`{${v.key}}`}
+                        </button>
+                    ))}
+                </div>
+                <textarea
+                    ref={areaRef}
+                    value={text}
+                    onChange={(event) => setText(event.target.value)}
+                    rows={14}
+                    className="w-full rounded-lg border border-stone-200 bg-transparent p-3 font-mono text-xs leading-relaxed outline-none focus:border-(--skin-accent) dark:border-stone-700"
+                    data-testid="poem-template-text"
+                />
+                <p className="text-xs leading-relaxed text-stone-400">
+                    点上面的变量插入到光标处，生成时会替换成实际内容。{"{篇名} {诗句}"} 是诗本身；{"{画风}"} 来自所选画风卡片；{"{画面描述}"} 是可选的 AI 描述（没写就去掉那一行；模板里没放它时会加在最后）。想让模型把诗写在画上，把「不要出现任何文字」那一句改掉就行，但模型可能写错字。
+                </p>
+            </div>
+        </Modal>
     );
 }
 
