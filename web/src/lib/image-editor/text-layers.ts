@@ -57,6 +57,8 @@ export type TextLayer = {
     sealStyle: SealStyle;
     /** Vertical text only: thin rules between and beside the columns, like ruled paper (诗画). */
     rules?: boolean;
+    /** Clockwise rotation in degrees around the centre of the block. */
+    rotation?: number;
 };
 
 export const SEAL_RED = "#b3302a";
@@ -275,6 +277,13 @@ export function drawTextLayers(ctx: CanvasRenderingContext2D, layers: TextLayer[
         if (!layer.text.trim()) continue;
         const layout = layoutLayer(layer, imageW, imageH, canvasMeasure(ctx, layer));
         ctx.save();
+        if (layer.rotation) {
+            const cx = layout.box.x + layout.box.w / 2;
+            const cy = layout.box.y + layout.box.h / 2;
+            ctx.translate(cx, cy);
+            ctx.rotate((layer.rotation * Math.PI) / 180);
+            ctx.translate(-cx, -cy);
+        }
         ctx.globalAlpha = Math.min(1, Math.max(0, layer.opacity));
         ctx.font = `${layout.fontPx}px ${fontFamilyOf(layer.font)}`;
         ctx.textAlign = "center";
@@ -331,12 +340,24 @@ export function drawTextLayers(ctx: CanvasRenderingContext2D, layers: TextLayer[
     }
 }
 
+/** The point in the layer's own (unrotated) frame. */
+export function unrotate(layer: Pick<TextLayer, "rotation">, box: LayerLayout["box"], px: number, py: number): [number, number] {
+    if (!layer.rotation) return [px, py];
+    const cx = box.x + box.w / 2;
+    const cy = box.y + box.h / 2;
+    const a = (-layer.rotation * Math.PI) / 180;
+    const dx = px - cx;
+    const dy = py - cy;
+    return [cx + dx * Math.cos(a) - dy * Math.sin(a), cy + dx * Math.sin(a) + dy * Math.cos(a)];
+}
+
 /** Index of the top-most layer whose box contains the point (image pixels), or -1. */
 export function hitTestLayers(ctx: CanvasRenderingContext2D, layers: TextLayer[], imageW: number, imageH: number, px: number, py: number): number {
     for (let i = layers.length - 1; i >= 0; i--) {
         const { box } = layoutLayer(layers[i], imageW, imageH, canvasMeasure(ctx, layers[i]));
+        const [x, y] = unrotate(layers[i], box, px, py);
         const pad = Math.max(6, Math.min(imageW, imageH) * 0.01);
-        if (px >= box.x - pad && px <= box.x + box.w + pad && py >= box.y - pad && py <= box.y + box.h + pad) return i;
+        if (x >= box.x - pad && x <= box.x + box.w + pad && y >= box.y - pad && y <= box.y + box.h + pad) return i;
     }
     return -1;
 }

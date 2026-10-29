@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App, Button, Input, Modal, Popconfirm, Segmented, Select, Slider, Spin, Switch } from "antd";
-import { ArrowLeft, BookOpenText, Check, ChevronDown, Copy, Dices, ImagePlus, LoaderCircle, PenLine, RefreshCw, Search, Send, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { ArrowLeft, BookOpenText, Check, ChevronDown, Copy, Dices, EyeOff, ImagePlus, LoaderCircle, PenLine, Redo2, RefreshCw, RotateCcw, Search, Send, Sparkles, Trash2, Undo2, Wand2 } from "lucide-react";
 import { nanoid } from "nanoid";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
@@ -45,6 +45,7 @@ import {
     type PoemSource,
     type PoemTemplate,
 } from "@/lib/poem";
+import { applyEdits, isEdited, layerName, pushHistory, redoHistory, undoHistory, type EditHistory, type PoemEdit, type PoemEdits } from "@/lib/poem-edit";
 import { promptAssistConfig } from "@/lib/prompt-assist";
 import { requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { getPoem, poemCandidates, searchPoems, type MainSitePoem } from "@/services/api/main-site-poems";
@@ -53,6 +54,7 @@ import { useAssetStore } from "@/stores/use-asset-store";
 import { useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { usePublishWorkStore } from "@/stores/use-publish-work-store";
 import { useSaveImage } from "../image/use-save-image";
+import { fracBoxOf, PoemTextStage } from "./text-stage";
 import { deletePoem, deleteTemplate, listPoems, listTemplates, readPoem, savePoem, saveTemplate } from "./poem-store";
 
 // 诗画 (/poem): 选诗 → 画面 → 生成 → 配诗. Poems come from the main site's corpus (or are pasted in); every model
@@ -872,8 +874,19 @@ function PoemLetter({
     const [ink, setInk] = useState<PoemInk | "auto">("auto");
     const [editing, setEditing] = useState(false);
     const [busy, setBusy] = useState(false);
-    const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const posterUrl = useImageUrl(project.poster);
+    // Direct edits on the picture: saved on the drawing; live while a gesture runs; undo per drawing.
+    const committed = useMemo(() => picked.edits ?? {}, [picked.edits]);
+    const [live, setLive] = useState<PoemEdits | null>(null);
+    const edits = live ?? committed;
+    const [history, setHistory] = useState<EditHistory>({ past: [], future: [] });
+    const [selected, setSelected] = useState<string | null>(null);
+    const textRef = useRef<HTMLTextAreaElement | null>(null);
+    useEffect(() => {
+        setHistory({ past: [], future: [] });
+        setSelected(null);
+        setLive(null);
+    }, [picked.id]);
 
     useEffect(() => {
         if (!url) return;
@@ -955,31 +968,83 @@ function PoemLetter({
         });
     }, [auto, img, ink, place, project.font, project.lines, project.poem, project.seal, project.titleFont, project.ratio, layout, parts.body, parts.title, scale]);
 
-    // Preview: the picture at ~900 px with the layers drawn on it.
+    const aspect = img ? img.naturalWidth / img.naturalHeight : 1;
+    // What is drawn and saved: the automatic layout with the user's edits on top.
+    const shown = useMemo(() => applyEdits(layers, edits, (layer) => fracBoxOf(layer, aspect)), [aspect, edits, layers]);
+
+    const saveEdits = useCallback(
+        (next: PoemEdits) => patch((p) => ({ ...p, drawings: p.drawings.map((d) => (d.id === picked.id ? { ...d, edits: next } : d)) })),
+        [patch, picked.id],
+    );
+    /** Records a finished change (one undo step). */
+    const commit = useCallback(
+        (before: PoemEdits, after: PoemEdits) => {
+            setLive(null);
+            if (JSON.stringify(before) === JSON.stringify(after)) return;
+            setHistory((h) => pushHistory(h, before));
+            saveEdits(after);
+        },
+        [saveEdits],
+    );
+    const editSelected = (change: PoemEdit, done = true) => {
+        if (!selected) return;
+        const next = { ...edits, [selected]: { ...(edits[selected] || {}), ...change } };
+        if (done) commit(committed, next);
+        else setLive(next);
+    };
+    const undo = useCallback(() => {
+        const step = undoHistory(history, committed);
+        if (!step) return;
+        setHistory(step.history);
+        saveEdits(step.edits);
+    }, [committed, history, saveEdits]);
+    const redo = useCallback(() => {
+        const step = redoHistory(history, committed);
+        if (!step) return;
+        setHistory(step.history);
+        saveEdits(step.edits);
+    }, [committed, history, saveEdits]);
+
+    // ⌘/Ctrl+Z, ⇧⌘Z / Ctrl+Y, arrows to nudge (Shift: 10×), Delete to hide, Esc to deselect.
     useEffect(() => {
-        const canvas = canvasRef.current;
-        if (!canvas || !img) return;
-        let alive = true;
-        const scale = Math.min(1, 900 / Math.max(img.naturalWidth, img.naturalHeight));
-        canvas.width = Math.round(img.naturalWidth * scale);
-        canvas.height = Math.round(img.naturalHeight * scale);
-        const paint = () => {
-            const ctx = canvas.getContext("2d");
-            if (!ctx || !alive) return;
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            drawTextLayers(ctx, layers, canvas.width, canvas.height);
+        const onKey = (event: KeyboardEvent) => {
+            const target = event.target;
+            if (target instanceof Element && target.closest("input, textarea, select, [contenteditable=true], .ant-modal, .ant-select")) return;
+            const mod = event.metaKey || event.ctrlKey;
+            if (mod && event.key.toLowerCase() === "z") {
+                event.preventDefault();
+                if (event.shiftKey) redo();
+                else undo();
+                return;
+            }
+            if (mod && event.key.toLowerCase() === "y") {
+                event.preventDefault();
+                redo();
+                return;
+            }
+            if (!selected) return;
+            const step = event.shiftKey ? 0.01 : 0.002;
+            const nudge: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+            if (nudge[event.key]) {
+                event.preventDefault();
+                const e = committed[selected] || {};
+                commit(committed, { ...committed, [selected]: { ...e, dx: (e.dx ?? 0) + nudge[event.key][0], dy: (e.dy ?? 0) + nudge[event.key][1] * aspect } });
+            } else if (event.key === "Delete" || event.key === "Backspace") {
+                event.preventDefault();
+                commit(committed, { ...committed, [selected]: { ...(committed[selected] || {}), hidden: true } });
+                setSelected(null);
+            } else if (event.key === "Escape") {
+                setSelected(null);
+            }
         };
-        paint();
-        void ensureLayerFonts(layers).then(paint);
-        return () => {
-            alive = false;
-        };
-    }, [img, layers]);
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [aspect, commit, committed, redo, selected, undo]);
 
     const storePoster = async (dataUrl: string) => {
         const stored = await uploadImage(dataUrl);
         const poster: PoemImage = { url: stored.url, ...(stored.storageKey ? { storageKey: stored.storageKey } : {}), width: stored.width, height: stored.height, mimeType: stored.mimeType };
-        patch((p) => ({ ...p, poster, layers }));
+        patch((p) => ({ ...p, poster, layers: shown }));
         return { stored, poster };
     };
 
@@ -987,7 +1052,7 @@ function PoemLetter({
     const posterDataUrl = async () => {
         if (project.poster && posterUrl) return posterUrl;
         if (!img) throw new Error("图片还没加载好");
-        const dataUrl = await renderPoster(img, layers);
+        const dataUrl = await renderPoster(img, shown);
         await storePoster(dataUrl);
         return dataUrl;
     };
@@ -1040,11 +1105,20 @@ function PoemLetter({
 
     return (
         <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_20rem]">
-            <div className="flex justify-center rounded-xl bg-stone-100 p-3 dark:bg-stone-800/60">
+            <div className="flex justify-center overflow-x-clip rounded-xl bg-stone-100 p-3 dark:bg-stone-800/60">
                 {project.poster && posterUrl ? (
                     <img src={posterUrl} alt="" className="max-h-[78vh] max-w-full rounded shadow-sm" data-testid="poem-poster" />
                 ) : img ? (
-                    <canvas ref={canvasRef} className="max-h-[78vh] max-w-full rounded shadow-sm" data-testid="poem-preview" />
+                    <PoemTextStage
+                        img={img}
+                        layers={shown}
+                        edits={edits}
+                        selected={selected}
+                        onSelect={setSelected}
+                        onLive={setLive}
+                        onCommit={commit}
+                        onEditText={() => window.setTimeout(() => textRef.current?.focus(), 0)}
+                    />
                 ) : (
                     <Spin className="my-20" />
                 )}
@@ -1094,6 +1168,49 @@ function PoemLetter({
                     </div>
                 ) : (
                     <>
+                        {layers.length ? (
+                            <div className="space-y-2 rounded-lg border border-stone-200 p-3 text-xs dark:border-stone-700" data-testid="poem-edit-panel">
+                                <div className="flex items-center gap-1">
+                                    <span className="mr-auto text-stone-500">{selected ? <>选中：<span className="font-medium text-stone-800 dark:text-stone-100">{layerName(selected)}</span></> : "点画上的字可以直接改"}</span>
+                                    <Button size="small" type="text" icon={<Undo2 className="size-4" />} disabled={!history.past.length} onClick={undo} title="撤销（⌘/Ctrl+Z）" data-testid="poem-undo" />
+                                    <Button size="small" type="text" icon={<Redo2 className="size-4" />} disabled={!history.future.length} onClick={redo} title="重做（⇧⌘Z / Ctrl+Y）" />
+                                    {isEdited(committed) ? (
+                                        <Button size="small" type="text" onClick={() => commit(committed, {})} data-testid="poem-edit-reset">
+                                            全部还原
+                                        </Button>
+                                    ) : null}
+                                </div>
+                                {selected ? (
+                                    <SelectedLayerPanel
+                                        baseText={layers.find((l) => l.id === selected)?.text || ""}
+                                        edit={edits[selected] || {}}
+                                        textRef={textRef}
+                                        onChange={editSelected}
+                                        onCommitLive={() => live && commit(committed, live)}
+                                        onReset={() => {
+                                            const next = { ...committed };
+                                            delete next[selected];
+                                            commit(committed, next);
+                                        }}
+                                        onHide={() => {
+                                            editSelected({ hidden: true });
+                                            setSelected(null);
+                                        }}
+                                    />
+                                ) : (
+                                    <div className="leading-relaxed text-stone-400">拖动移动，拖右下角缩放，拖上方圆点旋转（Shift 每次 15°），双击改字；手机上双指捏合缩放、旋转。</div>
+                                )}
+                                {layers.filter((l) => committed[l.id]?.hidden).map((l) => (
+                                    <div key={l.id} className="flex items-center text-stone-500">
+                                        <EyeOff className="mr-1 size-3.5" />
+                                        已隐藏：{layerName(l.id)}
+                                        <button type="button" className="ml-2 text-violet-600 underline" onClick={() => commit(committed, { ...committed, [l.id]: { ...committed[l.id], hidden: false } })}>
+                                            显示
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : null}
                         <div className="text-xs text-stone-500">
                             文字方案：<span className="text-stone-700 dark:text-stone-200">{POEM_TEXT_MODES.find((m) => m.value === pictureMode)?.label}</span>
                             {pictureMode === "font_poster" || pictureMode === "font_compact" ? (
@@ -1162,7 +1279,7 @@ function PoemLetter({
                             </>
                         ) : null}
                         <Button block icon={<PenLine className="size-4" />} onClick={() => setEditing(true)} disabled={!url} data-testid="poem-edit">
-                            在编辑器里细调（拖动、改字号、加字）
+                            在完整编辑器里打开（加字、更多样式）
                         </Button>
                     </>
                 )}
@@ -1183,7 +1300,7 @@ function PoemLetter({
                 <ImageEditorDialog
                     open={editing}
                     src={url}
-                    initialLayers={layers}
+                    initialLayers={shown}
                     initialTab="text"
                     onClose={() => setEditing(false)}
                     onSave={async (result) => {
@@ -1200,6 +1317,59 @@ function PoemLetter({
                 />
             ) : null}
             {overlay}
+        </div>
+    );
+}
+
+/** The selected text's own settings in 配诗: its words, size, angle; hide or reset it. */
+function SelectedLayerPanel({
+    baseText,
+    edit,
+    textRef,
+    onChange,
+    onCommitLive,
+    onReset,
+    onHide,
+}: {
+    baseText: string;
+    edit: PoemEdit;
+    textRef: React.RefObject<HTMLTextAreaElement | null>;
+    /** done = false while typing or sliding (no undo step yet). */
+    onChange: (change: PoemEdit, done?: boolean) => void;
+    onCommitLive: () => void;
+    onReset: () => void;
+    onHide: () => void;
+}) {
+    return (
+        <div className="space-y-2" data-testid="poem-layer-panel">
+            <textarea
+                ref={textRef}
+                rows={Math.min(6, Math.max(1, (edit.text ?? baseText).split("\n").length))}
+                className="w-full resize-y rounded-md border border-stone-300 bg-white px-2 py-1 text-sm leading-relaxed outline-none focus:border-violet-500 dark:border-stone-600 dark:bg-stone-900"
+                value={edit.text ?? baseText}
+                onChange={(event) => onChange({ text: event.target.value }, false)}
+                onBlur={onCommitLive}
+                data-testid="poem-layer-text"
+            />
+            <div className="flex items-center gap-2 text-stone-500">
+                <span className="w-8 shrink-0">大小</span>
+                <Slider className="flex-1" min={0.3} max={3} step={0.05} value={edit.scale ?? 1} onChange={(v) => onChange({ scale: v }, false)} onChangeComplete={(v) => onChange({ scale: v })} tooltip={{ formatter: (v) => `${Math.round((v || 1) * 100)}%` }} />
+            </div>
+            <div className="flex items-center gap-2 text-stone-500">
+                <span className="w-8 shrink-0">角度</span>
+                <Slider className="flex-1" min={-180} max={180} step={1} value={edit.rotation ?? 0} onChange={(v) => onChange({ rotation: v }, false)} onChangeComplete={(v) => onChange({ rotation: v })} tooltip={{ formatter: (v) => `${v}°` }} />
+                <Button size="small" onClick={() => onChange({ rotation: 0 })} disabled={!edit.rotation}>
+                    回正
+                </Button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+                <Button size="small" icon={<EyeOff className="size-3.5" />} onClick={onHide} data-testid="poem-layer-hide">
+                    隐藏
+                </Button>
+                <Button size="small" icon={<RotateCcw className="size-3.5" />} onClick={onReset}>
+                    还原这段
+                </Button>
+            </div>
         </div>
     );
 }

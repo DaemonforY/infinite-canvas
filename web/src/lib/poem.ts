@@ -10,6 +10,7 @@
  */
 
 import { createSealLayer, createTextLayer, type TextFontId, type TextLayer } from "@/lib/image-editor/text-layers";
+import type { PoemEdits } from "@/lib/poem-edit";
 
 export type PoemSource = { id?: number; title: string; author: string; dynasty: string; content: string; collection?: string };
 
@@ -509,9 +510,9 @@ export function poemLayers(input: PoemLayoutInput): TextLayer[] {
     right = authorX - f * 0.7;
     const bodyX = right - bodyW;
     const layers = [
-        createTextLayer({ text: title, font: input.titleFont, vertical: true, size: titleF, x: titleX, y: top, color, letterSpacing: 0.08, lineSpacing: 0.3, effect: "shadow", effectColor }),
-        createTextLayer({ text: input.author, font: input.font, vertical: true, size: authorF, x: authorX, y: top + titleF * aspect * 0.8, color, letterSpacing: 0.1, lineSpacing: 0.3, effect: "shadow", effectColor }),
-        createTextLayer({ text: columns.join("\n"), font: input.font, vertical: true, size: f, x: bodyX, y: top, color, letterSpacing: BODY_LETTER, lineSpacing: BODY_LINE, effect: "shadow", effectColor }),
+        createTextLayer({ id: "poem-title", text: title, font: input.titleFont, vertical: true, size: titleF, x: titleX, y: top, color, letterSpacing: 0.08, lineSpacing: 0.3, effect: "shadow", effectColor }),
+        createTextLayer({ id: "poem-author", text: input.author, font: input.font, vertical: true, size: authorF, x: authorX, y: top + titleF * aspect * 0.8, color, letterSpacing: 0.1, lineSpacing: 0.3, effect: "shadow", effectColor }),
+        createTextLayer({ id: "poem-body", text: columns.join("\n"), font: input.font, vertical: true, size: f, x: bodyX, y: top, color, letterSpacing: BODY_LETTER, lineSpacing: BODY_LINE, effect: "shadow", effectColor }),
     ];
     if (input.seal.trim()) {
         // Under the last (leftmost) column, centred on it.
@@ -520,7 +521,7 @@ export function poemLayers(input: PoemLayoutInput): TextLayer[] {
         const sealW = (Array.from(input.seal.trim()).length <= 2 ? 1 : 2) * sealSize * 1.08 + sealSize * 0.64;
         const sealX = bodyX + f / 2 - sealW / 2;
         const sealY = top + (lastLen * f * (1 + BODY_LETTER) + f * 0.5) * aspect;
-        layers.push(createSealLayer({ text: input.seal.trim(), size: sealSize, x: Math.max(0.01, sealX), y: Math.min(0.92, sealY) }));
+        layers.push(createSealLayer({ id: "poem-seal", text: input.seal.trim(), size: sealSize, x: Math.max(0.01, sealX), y: Math.min(0.92, sealY) }));
     }
     return layers;
 }
@@ -565,7 +566,7 @@ function posterTitleLayers(input: PosterLayoutInput, scale: number, palette: Poe
     const titleShadow = input.titleInk === "light" ? palette.dark : palette.light;
     const titleW = t * (titleCols + (titleCols - 1) * 0.15);
     const layers: TextLayer[] = [
-        createTextLayer({ text: title, font: input.titleFont, vertical: true, size: t, x: titleBox.x0, y: titleBox.y0, color: titleColor, letterSpacing: 0.04, lineSpacing: 0.15, wrapAt: titleCols > 1 ? titleRows : 0, effect: "shadow", effectColor: titleShadow }),
+        createTextLayer({ id: "poem-title", text: title, font: input.titleFont, vertical: true, size: t, x: titleBox.x0, y: titleBox.y0, color: titleColor, letterSpacing: 0.04, lineSpacing: 0.15, wrapAt: titleCols > 1 ? titleRows : 0, effect: "shadow", effectColor: titleShadow }),
     ];
     // The author beside the title, from its second character down (the top corner is often the moon or a
     // peak); the seal under it.
@@ -573,11 +574,11 @@ function posterTitleLayers(input: PosterLayoutInput, scale: number, palette: Poe
     const authorX = titleBox.x0 + titleW + t * 0.12;
     const authorY = titleBox.y0 + t * aspect * (titleRows > 2 ? 1.15 : 0.6);
     if (input.author.trim()) {
-        layers.push(createTextLayer({ text: input.author, font: input.font, vertical: true, size: a, x: authorX, y: authorY, color: titleColor, letterSpacing: 0.12, lineSpacing: 0.2, effect: "shadow", effectColor: titleShadow }));
+        layers.push(createTextLayer({ id: "poem-author", text: input.author, font: input.font, vertical: true, size: a, x: authorX, y: authorY, color: titleColor, letterSpacing: 0.12, lineSpacing: 0.2, effect: "shadow", effectColor: titleShadow }));
     }
     if (input.seal.trim()) {
         const authorLen = Array.from(input.author.trim()).length;
-        layers.push(createSealLayer({ text: input.seal.trim(), size: a * 0.8, x: authorX - a * 0.1, y: authorY + (authorLen * a * 1.12 + a * 0.6) * aspect }));
+        layers.push(createSealLayer({ id: "poem-seal", text: input.seal.trim(), size: a * 0.8, x: authorX - a * 0.1, y: authorY + (authorLen * a * 1.12 + a * 0.6) * aspect }));
     }
     return layers;
 }
@@ -611,6 +612,7 @@ export function posterLayers(input: PosterLayoutInput): TextLayer[] {
     const bodyColor = input.bodyInk === "ink" ? palette.dark : palette.light;
     layers.push(
         createTextLayer({
+            id: "poem-body",
             text: columns.join("\n"),
             font: input.font,
             vertical: true,
@@ -649,6 +651,8 @@ export type PoemDrawing = {
     textMode?: PoemTextMode;
     /** The user's check of the text the model wrote. */
     check?: "ok" | "wrong";
+    /** 配诗: what the user moved, resized, turned, retyped or hid, over the automatic layout. */
+    edits?: PoemEdits;
 };
 
 export type PoemProject = {
