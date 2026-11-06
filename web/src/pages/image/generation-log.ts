@@ -28,7 +28,7 @@ export type GenerationResult = {
     error?: string;
 };
 
-export type GenerationLogConfig = Pick<AiConfig, "model" | "imageModel" | "quality" | "size" | "count">;
+export type GenerationLogConfig = Pick<AiConfig, "model" | "imageModel" | "quality" | "size" | "count"> & Partial<Pick<AiConfig, "outputFormat" | "gifFrames" | "gifFrameMs">>;
 
 export type GenerationLog = {
     id: string;
@@ -121,6 +121,7 @@ function normalizeLogConfig(log: Partial<GenerationLog>): GenerationLogConfig {
         quality: log.config?.quality || log.quality || "",
         size: log.config?.size || log.size || "",
         count: log.config?.count || String(log.imageCount || log.successCount || 1),
+        ...(log.config?.outputFormat ? { outputFormat: log.config.outputFormat, gifFrames: log.config.gifFrames, gifFrameMs: log.config.gifFrameMs } : {}),
     };
 }
 
@@ -147,7 +148,7 @@ export function buildLog({
     failCount: number;
     images: GeneratedImage[];
 }): GenerationLog {
-    const logConfig = { model: config.model, imageModel: config.imageModel, quality: config.quality, size: config.size, count: config.count };
+    const logConfig: GenerationLogConfig = { model: config.model, imageModel: config.imageModel, quality: config.quality, size: config.size, count: config.count, ...(config.outputFormat ? { outputFormat: config.outputFormat, gifFrames: config.gifFrames, gifFrameMs: config.gifFrameMs } : {}) };
     const shown = label || prompt;
     return {
         id: id || nanoid(),

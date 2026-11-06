@@ -17,6 +17,7 @@ type RuntimeConfig = {
     PARTNER_SITES?: string; // Sister sites that also sell keys: "Name|https://url,Name2|https://url2"
     DEFAULT_SKIN?: string; // Default color skin for first-time visitors (classic/nebula/ocean/forest/sunset/sakura)
     IMAGE_PROXY?: string; // "on": load prompt-library images through this site's /img-proxy/ relay (see nginx.conf)
+    IMAGE_GIF_OUTPUT?: string; // "on": offer 「GIF 动图」 output in the image settings (needs a channel whose image model can return GIFs)
 };
 
 declare global {
@@ -110,6 +111,11 @@ export const DEFAULT_SKIN_NAME: SkinName = isSkinName(configuredSkin) ? configur
 // Prompt-library images hosted on these domains are unreachable from some networks (e.g. mainland
 // China). With IMAGE_PROXY=on they are loaded through the same-origin /img-proxy/ relay instead.
 // Keep this list in sync with the allowlist in nginx.conf.
+// GPT Image 2.6 can return animated GIFs, but only where the channel's upstream enables it
+// (ChatGPT-account image generation answered "GIF output is not enabled" on 2026-11-06).
+// Keep the option hidden until IMAGE_GIF_OUTPUT=on.
+export const IMAGE_GIF_OUTPUT_ENABLED = /^(1|on|true|yes)$/i.test(read("IMAGE_GIF_OUTPUT", import.meta.env.VITE_IMAGE_GIF_OUTPUT));
+
 export const IMAGE_PROXY_ENABLED = /^(1|on|true|yes)$/i.test(read("IMAGE_PROXY", import.meta.env.VITE_IMAGE_PROXY));
 const PROXIED_IMAGE_HOSTS = new Set(["raw.githubusercontent.com", "pbs.twimg.com", "cms-assets.youmind.com", "cdn.imgedify.com", "bibigpt-apps.chatvid.ai", "cdn.jsdelivr.net"]);
 

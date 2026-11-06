@@ -28,6 +28,7 @@ DEFAULT_SKIN_VALUE=$(sanitize_id "${DEFAULT_SKIN:-}")
 # "Name|https://url,Name2|https://url2": letters, digits, URL characters, | and , only.
 PARTNER_SITES_VALUE=$(printf '%s' "${PARTNER_SITES:-}" | tr -cd 'A-Za-z0-9:/._%|, -')
 IMAGE_PROXY_VALUE=$(sanitize_id "${IMAGE_PROXY:-}")
+IMAGE_GIF_OUTPUT_VALUE=$(sanitize_id "${IMAGE_GIF_OUTPUT:-}")
 
 # Main site origin and host for the share-card subrequests in nginx.conf (empty: no share cards).
 MAIN_SITE_ORIGIN=$(printf '%s' "$MAIN_SITE_URL_VALUE" | sed -nE 's#^(https?://[^/]+).*$#\1#p')
@@ -47,6 +48,7 @@ window.__RUNTIME_CONFIG__ = {
   MAIN_SITE_API_BASE_URL: "${MAIN_SITE_API_BASE_URL_VALUE}",
   DEFAULT_SKIN: "${DEFAULT_SKIN_VALUE}",
   PARTNER_SITES: "${PARTNER_SITES_VALUE}",
-  IMAGE_PROXY: "${IMAGE_PROXY_VALUE}"
+  IMAGE_PROXY: "${IMAGE_PROXY_VALUE}",
+  IMAGE_GIF_OUTPUT: "${IMAGE_GIF_OUTPUT_VALUE}"
 };
 EOF

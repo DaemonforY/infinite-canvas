@@ -1,4 +1,5 @@
 import { MAIN_SITE_URL } from "@/constant/runtime-config";
+import { isGifBytes } from "@/lib/image-format";
 
 // The 「AI 生成 · hivegpt.cn」 mark drawn into images the workbench saves, downloads or shares.
 // It is both the site's credit and the explicit AI-content label 《人工智能生成合成内容标识办法》 asks for;
@@ -24,23 +25,14 @@ function loadImage(src: string) {
     });
 }
 
-/** Draw the mark into the bottom-right corner; returns a PNG (or JPEG for JPEG sources) blob. */
-export async function watermarkImage(src: string, mimeType = "image/png"): Promise<Blob> {
-    const image = await loadImage(src);
-    const width = image.naturalWidth;
-    const height = image.naturalHeight;
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("canvas unavailable");
-    context.drawImage(image, 0, 0, width, height);
-
+/** Draw the mark into the bottom-right corner of a width × height drawing. */
+export function drawWatermark(context: CanvasRenderingContext2D, width: number, height: number) {
     const short = Math.min(width, height);
     const fontSize = Math.max(12, Math.round(short * 0.026));
     const padX = Math.round(fontSize * 0.55);
     const padY = Math.round(fontSize * 0.32);
     const margin = Math.round(short * 0.022);
+    context.save();
     context.font = `500 ${fontSize}px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif`;
     context.textBaseline = "middle";
     const textWidth = context.measureText(WATERMARK_TEXT).width;
@@ -54,6 +46,35 @@ export async function watermarkImage(src: string, mimeType = "image/png"): Promi
     context.fill();
     context.fillStyle = "rgba(255, 255, 255, 0.94)";
     context.fillText(WATERMARK_TEXT, x + padX, y + boxHeight / 2 + 1);
+    context.restore();
+}
+
+// Animated GIFs keep their animation: every frame gets the mark (see gif-watermark.ts).
+async function readGif(src: string, mimeType: string) {
+    if (mimeType !== "image/gif" && !/^(blob|data):/i.test(src)) return undefined;
+    const blob = await fetch(src).then((res) => res.blob());
+    const bytes = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
+    return isGifBytes(bytes) ? blob : undefined;
+}
+
+/** Returns a marked copy: PNG (JPEG/WebP for those sources), or an animated GIF for GIF sources. */
+export async function watermarkImage(src: string, mimeType = "image/png"): Promise<Blob> {
+    const gif = await readGif(src, mimeType).catch(() => undefined);
+    if (gif) {
+        const { watermarkGif } = await import("@/lib/gif-watermark");
+        return watermarkGif(gif, drawWatermark);
+    }
+
+    const image = await loadImage(src);
+    const width = image.naturalWidth;
+    const height = image.naturalHeight;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("canvas unavailable");
+    context.drawImage(image, 0, 0, width, height);
+    drawWatermark(context, width, height);
 
     const type = mimeType === "image/jpeg" || mimeType === "image/webp" ? mimeType : "image/png";
     return new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("encode failed"))), type, 0.95));

@@ -28,6 +28,8 @@ export function getThumbnailDimensions(width: number, height: number, maxEdge = 
 }
 
 export async function createImageThumbnail(blob: Blob, maxEdge = CANVAS_IMAGE_PREVIEW_MAX_EDGE) {
+    // A canvas-drawn preview holds only the first frame; animated GIFs are shown from the original.
+    if (blob.type === "image/gif") return undefined;
     const bitmap = await createImageBitmap(blob);
     const { width, height } = getThumbnailDimensions(bitmap.width, bitmap.height, maxEdge);
     if (width === bitmap.width && height === bitmap.height) {

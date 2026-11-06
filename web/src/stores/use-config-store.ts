@@ -51,6 +51,9 @@ export type AiConfig = {
     quality: string;
     size: string;
     background: string;
+    outputFormat: string; // "" = PNG; "gif" = animated GIF (GPT Image 2.6, IMAGE_GIF_OUTPUT)
+    gifFrames: string; // frame_count, 2–16
+    gifFrameMs: string; // frame_duration_ms, 20–2000
     count: string;
     canvasImageCount: string;
     proxyEnabled: boolean;
@@ -119,6 +122,9 @@ export const defaultConfig: AiConfig = {
     quality: "auto",
     size: "1:1",
     background: "",
+    outputFormat: "",
+    gifFrames: "9",
+    gifFrameMs: "200",
     count: "1",
     canvasImageCount: "3",
     proxyEnabled: false,

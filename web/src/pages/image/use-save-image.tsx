@@ -5,6 +5,7 @@ import { Crown, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { mainSiteLink } from "@/constant/runtime-config";
+import { imageMimeExtension } from "@/lib/image-format";
 import { watermarkImage } from "@/lib/watermark";
 import { isWatermarkFree, logUnmarkedSave } from "@/services/api/main-site-account";
 import { useMainAccountStore } from "@/stores/use-main-account-store";
@@ -64,7 +65,7 @@ export function useSaveImage() {
     const save = async (image: Saveable, name: string) => {
         try {
             const blob = await imageBlob(image);
-            const extension = blob.type === "image/jpeg" ? "jpg" : blob.type === "image/webp" ? "webp" : "png";
+            const extension = imageMimeExtension(blob.type) || "png";
             if (isWeChatBrowser()) setLongPressUrl(URL.createObjectURL(blob));
             else saveAs(blob, `${name}.${extension}`);
         } catch {

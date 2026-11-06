@@ -58,6 +58,9 @@ export type CanvasNodeMetadata = {
     size?: string;
     quality?: string;
     background?: string;
+    outputFormat?: string; // "gif" = animated GIF output
+    gifFrames?: string;
+    gifFrameMs?: string;
     count?: number;
     textCount?: number;
     texts?: CanvasNodeText[];

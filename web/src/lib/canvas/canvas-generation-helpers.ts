@@ -6,11 +6,12 @@ import { imageMetadata, referenceUrl } from "@/lib/canvas/canvas-node-factory";
 import type { NodeGenerationInput } from "@/components/canvas/canvas-node-generation";
 import type { CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
 import type { CanvasImageAngleParams } from "@/components/canvas/canvas-node-angle-dialog";
+import { imageMimeExtension } from "@/lib/image-format";
 import type { ReferenceImage } from "@/types/image";
 import { CanvasNodeType, type CanvasAssistantSession, type CanvasConnection, type CanvasNodeData, type CanvasNodeMetadata } from "@/types/canvas";
 
-export function imageExtension(dataUrl: string) {
-    return dataUrl.match(/^data:image[/]([^;]+)/)?.[1] || dataUrl.match(/image[/]([^;]+)/)?.[1] || "png";
+export function imageExtension(dataUrl: string, mimeType?: string) {
+    return imageMimeExtension(mimeType) || imageMimeExtension(dataUrl.match(/^data:(image[/][^;,]+)/)?.[1]) || imageMimeExtension(dataUrl.match(/(image[/][^;,&]+)/)?.[1]) || "png";
 }
 
 export function audioExtension(mimeType?: string) {
@@ -110,6 +111,9 @@ export function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | u
         quality: node?.metadata?.quality || config.quality || defaultConfig.quality,
         size: node?.metadata?.size || config.size || defaultConfig.size,
         background: node?.metadata?.background ?? config.background ?? defaultConfig.background,
+        outputFormat: node?.metadata?.outputFormat ?? config.outputFormat ?? defaultConfig.outputFormat,
+        gifFrames: node?.metadata?.gifFrames || config.gifFrames || defaultConfig.gifFrames,
+        gifFrameMs: node?.metadata?.gifFrameMs || config.gifFrameMs || defaultConfig.gifFrameMs,
         videoSeconds: node?.metadata?.seconds || config.videoSeconds || defaultConfig.videoSeconds,
         vquality: node?.metadata?.vquality || config.vquality || defaultConfig.vquality,
         videoGenerateAudio: node?.metadata?.generateAudio || config.videoGenerateAudio || defaultConfig.videoGenerateAudio,

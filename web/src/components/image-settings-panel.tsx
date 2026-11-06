@@ -6,6 +6,7 @@ import i18n from "@/i18n";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { computeMediaSize, inferMediaRatio, inferMediaScale, mediaRatioOptions, mediaScaleOptions, readMediaDimensions } from "@/lib/media-size";
 import type { AiConfig } from "@/stores/use-config-store";
+import { IMAGE_GIF_OUTPUT_ENABLED } from "@/constant/runtime-config";
 
 const qualityOptions = [
     { value: "auto", labelKey: "auto" },
@@ -14,6 +15,10 @@ const qualityOptions = [
     { value: "low", labelKey: "low" },
 ];
 const DIMENSION_STEP = 16;
+const gifFrameOptions = ["4", "6", "9", "12", "16"];
+const gifFrameMsOptions = ["100", "200", "300", "500"];
+
+export type ImageSettingKey = "quality" | "size" | "count" | "background" | "outputFormat" | "gifFrames" | "gifFrameMs";
 
 export const imageQualityOptions = qualityOptions.map((item) => ({ value: item.value, get label() { return i18n.t(`settingsPanels.common.${item.labelKey}`); } }));
 export const imageAspectOptions = mediaRatioOptions.map((item) => ({ value: item.value, label: item.value === "auto" ? i18n.t("settingsPanels.common.auto") : item.value }));
@@ -21,7 +26,7 @@ export const imageScaleOptions = mediaScaleOptions.map((value) => ({ value, labe
 
 type ImageSettingsPanelProps = {
     config: AiConfig;
-    onConfigChange: (key: "quality" | "size" | "count" | "background", value: string) => void;
+    onConfigChange: (key: ImageSettingKey, value: string) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
     className?: string;
@@ -36,6 +41,9 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const count = Math.max(1, Math.min(maxCount, Math.floor(Math.abs(Number(config.count)) || 1)));
     const activeSize = config.size || "auto";
     const transparentBackground = config.background === "transparent";
+    const gifOutput = IMAGE_GIF_OUTPUT_ENABLED && config.outputFormat === "gif";
+    const gifFrames = config.gifFrames || "9";
+    const gifFrameMs = config.gifFrameMs || "200";
     const selectedScale = inferMediaScale(activeSize);
     const selectedRatio = inferMediaRatio(activeSize);
     const dimensions = readMediaDimensions(activeSize, selectedScale, selectedRatio);
@@ -128,6 +136,42 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         <Switch size="small" checked={transparentBackground} onChange={(checked) => onConfigChange("background", checked ? "transparent" : "")} />
                     </span>
                 </div>
+                {IMAGE_GIF_OUTPUT_ENABLED ? (
+                    <div className="space-y-2.5">
+                        <SettingTitle color={theme.node.muted}>{t("settingsPanels.image.outputFormat")}</SettingTitle>
+                        <div className="grid grid-cols-2 gap-2.5">
+                            <OptionPill selected={!gifOutput} theme={theme} onClick={() => onConfigChange("outputFormat", "")}>
+                                {t("settingsPanels.image.formatStill")}
+                            </OptionPill>
+                            <OptionPill selected={gifOutput} theme={theme} onClick={() => onConfigChange("outputFormat", "gif")}>
+                                {t("settingsPanels.image.formatGif")}
+                            </OptionPill>
+                        </div>
+                        {gifOutput ? (
+                            <>
+                                <div className="text-xs" style={{ color: theme.node.muted, opacity: 0.75 }}>
+                                    {t("settingsPanels.image.gifHint")}
+                                </div>
+                                <SettingTitle color={theme.node.muted}>{t("settingsPanels.image.gifFrames")}</SettingTitle>
+                                <div className="grid grid-cols-5 gap-2">
+                                    {gifFrameOptions.map((value) => (
+                                        <OptionPill key={value} selected={gifFrames === value} theme={theme} onClick={() => onConfigChange("gifFrames", value)}>
+                                            {value}
+                                        </OptionPill>
+                                    ))}
+                                </div>
+                                <SettingTitle color={theme.node.muted}>{t("settingsPanels.image.gifFrameMs")}</SettingTitle>
+                                <div className="grid grid-cols-4 gap-2.5">
+                                    {gifFrameMsOptions.map((value) => (
+                                        <OptionPill key={value} selected={gifFrameMs === value} theme={theme} onClick={() => onConfigChange("gifFrameMs", value)}>
+                                            {`${value} ms`}
+                                        </OptionPill>
+                                    ))}
+                                </div>
+                            </>
+                        ) : null}
+                    </div>
+                ) : null}
                 <div className="space-y-2.5">
                     <SettingTitle color={theme.node.muted}>{t("settingsPanels.image.count")}</SettingTitle>
                     <div className="grid grid-cols-4 gap-2.5">

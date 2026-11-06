@@ -11,6 +11,8 @@ import type { ReferenceImage } from "@/types/image";
 
 import { apiText, humanizeApiPayload, humanizeErrorMessage, readAxiosError, readFetchError } from "./errors";
 import { runImageTask } from "./image-task";
+import { base64ImageDataUrl } from "@/lib/image-format";
+import { IMAGE_GIF_OUTPUT_ENABLED } from "@/constant/runtime-config";
 
 export type AiTextMessage = {
     role: "system" | "user" | "assistant";
@@ -116,6 +118,21 @@ const IMAGE_MAX_PIXELS = 8294400;
 const IMAGE_MAX_EDGE = 3840;
 const IMAGE_MAX_RATIO = 3;
 const IMAGE_OUTPUT_FORMAT = "png";
+
+function clampSetting(value: string | undefined, min: number, max: number, fallback: number) {
+    const parsed = Math.round(Number(value));
+    return Number.isFinite(parsed) && parsed > 0 ? Math.min(max, Math.max(min, parsed)) : fallback;
+}
+
+// output_format plus, for animated GIFs (GPT Image 2.6), the frame count and per-frame duration.
+export function imageOutputOptions(config: Pick<AiConfig, "outputFormat" | "gifFrames" | "gifFrameMs">): Record<string, string | number> {
+    if (!IMAGE_GIF_OUTPUT_ENABLED || config.outputFormat !== "gif") return { output_format: IMAGE_OUTPUT_FORMAT };
+    return {
+        output_format: "gif",
+        frame_count: clampSetting(config.gifFrames, 2, 16, 9),
+        frame_duration_ms: Math.round(clampSetting(config.gifFrameMs, 20, 2000, 200) / 10) * 10,
+    };
+}
 // 与 image-storage 的下载超时保持一致，避免接口挂起时节点一直停在生成中。
 const IMAGE_REQUEST_TIMEOUT_MS = 10 * 60_000;
 
@@ -244,7 +261,7 @@ function supportsGeminiImageSize(model: string) {
 
 function resolveImageSource(item: Record<string, unknown>) {
     if (typeof item.b64_json === "string" && item.b64_json) {
-        return `data:image/png;base64,${item.b64_json}`;
+        return base64ImageDataUrl(item.b64_json);
     }
     if (typeof item.url === "string" && item.url) {
         return item.url;
@@ -705,7 +722,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
         ...(background ? { background } : {}),
         // gpt-image models reject response_format; they always return b64.
         ...(/gpt-image/.test(requestConfig.model) ? {} : { response_format: "b64_json" }),
-        output_format: IMAGE_OUTPUT_FORMAT,
+        ...imageOutputOptions(config),
     };
     try {
         // The main site runs it as a task that survives a dropped connection; elsewhere, synchronously.
@@ -767,7 +784,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     if (!/gpt-image/.test(requestConfig.model)) {
         formData.set("response_format", "b64_json");
     }
-    formData.set("output_format", IMAGE_OUTPUT_FORMAT);
+    Object.entries(imageOutputOptions(config)).forEach(([key, value]) => formData.set(key, String(value)));
     if (quality) {
         formData.set("quality", quality);
     }

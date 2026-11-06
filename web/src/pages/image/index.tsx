@@ -161,7 +161,16 @@ export default function ImagePage() {
         return {
             text: log.prompt,
             label: log.label,
-            config: imageConfig({ imageModel: logModel, model: logModel, size: log.config.size || effectiveConfig.size, quality: log.config.quality || effectiveConfig.quality }),
+            config: imageConfig({
+                imageModel: logModel,
+                model: logModel,
+                size: log.config.size || effectiveConfig.size,
+                quality: log.config.quality || effectiveConfig.quality,
+                // A log without a format was a still image, even if the composer is set to GIF now.
+                outputFormat: log.config.outputFormat || "",
+                ...(log.config.gifFrames ? { gifFrames: log.config.gifFrames } : {}),
+                ...(log.config.gifFrameMs ? { gifFrameMs: log.config.gifFrameMs } : {}),
+            }),
             references: log.references,
             count,
         };
@@ -299,6 +308,9 @@ export default function ImagePage() {
         if (log.config.quality) updateConfig("quality", log.config.quality);
         if (log.config.size) updateConfig("size", log.config.size);
         if (log.config.count) updateConfig("count", log.config.count);
+        updateConfig("outputFormat", log.config.outputFormat || "");
+        if (log.config.gifFrames) updateConfig("gifFrames", log.config.gifFrames);
+        if (log.config.gifFrameMs) updateConfig("gifFrameMs", log.config.gifFrameMs);
     };
 
     const reuseBatch = (batch: FeedBatch) => {
