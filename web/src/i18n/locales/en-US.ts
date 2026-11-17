@@ -764,6 +764,7 @@ export default {
             poem: "Poem art",
             poemTip: "Pick a classical poem, draw its scene, and set the poem on it in calligraphy",
             phonePlaceholder: "Say what to draw, e.g. an orange cat on the moon, phone wallpaper",
+            missingContextHint: "The image model only sees this prompt, not the article or chat it refers to, so it tends to draw an empty template. Write the title and key points here, or paste the text into the prompt.",
             phoneSettings: "Image settings",
             phoneMore: "More (model, quality, transparent background)",
             phoneDone: "Done",
@@ -776,7 +777,7 @@ export default {
         },
         params: {
             ratio: "Aspect ratio",
-            uses: { square: "Avatar / product", xiaohongshu: "Xiaohongshu", phone: "Phone / Douyin", poster: "Poster", slide: "Slides", cover: "Video cover", photo: "Photo", auto: "From prompt" },
+            uses: { square: "Avatar / product", xiaohongshu: "Xiaohongshu", phone: "Phone / Douyin", poster: "Poster", landscape: "Landscape", slide: "Slides / video cover", photo: "Photo", auto: "From prompt" },
             clarity: "Resolution",
             scales: { "1k": "Standard 1K", "2k": "HD 2K", "4k": "Ultra 4K" },
             scalesShort: { "1k": "Standard", "2k": "HD", "4k": "Ultra" },

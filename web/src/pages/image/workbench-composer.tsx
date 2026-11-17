@@ -11,6 +11,7 @@ import { ReferenceSizeBadge } from "@/components/image-tools/reference-image-too
 import { ModelPicker } from "@/components/model-picker";
 import { useCanvasTheme } from "@/lib/canvas-theme";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
+import { promptLacksReferencedContent } from "@/lib/prompt-context-hint";
 import { formatDuration } from "@/lib/image-utils";
 import { computeMediaSize, inferMediaRatio, inferMediaScale } from "@/lib/media-size";
 import { useIsPhone } from "@/lib/use-is-phone";
@@ -38,8 +39,9 @@ const RATIOS = [
     { value: "3:4", use: "xiaohongshu" },
     { value: "9:16", use: "phone" },
     { value: "2:3", use: "poster" },
-    { value: "4:3", use: "slide" },
-    { value: "16:9", use: "cover" },
+    { value: "4:3", use: "landscape" },
+    // Slides are 16:9 nowadays; labelling 4:3 as PPT sent people asking for 16:9 slides to the wrong ratio.
+    { value: "16:9", use: "slide" },
     { value: "3:2", use: "photo" },
     { value: "auto", use: "auto" },
 ] as const;
@@ -269,6 +271,12 @@ export function WorkbenchComposer({
 
     const sizeLabel = ratio === "auto" ? t("settingsPanels.common.auto") : `${ratio}${ratioUse && ratioUse !== "auto" ? ` ${t(`studio.params.uses.${ratioUse}`)}` : ""}`;
 
+    const contextHint = promptLacksReferencedContent(prompt, references.length > 0) ? (
+        <p className="mt-1 px-0.5 text-xs leading-snug text-amber-700 dark:text-amber-400" data-testid="prompt-context-hint">
+            {t("studio.composer.missingContextHint")}
+        </p>
+    ) : null;
+
     const fileInput = (
         <input
             ref={fileInputRef}
@@ -359,6 +367,7 @@ export function WorkbenchComposer({
                             data-testid="workbench-prompt"
                         />
                     </div>
+                    {contextHint}
                     <div className="mt-1 flex items-center gap-2">
                         <div className="hide-scrollbar -ml-0.5 flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-0.5 pl-0.5 pr-4 [mask-image:linear-gradient(to_right,black_85%,transparent)]">
                             <button type="button" className={cn(toolClass, toolIdle)} onClick={() => setSettingsOpen(true)} data-testid="phone-settings">
@@ -548,6 +557,7 @@ export function WorkbenchComposer({
                     className="!px-0.5 !text-[15px] !leading-relaxed"
                     data-testid="workbench-prompt"
                 />
+                {contextHint}
                 <div className="mt-1.5 flex items-center gap-1.5">
                     <div className="hide-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto max-sm:flex-wrap max-sm:overflow-visible">
                         <Popover content={ratioPanel} trigger="click" placement="topLeft">

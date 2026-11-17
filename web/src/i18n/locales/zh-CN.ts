@@ -756,6 +756,7 @@ export default {
             poem: "诗画",
             poemTip: "选一首古诗，画出诗里的画面，再用书法把诗写上去",
             phonePlaceholder: "说说想画什么，比如：月球上的橘猫，手机壁纸",
+            missingContextHint: "生图只看得到这条提示词，看不到「以上内容」指的文章或对话，容易画出空白模板。请把这页要放的标题和要点直接写进来，或把原文粘贴到提示词里。",
             phoneSettings: "画面设置",
             phoneMore: "更多设置（模型、画质、透明背景）",
             phoneDone: "好了",
@@ -768,7 +769,7 @@ export default {
         },
         params: {
             ratio: "画面比例",
-            uses: { square: "头像 / 主图", xiaohongshu: "小红书", phone: "手机 / 抖音", poster: "海报", slide: "PPT / 横图", cover: "视频封面", photo: "摄影", auto: "按提示词" },
+            uses: { square: "头像 / 主图", xiaohongshu: "小红书", phone: "手机 / 抖音", poster: "海报", landscape: "横图", slide: "PPT / 视频封面", photo: "摄影", auto: "按提示词" },
             clarity: "清晰度",
             scales: { "1k": "标准 1K", "2k": "高清 2K", "4k": "超清 4K" },
             scalesShort: { "1k": "标准", "2k": "高清", "4k": "超清" },
